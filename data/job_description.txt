@@ -1,0 +1,16 @@
+Buscamos Backend Developer (Java / Spring Boot) Semi Senior / Senior
+
+Responsabilidades:
+- Diseñar y mantener APIs REST usando Java y Spring Boot.
+- Trabajar con arquitecturas de microservicios containerizadas (Docker, Kubernetes).
+- Participar en la definición de pipelines de CI/CD.
+- Colaborar con equipos de producto en la definición de nuevas features.
+
+Requisitos:
+- 3+ años de experiencia con Java y Spring Boot.
+- Experiencia con bases de datos relacionales (PostgreSQL preferentemente).
+- Conocimientos de Docker/Kubernetes.
+- Deseable experiencia con GitHub Actions o herramientas de CI/CD similares.
+- Buen nivel de inglés técnico.
+
+No se requiere experiencia en soporte técnico ni en frontend.

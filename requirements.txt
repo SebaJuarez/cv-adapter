@@ -1,0 +1,18 @@
+# --- Orquestación ---
+langgraph>=0.2.60
+langchain-core>=0.3.28
+
+# --- Cliente Ollama (LLM local) ---
+# Requiere Ollama >= 0.5 instalado en el sistema (no es un paquete pip) para
+# soportar Structured Outputs (parámetro `format` con JSON Schema).
+# Descarga: https://ollama.com/download
+ollama>=0.4.4
+
+# --- YAML ---
+PyYAML>=6.0.2
+
+# --- Renderizado CV YAML -> PDF ---
+rendercv>=1.20
+
+# --- Utilidades de consola (opcional, mejora los prints) ---
+rich>=13.9.4

@@ -1,0 +1,83 @@
+cv:
+  name: Juan Pérez
+  location: Buenos Aires, Argentina
+  email: juan.perez@example.com
+  phone: "+54-9-11-1234-5678"
+  website: https://juanperez.dev
+  social_networks:
+    - network: LinkedIn
+      username: juanperez
+    - network: GitHub
+      username: juanperez-dev
+
+  sections:
+    summary:
+      - "Backend Developer con 6 años de experiencia en Java y Spring Boot, especializado en microservicios y sistemas de alta disponibilidad."
+      - "Desarrollador full-stack con foco en Java/Spring y React, orientado a producto y con experiencia liderando equipos chicos."
+      - "Ingeniero de software con background en soporte técnico y desarrollo backend, buscando roles de crecimiento en Java."
+
+    experience:
+      - company: Acme Corp
+        position: Senior Backend Developer
+        location: Buenos Aires, Argentina
+        start_date: 2021-03
+        end_date: present
+        highlights:
+          - "Diseñé y mantuve APIs REST con Java 17 y Spring Boot 3 para un sistema de pagos con +2M de transacciones mensuales."
+          - "Lideré la migración de un monolito a una arquitectura de microservicios usando Docker y Kubernetes."
+          - "Implementé pipelines de CI/CD con GitHub Actions, reduciendo el tiempo de deploy en un 40%."
+          - "Mentoreé a 3 desarrolladores junior en buenas prácticas de testing (JUnit, Mockito)."
+
+      - company: Beta Software SA
+        position: Backend Developer
+        location: Remoto
+        start_date: 2019-01
+        end_date: 2021-02
+        highlights:
+          - "Desarrollé módulos de facturación en Java 11 / Spring Boot consumidos por más de 50 clientes B2B."
+          - "Optimicé queries en PostgreSQL que redujeron el tiempo de respuesta de reportes en un 60%."
+          - "Participé en el diseño de la arquitectura de eventos con RabbitMQ."
+
+      - company: Gamma Solutions
+        position: Soporte Técnico N2
+        location: Buenos Aires, Argentina
+        start_date: 2017-06
+        end_date: 2018-12
+        highlights:
+          - "Atendí tickets de nivel 2 para clientes corporativos, con foco en incidentes de infraestructura."
+          - "Documenté procesos internos de resolución de incidentes, reduciendo el tiempo promedio de respuesta."
+
+    education:
+      - institution: Universidad de Buenos Aires (UBA)
+        area: Ingeniería en Informática
+        degree: Ingeniero
+        location: Buenos Aires, Argentina
+        start_date: 2013-03
+        end_date: 2019-12
+        highlights:
+          - "Promedio 8.20/10."
+
+    skills:
+      - label: Lenguajes
+        details: Java, Python, SQL, TypeScript
+      - label: Frameworks & Librerías
+        details: Spring Boot, Spring Security, Hibernate, JUnit, React
+      - label: Infraestructura
+        details: Docker, Kubernetes, AWS (ECS, RDS, S3), GitHub Actions
+      - label: Bases de datos
+        details: PostgreSQL, MySQL, Redis
+      - label: Soporte & Operaciones
+        details: ITIL, Zendesk, monitoreo con Grafana
+
+    projects:
+      - name: Sistema de reservas open-source
+        date: 2022
+        highlights:
+          - "Construí un backend en Spring Boot con arquitectura hexagonal, publicado en GitHub con +200 estrellas."
+      - name: Bot de soporte interno
+        date: 2018
+        highlights:
+          - "Automaticé respuestas de nivel 1 para el equipo de soporte usando Python y la API de Slack."
+
+design:
+  theme: engineeringresumes
