@@ -12,7 +12,9 @@ ollama>=0.4.4
 PyYAML>=6.0.2
 
 # --- Renderizado CV YAML -> PDF ---
-rendercv>=1.20
+# OJO: el extra [full] es obligatorio, si instalás solo "rendercv" el CLI
+# te va a pedir que reinstales con [full] (trae el motor Typst embebido).
+rendercv[full]>=2.8
 
 # --- Utilidades de consola (opcional, mejora los prints) ---
 rich>=13.9.4

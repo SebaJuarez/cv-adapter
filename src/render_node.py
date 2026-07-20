@@ -73,7 +73,7 @@ def render_pdf_node(state: CVState) -> CVState:
             [
                 sys.executable, "-m", "rendercv", "render",
                 target_path,
-                "--output-folder-name", str(output_dir),
+                "--output-folder", str(output_dir),
             ],
             capture_output=True,
             text=True,
