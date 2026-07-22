@@ -5,21 +5,15 @@ orden) y arma el target_cv. Ningún string nuevo se genera acá: todo texto
 proviene, byte a byte, de master_cv. Esta función es la barrera técnica
 real contra alucinaciones (más fuerte que cualquier instrucción de prompt).
 
-Además, ACÁ (no en el prompt) se fuerza el presupuesto de "una sola hoja":
-un modelo de 8B local puede ignorar instrucciones de brevedad del prompt,
-así que los límites de cantidad de entradas/bullets se aplican con código,
-no se le pide amablemente al LLM que se porte bien.
+El presupuesto de "una sola página" se fuerza ACÁ con código (no solo con
+el prompt): un modelo de 8B local puede ignorar instrucciones de brevedad,
+así que los límites vienen de config.json (ver src/config.py) y se aplican
+siempre, sin importar cuánto contenido pida devolver el LLM.
 """
 from copy import deepcopy
 from typing import Any, Dict, List, Optional
 
-# --- Presupuesto de una página (ajustable) ---
-MAX_EXPERIENCE_ENTRIES = 2
-MAX_PROJECT_ENTRIES = 2
-MAX_HIGHLIGHTS_PER_ENTRY = 4
-MAX_SKILL_CATEGORIES = 6
-MAX_EDUCATION_EXTRA = 1
-MAX_KEYWORDS = 10
+from .config import load_config
 
 
 def validate_master_cv_structure(master_cv: Dict[str, Any]) -> List[str]:
@@ -54,6 +48,24 @@ def validate_master_cv_structure(master_cv: Dict[str, Any]) -> List[str]:
     return errors
 
 
+def strip_internal_keys(data: Any) -> Any:
+    """Saca recursivamente cualquier clave que empiece con '_' (metadata
+    interna que usa el frontend, como '_src_section'/'_src_index' para la
+    función de 'traer bullet del master'). RenderCV rechaza cualquier
+    clave que no reconozca, así que esto TIENE que correr antes de
+    guardar/renderizar cualquier YAML que haya pasado por la UI web.
+    """
+    if isinstance(data, dict):
+        return {
+            k: strip_internal_keys(v)
+            for k, v in data.items()
+            if not (isinstance(k, str) and k.startswith("_"))
+        }
+    if isinstance(data, list):
+        return [strip_internal_keys(v) for v in data]
+    return data
+
+
 def _safe_get(lst: List[Any], idx: Optional[int]) -> Any:
     if idx is None or not isinstance(idx, int):
         return None
@@ -65,6 +77,7 @@ def _apply_entry_selection(
     selection_items: List[Dict[str, Any]],
     max_entries: int,
     max_highlights: int,
+    source_section: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """Lógica compartida por 'experience' y 'projects': para cada entrada
     elegida por el LLM (por índice), copia la entrada original y le aplica
@@ -72,6 +85,10 @@ def _apply_entry_selection(
     `max_highlights`, sin importar cuántos haya pedido el modelo. También
     recorta la cantidad de entradas a `max_entries` (se queda con las
     primeras, asumiendo que el LLM ya las ordenó de más a menos relevante).
+
+    Si `source_section` viene seteado, cada entrada devuelta lleva además
+    '_src_section'/'_src_index' (metadata interna, ver strip_internal_keys)
+    para que el frontend pueda ofrecer "traer un bullet más del master".
     """
     result: List[Dict[str, Any]] = []
 
@@ -79,7 +96,8 @@ def _apply_entry_selection(
         if len(result) >= max_entries:
             break
 
-        original = _safe_get(master_list, item.get("index"))
+        idx = item.get("index")
+        original = _safe_get(master_list, idx)
         if original is None:
             continue  # índice inválido -> se ignora, jamás se inventa una entrada
 
@@ -95,25 +113,28 @@ def _apply_entry_selection(
             if len(filtered_highlights) >= max_highlights:
                 break
 
-        # Si el LLM no devolvió nada usable, conservamos los primeros N originales
         entry["highlights"] = filtered_highlights or original_highlights[:max_highlights]
+        if source_section is not None:
+            entry["_src_section"] = source_section
+            entry["_src_index"] = idx
         result.append(entry)
 
     return result
 
 
-def _build_verified_keywords(master_cv: Dict[str, Any], candidate_keywords: List[str]) -> List[str]:
+def _build_verified_keywords(
+    master_cv: Dict[str, Any], candidate_keywords: List[str], max_keywords: int
+) -> List[str]:
     """El LLM puede 'alucinar' una keyword que suena bien pero no está
     respaldada por el CV real. Acá se verifica cada candidata contra un
     corpus armado con TODO el texto del master_cv (summary, highlights,
     skills, languages) y se descarta cualquiera que no aparezca literalmente
-    (case-insensitive). Es la misma barrera anti-alucinación aplicada a
-    keywords en vez de a bullets completos.
+    (case-insensitive).
     """
     sections = master_cv.get("cv", {}).get("sections", {})
     corpus_parts: List[str] = []
 
-    for section_name, entries in sections.items():
+    for entries in sections.values():
         if not isinstance(entries, list):
             continue
         for entry in entries:
@@ -127,19 +148,25 @@ def _build_verified_keywords(master_cv: Dict[str, Any], candidate_keywords: List
 
     corpus = " \n ".join(corpus_parts).lower()
 
-    verified = []
+    verified: List[str] = []
     for kw in candidate_keywords:
         if not isinstance(kw, str) or not kw.strip():
             continue
-        if kw.strip().lower() in corpus and kw.strip() not in verified:
-            verified.append(kw.strip())
-        if len(verified) >= MAX_KEYWORDS:
+        kw_clean = kw.strip()
+        if kw_clean.lower() in corpus and kw_clean not in verified:
+            verified.append(kw_clean)
+        if len(verified) >= max_keywords:
             break
 
     return verified
 
 
-def build_target_cv(master_cv: Dict[str, Any], selection: Dict[str, Any]) -> Dict[str, Any]:
+def build_target_cv(
+    master_cv: Dict[str, Any],
+    selection: Dict[str, Any],
+    config: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    config = config or load_config()
     master_sections = master_cv.get("cv", {}).get("sections", {})
     new_sections: Dict[str, Any] = {}
 
@@ -152,35 +179,34 @@ def build_target_cv(master_cv: Dict[str, Any], selection: Dict[str, Any]) -> Dic
 
     # --- Keywords ATS: verificadas contra el propio master_cv, nunca inventadas ---
     verified_keywords = _build_verified_keywords(
-        master_cv, selection.get("keywords_detected", []) or []
+        master_cv, selection.get("keywords_detected", []) or [], config["max_keywords"]
     )
     if verified_keywords:
         new_sections["keywords"] = ["Palabras clave: " + ", ".join(verified_keywords)]
 
-    # --- Experiencia: máx MAX_EXPERIENCE_ENTRIES, máx MAX_HIGHLIGHTS_PER_ENTRY bullets c/u ---
-    master_experience = master_sections.get("experience", [])
+    # --- Experiencia ---
     new_experience = _apply_entry_selection(
-        master_experience,
+        master_sections.get("experience", []),
         selection.get("selected_experience", []),
-        MAX_EXPERIENCE_ENTRIES,
-        MAX_HIGHLIGHTS_PER_ENTRY,
+        config["max_experience_entries"],
+        config["max_highlights_per_entry"],
+        source_section="experience",
     )
     if new_experience:
         new_sections["experience"] = new_experience
 
-    # --- Proyectos: máx MAX_PROJECT_ENTRIES, máx MAX_HIGHLIGHTS_PER_ENTRY bullets c/u ---
-    master_projects = master_sections.get("projects", [])
+    # --- Proyectos ---
     new_projects = _apply_entry_selection(
-        master_projects,
+        master_sections.get("projects", []),
         selection.get("selected_projects", []),
-        MAX_PROJECT_ENTRIES,
-        MAX_HIGHLIGHTS_PER_ENTRY,
+        config["max_project_entries"],
+        config["max_highlights_per_entry"],
+        source_section="projects",
     )
     if new_projects:
         new_sections["projects"] = new_projects
 
-    # --- Educación: el título principal (índice 0) SIEMPRE se incluye;
-    #     certificaciones adicionales son opcionales y limitadas ---
+    # --- Educación: el título principal (índice 0) SIEMPRE se incluye ---
     master_education = master_sections.get("education", [])
     if master_education:
         new_education = [deepcopy(master_education[0])]
@@ -188,39 +214,27 @@ def build_target_cv(master_cv: Dict[str, Any], selection: Dict[str, Any]) -> Dic
             i for i in selection.get("selected_education_indices", [])
             if isinstance(i, int) and 0 < i < len(master_education)
         ]
-        for i in extra_indices[:MAX_EDUCATION_EXTRA]:
+        for i in extra_indices[: config["max_education_extra"]]:
             new_education.append(deepcopy(master_education[i]))
         new_sections["education"] = new_education
 
-    # --- Skills: máx MAX_SKILL_CATEGORIES, priorizando el orden que dio el LLM ---
+    # --- Skills ---
     master_skills = master_sections.get("skills", [])
-    skill_indices = []
+    skill_indices: List[int] = []
     for i in selection.get("selected_skills_indices", []):
         if isinstance(i, int) and 0 <= i < len(master_skills) and i not in skill_indices:
             skill_indices.append(i)
-    skill_indices = skill_indices[:MAX_SKILL_CATEGORIES]
+    skill_indices = skill_indices[: config["max_skill_categories"]]
     if skill_indices:
         new_sections["skills"] = [master_skills[i] for i in skill_indices]
 
-    # --- Languages: se mantienen siempre igual (no aportan largo relevante) ---
+    # --- Languages: se mantienen siempre igual ---
     if master_sections.get("languages"):
         new_sections["languages"] = deepcopy(master_sections["languages"])
 
     target = deepcopy(master_cv)
     target["cv"]["sections"] = new_sections
+    target.setdefault("design", {})["theme"] = config.get(
+        "rendercv_theme", target.get("design", {}).get("theme", "engineeringresumes")
+    )
     return target
-
-def strip_internal_keys(data: Any) -> Any:
-    """
-    Elimina recursivamente las claves internas (que empiezan con '_')
-    agregadas por el frontend para que RenderCV no rechace el YAML.
-    """
-    if isinstance(data, dict):
-        return {
-            k: strip_internal_keys(v)
-            for k, v in data.items()
-            if not (isinstance(k, str) and k.startswith("_"))
-        }
-    elif isinstance(data, list):
-        return [strip_internal_keys(item) for item in data]
-    return data
