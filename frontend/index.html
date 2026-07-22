@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>cv-adapter</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <span class="brand">cv&#8209;adapter</span>
+  <nav class="tabs" id="tabs">
+    <button class="tab is-active" data-view="master">CV maestro</button>
+    <button class="tab" data-view="apply">Nueva aplicación</button>
+    <button class="tab" data-view="settings">Configuración</button>
+  </nav>
+</header>
+
+<main id="view-master" class="view is-active">
+  <div class="view-head">
+    <h1>CV maestro</h1>
+    <p class="lede">Toda tu experiencia, sin filtrar. No excluyas nada acá — cuanto más completo esté, mejor se puede adaptar a cada oferta.</p>
+  </div>
+  <div id="master-header"></div>
+  <div id="master-sections"></div>
+  <button id="add-section-master" class="btn btn-ghost btn-add-section">+ Agregar sección</button>
+  <div class="save-bar">
+    <span id="master-status" class="status"></span>
+    <button id="save-master" class="btn btn-primary">Guardar CV maestro</button>
+  </div>
+</main>
+
+<main id="view-apply" class="view">
+  <div class="view-head">
+    <h1>Nueva aplicación</h1>
+    <p class="lede">Pegá la oferta laboral. El modelo elige, de tu CV maestro, lo que más matchea — vos revisás, ajustás y recién ahí generás el PDF.</p>
+  </div>
+
+  <section class="intake">
+    <label for="job-description">Oferta laboral</label>
+    <textarea id="job-description" rows="10" placeholder="Pegá acá el texto completo de la oferta…"></textarea>
+    <div class="save-bar">
+      <span id="generate-status" class="status"></span>
+      <button id="generate-btn" class="btn btn-primary">Generar CV para esta oferta</button>
+    </div>
+  </section>
+
+  <section id="apply-result" class="apply-result" hidden>
+    <div class="keywords-row">
+      <span class="eyebrow">keywords</span>
+      <div id="keywords-list" class="keywords-list"></div>
+    </div>
+    <div id="target-header"></div>
+    <div id="target-sections"></div>
+    <button id="add-section-target" class="btn btn-ghost btn-add-section">+ Agregar sección</button>
+    <div class="save-bar">
+      <span id="render-status" class="status"></span>
+      <button id="render-btn" class="btn btn-primary">Generar PDF</button>
+      <a id="download-link" class="btn btn-ghost" href="/api/download-pdf" hidden>Descargar PDF</a>
+    </div>
+  </section>
+</main>
+
+<main id="view-settings" class="view">
+  <div class="view-head">
+    <h1>Configuración</h1>
+    <p class="lede">Estos límites se aplican siempre por código, sin importar qué devuelva el modelo — así el CV entra en una página.</p>
+  </div>
+  <form id="settings-form" class="settings-form"></form>
+  <div class="save-bar">
+    <span id="settings-status" class="status"></span>
+    <button id="save-settings" class="btn btn-primary">Guardar configuración</button>
+  </div>
+</main>
+
+<div id="modal-overlay" class="modal-overlay" hidden>
+  <div id="modal-box" class="modal-box"></div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

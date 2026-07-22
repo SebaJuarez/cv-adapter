@@ -2,6 +2,10 @@
 langgraph>=0.2.60
 langchain-core>=0.3.28
 
+# --- Frontend web local ---
+fastapi>=0.115.0
+uvicorn>=0.32.0
+
 # --- Cliente Ollama (LLM local) ---
 # Requiere Ollama >= 0.5 instalado en el sistema (no es un paquete pip) para
 # soportar Structured Outputs (parámetro `format` con JSON Schema).
