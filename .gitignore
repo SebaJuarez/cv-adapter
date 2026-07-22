@@ -9,3 +9,7 @@
 /data/job_description.txt
 
 target_cv.yaml
+
+config.json
+
+__pycache__

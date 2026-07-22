@@ -209,3 +209,18 @@ def build_target_cv(master_cv: Dict[str, Any], selection: Dict[str, Any]) -> Dic
     target = deepcopy(master_cv)
     target["cv"]["sections"] = new_sections
     return target
+
+def strip_internal_keys(data: Any) -> Any:
+    """
+    Elimina recursivamente las claves internas (que empiezan con '_')
+    agregadas por el frontend para que RenderCV no rechace el YAML.
+    """
+    if isinstance(data, dict):
+        return {
+            k: strip_internal_keys(v)
+            for k, v in data.items()
+            if not (isinstance(k, str) and k.startswith("_"))
+        }
+    elif isinstance(data, list):
+        return [strip_internal_keys(item) for item in data]
+    return data
