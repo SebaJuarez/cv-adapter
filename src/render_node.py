@@ -3,6 +3,7 @@
   2. Pausar y pedir confirmación humana por consola (safety gate).
   3. Ejecutar RenderCV para compilar el PDF final, con manejo de errores.
 """
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -63,10 +64,30 @@ def route_after_review(state: CVState) -> str:
 def render_pdf_node(state: CVState) -> CVState:
     """Ejecuta `rendercv render target_cv.yaml`. Si el YAML quedó mal
     formado o RenderCV no está instalado, se captura y reporta el error
-    sin tirar abajo el proceso completo."""
+    sin tirar abajo el proceso completo.
+
+    Nota Windows: en algunas consolas (cp1252), la librería `rich` que usa
+    RenderCV para imprimir el panel de éxito final puede tirar un
+    UnicodeEncodeError al intentar escribir un tilde (✓), AUNQUE el PDF ya
+    se haya generado correctamente. Por eso: (a) forzamos UTF-8/sin color
+    en el subproceso para evitar que pase, y (b) igual verificamos si el
+    PDF quedó en disco antes de reportar error, como red de seguridad.
+    """
     target_path = state["target_cv_path"]
     output_dir = Path("output")
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Fuerza UTF-8 y desactiva el renderizado con color/estilos de rich,
+    # que es lo que dispara el bug de encoding en consolas Windows (cp1252).
+    env = os.environ.copy()
+    env["PYTHONUTF8"] = "1"
+    env["PYTHONIOENCODING"] = "utf-8"
+    env["NO_COLOR"] = "1"
+    env["TERM"] = "dumb"
+
+    def _pdf_was_generated() -> Path | None:
+        pdfs = list(output_dir.rglob("*.pdf"))
+        return pdfs[0] if pdfs else None
 
     try:
         result = subprocess.run(
@@ -76,21 +97,33 @@ def render_pdf_node(state: CVState) -> CVState:
                 "--output-folder", str(output_dir),
             ],
             capture_output=True,
-            text=True,
+            encoding="utf-8",
+            errors="replace",   # nunca revienta por un carácter raro al decodificar
             timeout=180,
             check=True,
+            env=env,
         )
         print(result.stdout)
         state["output_pdf_path"] = str(output_dir)
         state["error"] = None
 
     except subprocess.CalledProcessError as e:
-        state["error"] = (
-            "RenderCV falló al compilar el YAML (probablemente quedó mal "
-            f"formado o no cumple el schema esperado).\n"
-            f"--- STDOUT ---\n{e.stdout}\n--- STDERR ---\n{e.stderr}"
-        )
-        state["output_pdf_path"] = None
+        generated_pdf = _pdf_was_generated()
+        if generated_pdf:
+            # El PDF se generó igual: el error fue cosmético (ej. un problema
+            # de encoding al imprimir el mensaje final), no de compilación.
+            print(f"\n⚠️  RenderCV tiró un error al imprimir su mensaje final "
+                  f"(probablemente un problema de encoding de consola en "
+                  f"Windows), pero el PDF SÍ se generó: {generated_pdf}")
+            state["output_pdf_path"] = str(output_dir)
+            state["error"] = None
+        else:
+            state["error"] = (
+                "RenderCV falló al compilar el YAML (probablemente quedó mal "
+                f"formado o no cumple el schema esperado).\n"
+                f"--- STDOUT ---\n{e.stdout}\n--- STDERR ---\n{e.stderr}"
+            )
+            state["output_pdf_path"] = None
 
     except subprocess.TimeoutExpired:
         state["error"] = "RenderCV tardó demasiado en compilar (timeout de 180s)."
@@ -99,7 +132,7 @@ def render_pdf_node(state: CVState) -> CVState:
     except FileNotFoundError:
         state["error"] = (
             "No se encontró el comando 'rendercv'. ¿Está instalado en este "
-            "entorno? Corré: pip install rendercv"
+            "entorno? Corré: pip install \"rendercv[full]\""
         )
         state["output_pdf_path"] = None
 

@@ -13,7 +13,7 @@ import yaml
 from langgraph.graph import END, StateGraph
 
 from src.llm_node import generate_selection_node
-from src.merge import build_target_cv
+from src.merge import build_target_cv, validate_master_cv_structure
 from src.render_node import (
     human_review_node,
     render_pdf_node,
@@ -39,6 +39,14 @@ def load_inputs_node(state: CVState) -> CVState:
             state["master_cv_raw"] = yaml.safe_load(f)
     except yaml.YAMLError as e:
         state["error"] = f"master_cv.yaml mal formado: {e}"
+        return state
+
+    structure_errors = validate_master_cv_structure(state["master_cv_raw"])
+    if structure_errors:
+        state["error"] = (
+            "master_cv.yaml tiene bullets rotos por falta de comillas:\n  - "
+            + "\n  - ".join(structure_errors)
+        )
         return state
 
     with open(jd_path, "r", encoding="utf-8") as f:
