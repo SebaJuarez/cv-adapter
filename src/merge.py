@@ -15,7 +15,7 @@ from typing import Any, Dict, List, Optional
 
 # --- Presupuesto de una página (ajustable) ---
 MAX_EXPERIENCE_ENTRIES = 2
-MAX_PROJECT_ENTRIES = 3
+MAX_PROJECT_ENTRIES = 2
 MAX_HIGHLIGHTS_PER_ENTRY = 4
 MAX_SKILL_CATEGORIES = 6
 MAX_EDUCATION_EXTRA = 1

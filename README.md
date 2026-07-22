@@ -1,8 +1,6 @@
-# cv-adapter — Adaptador de CV local ($0, 100% offline)
-
+# Adaptador de CV
 Pipeline LangGraph que adapta tu `master_cv.yaml` a una oferta laboral usando
-un LLM local (Ollama), con una pausa humana obligatoria antes de compilar
-el PDF con RenderCV.
+un LLM local (Ollama).
 
 ## Por qué es seguro contra alucinaciones
 
