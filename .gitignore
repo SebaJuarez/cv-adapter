@@ -3,3 +3,9 @@
 /src/__pycache__/
 
 /output
+
+/data/master_cv.yaml
+
+/data/job_descriptions.yaml
+
+target_cv.yaml
