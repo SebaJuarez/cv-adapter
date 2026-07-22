@@ -40,6 +40,8 @@
   <section class="intake">
     <label for="job-description">Oferta laboral</label>
     <textarea id="job-description" rows="10" placeholder="Pegá acá el texto completo de la oferta…"></textarea>
+    <label for="ats-keywords" style="margin-top:0.9rem">Palabras clave a verificar (opcional) — simula un filtro ATS</label>
+    <input type="text" id="ats-keywords" placeholder="ej: Kubernetes, Scrum, PostgreSQL (separadas por coma)">
     <div class="save-bar">
       <span id="generate-status" class="status"></span>
       <button id="generate-btn" class="btn btn-primary">Generar CV para esta oferta</button>
@@ -51,6 +53,7 @@
       <span class="eyebrow">keywords</span>
       <div id="keywords-list" class="keywords-list"></div>
     </div>
+    <div id="ats-checklist" class="ats-checklist"></div>
     <div id="target-header"></div>
     <div id="target-sections"></div>
     <button id="add-section-target" class="btn btn-ghost btn-add-section">+ Agregar sección</button>

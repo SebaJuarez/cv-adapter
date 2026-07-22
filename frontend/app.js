@@ -59,6 +59,42 @@ function setStatus(el, message, kind) {
   el.className = "status" + (kind ? " " + kind : "");
 }
 
+// -------------------------------------------------------- chequeo ATS
+
+function buildDocCorpus(doc) {
+  if (!doc) return "";
+  const parts = [];
+  const walk = (v) => {
+    if (typeof v === "string") parts.push(v);
+    else if (Array.isArray(v)) v.forEach(walk);
+    else if (v && typeof v === "object") {
+      Object.entries(v).forEach(([k, val]) => { if (!k.startsWith("_")) walk(val); });
+    }
+  };
+  walk((doc.cv && doc.cv.sections) || {});
+  return parts.join(" \n ").toLowerCase();
+}
+
+function renderAtsChecklist() {
+  const container = $("#ats-checklist");
+  if (!container) return;
+  const raw = ($("#ats-keywords") && $("#ats-keywords").value) || "";
+  const keywords = raw.split(",").map((s) => s.trim()).filter(Boolean);
+  container.innerHTML = "";
+  if (keywords.length === 0 || !state.targetDoc) return;
+
+  const targetCorpus = buildDocCorpus(state.targetDoc);
+  const masterCorpus = buildDocCorpus(state.masterDocSnapshot);
+
+  keywords.forEach((kw) => {
+    const low = kw.toLowerCase();
+    let cls = "ats-missing", title = "no está en tu CV maestro — no se puede agregar sin inventar";
+    if (targetCorpus.includes(low)) { cls = "ats-ok"; title = "está en el CV que vas a generar"; }
+    else if (masterCorpus.includes(low)) { cls = "ats-gap"; title = "está en tu master pero no en esta selección — probá 'traer bullet del master'"; }
+    container.appendChild(h("span", { class: "ats-item " + cls, title }, kw));
+  });
+}
+
 // -------------------------------------------------------------- modal
 
 function openModal(builder) {
@@ -179,12 +215,38 @@ function renderSectionBlock(name, entries, ctx) {
     },
   }, "×");
 
+  const regeneratable = ["experience", "projects", "skills"];
+  let regenBtn = null;
+  if (ctx.isTarget && regeneratable.includes(name)) {
+    regenBtn = h("button", { class: "btn-icon regen", title: "Regenerar esta sección con la IA" }, "↻");
+    regenBtn.addEventListener("click", async () => {
+      const jd = $("#job-description").value;
+      if (!jd.trim()) { alert("Necesito el texto de la oferta (pestaña de arriba) para regenerar."); return; }
+      regenBtn.disabled = true;
+      regenBtn.textContent = "…";
+      try {
+        const result = await api("/api/regenerate-section", {
+          method: "POST",
+          body: JSON.stringify({ job_description: jd, section_name: name }),
+        });
+        ctx.doc.cv.sections[name] = result.entries;
+        state.selection = state.selection || {};
+        Object.assign(state.selection, result.selection);
+        ctx.onRerender();
+      } catch (e) {
+        alert("No se pudo regenerar la sección: " + e.message);
+        regenBtn.disabled = false;
+        regenBtn.textContent = "↻";
+      }
+    });
+  }
+
   block.appendChild(h("div", { class: "section-head" }, [
     h("div", { class: "titles" }, [
       h("h2", {}, humanizeSectionName(name)),
       h("span", { class: "eyebrow" }, name),
     ]),
-    h("div", { class: "section-actions" }, [removeBtn]),
+    h("div", { class: "section-actions" }, [regenBtn, removeBtn]),
   ]));
 
   if (type === "text") block.appendChild(renderTextList(name, entries, ctx));
@@ -487,12 +549,24 @@ $("#generate-btn").addEventListener("click", async () => {
   const statusEl = $("#generate-status");
   const jd = $("#job-description").value;
   if (!jd.trim()) { setStatus(statusEl, "Pegá la oferta laboral primero.", "error"); return; }
+  if (jd.trim().length < 40) {
+    const proceed = confirm(
+      "La oferta parece muy corta. Con poco texto el modelo tiene menos para basarse y puede " +
+      "traer contenido genérico. ¿Generar igual?"
+    );
+    if (!proceed) return;
+  }
+
+  const manualKeywords = ($("#ats-keywords").value || "").split(",").map((s) => s.trim()).filter(Boolean);
 
   const btn = $("#generate-btn");
   btn.disabled = true;
   setStatus(statusEl, "Consultando al modelo local (puede tardar según tu hardware)…");
   try {
-    const result = await api("/api/generate", { method: "POST", body: JSON.stringify({ job_description: jd }) });
+    const result = await api("/api/generate", {
+      method: "POST",
+      body: JSON.stringify({ job_description: jd, manual_keywords: manualKeywords }),
+    });
     state.targetDoc = { cv: result.target_cv.cv, design: result.target_cv.design };
     state.selection = result.selection;
     state.masterDocSnapshot = result.master_cv;
@@ -526,7 +600,10 @@ function drawTargetView() {
     onRerender: drawTargetView,
   };
   renderSections($("#target-sections"), ctx);
+  renderAtsChecklist();
 }
+
+$("#ats-keywords").addEventListener("input", renderAtsChecklist);
 
 $("#add-section-target").addEventListener("click", async () => {
   const result = await promptAddSection();

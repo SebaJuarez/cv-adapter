@@ -19,8 +19,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from src.config import DEFAULTS, load_config, save_config
-from src.llm_node import generate_selection
-from src.merge import build_target_cv, strip_internal_keys, validate_master_cv_structure
+from src.llm_node import generate_section_selection, generate_selection
+from src.merge import build_section_entries, build_target_cv, strip_internal_keys, validate_master_cv_structure
 from src.render_node import run_rendercv, save_yaml
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -34,6 +34,12 @@ app = FastAPI(title="cv-adapter")
 
 class JobDescriptionIn(BaseModel):
     job_description: str
+    manual_keywords: list[str] = []
+
+
+class RegenerateSectionIn(BaseModel):
+    job_description: str
+    section_name: str  # "experience" | "projects" | "skills"
 
 
 class CVDocumentIn(BaseModel):
@@ -115,8 +121,34 @@ def generate(payload: JobDescriptionIn) -> Dict[str, Any]:
     except RuntimeError as e:
         raise HTTPException(status_code=502, detail=str(e))
 
-    target_cv = build_target_cv(master_cv, selection, config)
+    target_cv = build_target_cv(
+        master_cv, selection, config,
+        job_description=payload.job_description,
+        manual_keywords=payload.manual_keywords,
+    )
     return {"target_cv": target_cv, "selection": selection, "master_cv": master_cv}
+
+
+@app.post("/api/regenerate-section")
+def regenerate_section(payload: RegenerateSectionIn) -> Dict[str, Any]:
+    if payload.section_name not in ("experience", "projects", "skills"):
+        raise HTTPException(status_code=400, detail="Sección no soportada para regenerar.")
+    if not MASTER_CV_PATH.exists():
+        raise HTTPException(status_code=404, detail="No existe data/master_cv.yaml.")
+
+    with open(MASTER_CV_PATH, "r", encoding="utf-8") as f:
+        master_cv = yaml.safe_load(f)
+
+    config = load_config()
+    try:
+        section_selection = generate_section_selection(
+            master_cv, payload.job_description, payload.section_name, config
+        )
+    except RuntimeError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+    entries = build_section_entries(master_cv, payload.section_name, section_selection, config)
+    return {"entries": entries, "selection": section_selection}
 
 
 @app.post("/api/render")

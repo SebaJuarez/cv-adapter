@@ -60,7 +60,7 @@ def merge_node(state: CVState) -> CVState:
     if state.get("error"):
         return state
     state["target_cv_dict"] = build_target_cv(
-        state["master_cv_raw"], state["llm_selection"]
+        state["master_cv_raw"], state["llm_selection"], job_description=state["job_description"]
     )
     return state
 

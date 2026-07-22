@@ -4,7 +4,6 @@
 reutilizadas tanto por los nodos del grafo (CLI) como por el endpoint
 /api/render de la app web.
 """
-
 import os
 import subprocess
 import sys
@@ -26,9 +25,7 @@ def save_yaml(data: dict, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     clean_data = strip_internal_keys(data)
     with open(path, "w", encoding="utf-8") as f:
-        yaml.safe_dump(
-            clean_data, f, allow_unicode=True, sort_keys=False, default_flow_style=False
-        )
+        yaml.safe_dump(clean_data, f, allow_unicode=True, sort_keys=False, default_flow_style=False)
 
 
 def run_rendercv(target_path: str, output_dir: Path) -> Tuple[bool, str, Optional[str]]:
@@ -55,15 +52,8 @@ def run_rendercv(target_path: str, output_dir: Path) -> Tuple[bool, str, Optiona
 
     try:
         result = subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "rendercv",
-                "render",
-                target_path,
-                "--output-folder",
-                str(output_dir),
-            ],
+            [sys.executable, "-m", "rendercv", "render", target_path,
+             "--output-folder", str(output_dir)],
             capture_output=True,
             encoding="utf-8",
             errors="replace",
@@ -76,41 +66,28 @@ def run_rendercv(target_path: str, output_dir: Path) -> Tuple[bool, str, Optiona
     except subprocess.CalledProcessError as e:
         generated_pdf = _pdf_was_generated()
         if generated_pdf:
-            return (
-                True,
-                (
-                    "RenderCV tiró un error al imprimir su mensaje final (probablemente "
-                    "un problema de encoding de consola en Windows), pero el PDF SÍ se "
-                    f"generó: {generated_pdf}"
-                ),
-                str(output_dir),
-            )
-        return (
-            False,
-            (
-                "RenderCV falló al compilar el YAML (probablemente quedó mal formado o "
-                f"no cumple el schema esperado).\n--- STDOUT ---\n{e.stdout}\n"
-                f"--- STDERR ---\n{e.stderr}"
-            ),
-            None,
-        )
+            return True, (
+                "RenderCV tiró un error al imprimir su mensaje final (probablemente "
+                "un problema de encoding de consola en Windows), pero el PDF SÍ se "
+                f"generó: {generated_pdf}"
+            ), str(output_dir)
+        return False, (
+            "RenderCV falló al compilar el YAML (probablemente quedó mal formado o "
+            f"no cumple el schema esperado).\n--- STDOUT ---\n{e.stdout}\n"
+            f"--- STDERR ---\n{e.stderr}"
+        ), None
 
     except subprocess.TimeoutExpired:
         return False, "RenderCV tardó demasiado en compilar (timeout de 180s).", None
 
     except FileNotFoundError:
-        return (
-            False,
-            (
-                "No se encontró el comando 'rendercv'. ¿Está instalado en este entorno? "
-                'Corré: pip install "rendercv[full]"'
-            ),
-            None,
-        )
+        return False, (
+            "No se encontró el comando 'rendercv'. ¿Está instalado en este entorno? "
+            'Corré: pip install "rendercv[full]"'
+        ), None
 
 
 # ---- Wrappers para el grafo LangGraph (usados por main.py / CLI) ----
-
 
 def save_target_cv_node(state: CVState) -> CVState:
     if state.get("error"):

@@ -122,38 +122,46 @@ def _apply_entry_selection(
     return result
 
 
-def _build_verified_keywords(
-    master_cv: Dict[str, Any], candidate_keywords: List[str], max_keywords: int
-) -> List[str]:
-    """El LLM puede 'alucinar' una keyword que suena bien pero no está
-    respaldada por el CV real. Acá se verifica cada candidata contra un
-    corpus armado con TODO el texto del master_cv (summary, highlights,
-    skills, languages) y se descarta cualquiera que no aparezca literalmente
-    (case-insensitive).
-    """
+def _master_cv_corpus(master_cv: Dict[str, Any]) -> str:
     sections = master_cv.get("cv", {}).get("sections", {})
-    corpus_parts: List[str] = []
-
+    parts: List[str] = []
     for entries in sections.values():
         if not isinstance(entries, list):
             continue
         for entry in entries:
             if isinstance(entry, str):
-                corpus_parts.append(entry)
+                parts.append(entry)
             elif isinstance(entry, dict):
-                corpus_parts.append(str(entry.get("details", "")))
-                corpus_parts.append(str(entry.get("label", "")))
-                corpus_parts.append(str(entry.get("name", "")))
-                corpus_parts.extend(str(h) for h in entry.get("highlights", []) if isinstance(h, str))
+                parts.append(str(entry.get("details", "")))
+                parts.append(str(entry.get("label", "")))
+                parts.append(str(entry.get("name", "")))
+                parts.extend(str(h) for h in entry.get("highlights", []) if isinstance(h, str))
+    return " \n ".join(parts).lower()
 
-    corpus = " \n ".join(corpus_parts).lower()
+
+def _build_verified_keywords(
+    master_cv: Dict[str, Any],
+    job_description: str,
+    candidate_keywords: List[str],
+    max_keywords: int,
+) -> List[str]:
+    """El LLM puede 'alucinar' una keyword que suena bien pero no tiene nada
+    que ver con la oferta real (esto pasaba mucho con ofertas cortas: el
+    modelo terminaba repitiendo ejemplos del propio prompt). Una keyword
+    solo sobrevive si aparece literalmente en AMBOS lados:
+      1. el master_cv (respaldo real: la persona sabe eso), y
+      2. el job_description (relevancia real: la oferta lo pide).
+    """
+    master_corpus = _master_cv_corpus(master_cv)
+    jd_corpus = (job_description or "").lower()
 
     verified: List[str] = []
     for kw in candidate_keywords:
         if not isinstance(kw, str) or not kw.strip():
             continue
         kw_clean = kw.strip()
-        if kw_clean.lower() in corpus and kw_clean not in verified:
+        kw_low = kw_clean.lower()
+        if kw_low in master_corpus and kw_low in jd_corpus and kw_clean not in verified:
             verified.append(kw_clean)
         if len(verified) >= max_keywords:
             break
@@ -161,10 +169,48 @@ def _build_verified_keywords(
     return verified
 
 
+def build_section_entries(
+    master_cv: Dict[str, Any],
+    section_name: str,
+    section_selection: Dict[str, Any],
+    config: Optional[Dict[str, Any]] = None,
+) -> List[Any]:
+    """Arma el contenido de UNA sola sección ('experience' | 'projects' |
+    'skills') a partir de una selección scoped a esa sección. La usa tanto
+    build_target_cv (CV completo) como el endpoint de 'regenerar esta
+    sección' (re-seleccionar solo una parte sin tocar el resto del CV)."""
+    config = config or load_config()
+    master_sections = master_cv.get("cv", {}).get("sections", {})
+
+    if section_name in ("experience", "projects"):
+        max_entries = (
+            config["max_experience_entries"] if section_name == "experience" else config["max_project_entries"]
+        )
+        return _apply_entry_selection(
+            master_sections.get(section_name, []),
+            section_selection.get(f"selected_{section_name}", []),
+            max_entries,
+            config["max_highlights_per_entry"],
+            source_section=section_name,
+        )
+
+    if section_name == "skills":
+        master_skills = master_sections.get("skills", [])
+        skill_indices: List[int] = []
+        for i in section_selection.get("selected_skills_indices", []):
+            if isinstance(i, int) and 0 <= i < len(master_skills) and i not in skill_indices:
+                skill_indices.append(i)
+        return [master_skills[i] for i in skill_indices[: config["max_skill_categories"]]]
+
+    raise ValueError(f"Sección no soportada para regeneración scoped: {section_name}")
+
+
 def build_target_cv(
     master_cv: Dict[str, Any],
     selection: Dict[str, Any],
     config: Optional[Dict[str, Any]] = None,
+    job_description: str = "",
+    manual_keywords: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     config = config or load_config()
     master_sections = master_cv.get("cv", {}).get("sections", {})
@@ -177,32 +223,25 @@ def build_target_cv(
         s = _safe_get(master_summary, summary_idx) or master_summary[0]
         new_sections["summary"] = [s]
 
-    # --- Keywords ATS: verificadas contra el propio master_cv, nunca inventadas ---
+    # --- Keywords ATS: las del LLM se verifican contra master_cv + oferta;
+    #     las manuales (elegidas a mano por el usuario) solo contra master_cv ---
     verified_keywords = _build_verified_keywords(
-        master_cv, selection.get("keywords_detected", []) or [], config["max_keywords"]
+        master_cv, job_description, selection.get("keywords_detected", []) or [], config["max_keywords"]
     )
+    for kw in (manual_keywords or []):
+        kw_clean = (kw or "").strip()
+        if kw_clean and kw_clean.lower() in _master_cv_corpus(master_cv) and kw_clean not in verified_keywords:
+            verified_keywords.append(kw_clean)
+    verified_keywords = verified_keywords[: config["max_keywords"]]
     if verified_keywords:
         new_sections["keywords"] = ["Palabras clave: " + ", ".join(verified_keywords)]
 
-    # --- Experiencia ---
-    new_experience = _apply_entry_selection(
-        master_sections.get("experience", []),
-        selection.get("selected_experience", []),
-        config["max_experience_entries"],
-        config["max_highlights_per_entry"],
-        source_section="experience",
-    )
+    # --- Experiencia y proyectos (misma lógica que build_section_entries) ---
+    new_experience = build_section_entries(master_cv, "experience", selection, config)
     if new_experience:
         new_sections["experience"] = new_experience
 
-    # --- Proyectos ---
-    new_projects = _apply_entry_selection(
-        master_sections.get("projects", []),
-        selection.get("selected_projects", []),
-        config["max_project_entries"],
-        config["max_highlights_per_entry"],
-        source_section="projects",
-    )
+    new_projects = build_section_entries(master_cv, "projects", selection, config)
     if new_projects:
         new_sections["projects"] = new_projects
 
@@ -219,14 +258,9 @@ def build_target_cv(
         new_sections["education"] = new_education
 
     # --- Skills ---
-    master_skills = master_sections.get("skills", [])
-    skill_indices: List[int] = []
-    for i in selection.get("selected_skills_indices", []):
-        if isinstance(i, int) and 0 <= i < len(master_skills) and i not in skill_indices:
-            skill_indices.append(i)
-    skill_indices = skill_indices[: config["max_skill_categories"]]
-    if skill_indices:
-        new_sections["skills"] = [master_skills[i] for i in skill_indices]
+    new_skills = build_section_entries(master_cv, "skills", selection, config)
+    if new_skills:
+        new_sections["skills"] = new_skills
 
     # --- Languages: se mantienen siempre igual ---
     if master_sections.get("languages"):
