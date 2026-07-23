@@ -1,6 +1,9 @@
-# Adaptador de CV
+# cv-adapter — Adaptador de CV local ($0, 100% offline)
+
 Pipeline LangGraph que adapta tu `master_cv.yaml` a una oferta laboral usando
-un LLM local (Ollama).
+un LLM local (Ollama), con una pausa humana obligatoria antes de compilar
+el PDF con RenderCV. Incluye una interfaz web local simple para no tener
+que editar YAML a mano.
 
 ## Por qué es seguro contra alucinaciones
 
@@ -9,24 +12,23 @@ que apuntan a experiencia/skills/bullets que ya existen en `master_cv.yaml`
 (ver `src/prompts.py`). El armado real del `target_cv.yaml` lo hace código
 Python determinístico (`src/merge.py`), que copia texto literal del maestro.
 Si el LLM devuelve un índice inválido, se ignora — nunca se inventa contenido
-de reemplazo. A esto se suma la pausa humana antes de compilar el PDF.
+de reemplazo. A esto se suma la revisión humana (en la web o por consola)
+antes de compilar el PDF.
 
 ## Presupuesto de una página (forzado por código, no por prompt)
 
 Un modelo de 8B local no es confiable para "portarse bien" solo con
 instrucciones — así que los límites de longitud se aplican con código en
-`src/merge.py` (constantes `MAX_*` al principio del archivo), sin importar
-cuánto contenido pida devolver el LLM:
+`src/merge.py`, leyendo valores desde `config.json` (editable desde la
+pestaña **Configuración** de la web, o a mano), sin importar cuánto
+contenido pida devolver el LLM:
 
-- Máx. 2 experiencias laborales, máx. 3 proyectos.
-- Máx. 4 bullets por experiencia/proyecto (los que el LLM haya marcado como
+- Máx. N experiencias laborales, máx. N proyectos.
+- Máx. N bullets por experiencia/proyecto (los que el LLM haya marcado como
   más relevantes, según `highlight_order`).
-- Máx. 6 categorías de skills.
-- Educación: el título principal siempre se incluye; como máximo 1
-  certificación adicional si aplica.
-
-Si necesitás un presupuesto distinto (por ejemplo, CVs de dos páginas para
-perfiles senior), ajustá esas constantes en `src/merge.py`.
+- Máx. N categorías de skills.
+- Educación: el título principal siempre se incluye; hasta N
+  certificaciones adicionales si aplican.
 
 ## Optimización ATS
 
@@ -69,10 +71,32 @@ pip install -r requirements.txt
 > vez** (después queda cacheado localmente; el resto del pipeline sigue
 > siendo 100% local/offline).
 
-## 2. Uso
+## 2. Uso — interfaz web (recomendado)
+
+```bash
+uvicorn app:app --reload
+```
+
+Abrí `http://127.0.0.1:8000` en el navegador. Tres pestañas:
+
+- **CV maestro** — editá tu CV completo con un formulario (no YAML a mano):
+  agregar/sacar secciones enteras, entradas y bullets; reordenar con ↑/↓.
+- **Nueva aplicación** — pegá la oferta, tocá "Generar CV para esta oferta".
+  El resultado es editable: cada experiencia/proyecto muestra por qué se
+  eligió, y tenés un desplegable "traer bullet del master" para recuperar
+  contenido que el modelo dejó afuera pero vos querés incluir igual.
+  "Generar PDF" compila y te deja descargarlo.
+- **Configuración** — los límites de una página y el modelo de Ollama, ya
+  no hardcodeados: se guardan en `config.json`.
+
+La UI y el CLI comparten exactamente la misma lógica (`src/`), así que las
+garantías anti-alucinación son las mismas uses lo que uses.
+
+## 3. Uso — línea de comandos
 
 1. Reemplazá `data/master_cv.yaml` con tu CV real (mantené el schema de
-   RenderCV: `cv.sections.experience`, `cv.sections.skills`, etc.).
+   RenderCV: `cv.sections.experience`, `cv.sections.skills`, etc. — o armalo
+   directamente desde la web, es más simple).
 2. Pegá la oferta laboral en `data/job_description.txt`.
 3. Corré:
 
@@ -87,33 +111,40 @@ python main.py --master data/master_cv.yaml --job data/job_description.txt
    - Si respondés `y`, compila el PDF final en `output/`.
    - Si respondés `n`, corta ahí sin generar nada.
 
-## 3. Estructura del proyecto
+## 4. Estructura del proyecto
 
 ```
 cv-adapter/
 ├── README.md
 ├── requirements.txt
-├── main.py                  # arma y corre el grafo LangGraph
+├── config.json               # límites configurables (se crea al guardar desde la web)
+├── main.py                   # CLI: arma y corre el grafo LangGraph
+├── app.py                    # backend web (FastAPI) — reusa src/ tal cual
+├── frontend/
+│   ├── index.html
+│   ├── style.css
+│   └── app.js                # sin build step, JS plano
 ├── data/
-│   ├── master_cv.yaml       # tu CV completo (reemplazar por el real)
-│   └── job_description.txt  # oferta laboral (reemplazar por la real)
+│   ├── master_cv.yaml        # tu CV completo (reemplazar por el real)
+│   └── job_description.txt   # oferta laboral (solo la usa el CLI)
 ├── src/
-│   ├── state.py             # TypedDict del estado del grafo
-│   ├── prompts.py           # system prompt + JSON Schema (Structured Outputs)
-│   ├── llm_node.py          # llamada a Ollama
-│   ├── merge.py             # fusión determinística master + selección LLM
-│   └── render_node.py       # guardar YAML, pausa humana, render PDF
-├── target_cv.yaml           # generado en cada corrida (revisar antes de aprobar)
-└── output/                  # PDFs finales generados por RenderCV
+│   ├── config.py             # carga/guarda config.json
+│   ├── state.py              # TypedDict del estado del grafo (CLI)
+│   ├── prompts.py            # system prompt + JSON Schema, dinámicos según config
+│   ├── llm_node.py           # llamada a Ollama (función pelada + nodo del grafo)
+│   ├── merge.py              # fusión determinística + presupuesto de una página
+│   └── render_node.py        # guardar YAML + render PDF (función pelada + nodos)
+├── target_cv.yaml            # generado en cada corrida (revisar antes de aprobar)
+└── output/                   # PDFs finales generados por RenderCV
 ```
 
-## 4. Troubleshooting rápido
+## 5. Troubleshooting rápido
 
 - **"Error llamando a Ollama"** → confirmá que `ollama serve` está corriendo
-  y que el modelo (`OLLAMA_MODEL` en `src/llm_node.py`) fue descargado con
-  `ollama pull`.
+  y que el modelo (pestaña Configuración, o `ollama_model` en `config.json`)
+  fue descargado con `ollama pull`.
 - **"El LLM no devolvió JSON válido"** → normalmente pasa con modelos muy
-  chicos sin soporte real de structured outputs. Probá con `llama3.1:8b` o
-  subí `num_ctx` si tu master_cv es muy largo.
+  chicos sin soporte real de structured outputs. Probá con `llama3.1:8b`.
 - **"RenderCV falló al compilar el YAML"** → revisá `target_cv.yaml` a mano;
-  el error de `stderr` de RenderCV suele apuntar directo a la línea rota.
+  el error de `stderr` de RenderCV suele apuntar directo a la línea rota. La
+  causa más común es un bullet sin comillas con ": " en el medio del texto.
