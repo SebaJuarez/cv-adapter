@@ -109,6 +109,17 @@ button, input, textarea, select { font-family: inherit; font-size: inherit; colo
 
 .lede { color: var(--ink-soft); margin: 0; max-width: 56ch; }
 
+.global-status {
+  max-width: var(--measure);
+  margin: 0 auto;
+  padding: 0.7rem 1.75rem 0;
+  font-size: 0.86rem;
+  color: var(--ink-soft);
+}
+
+.global-status.global-error { color: var(--danger); }
+.global-status.global-ok { color: var(--accent-strong); }
+
 /* -------------------------------------------------------------- eyebrow */
 
 .eyebrow {
@@ -362,6 +373,30 @@ textarea.highlight-text { min-height: 1.6em; resize: none; overflow: hidden; }
 .status { font-size: 0.85rem; color: var(--ink-soft); }
 .status.error { color: var(--danger); white-space: pre-wrap; }
 .status.ok { color: var(--accent-strong); }
+
+.section-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 1rem;
+}
+
+.section-nav button {
+  appearance: none;
+  border: 1px solid var(--rule);
+  background: var(--paper-raised);
+  color: var(--ink-soft);
+  border-radius: var(--radius);
+  padding: 0.2rem 0.55rem;
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+  cursor: pointer;
+}
+
+.section-nav button:hover {
+  color: var(--ink);
+  border-color: var(--rule-strong);
+}
 
 .header-fields {
   display: grid;

@@ -14,6 +14,9 @@ const state = {
   targetDoc: null,
   selection: null,
   config: null,
+  masterDocSnapshot: null,
+  masterSectionTypes: {},
+  targetSectionTypes: {},
 };
 
 // ---------------------------------------------------------------- utils
@@ -59,6 +62,14 @@ function setStatus(el, message, kind) {
   el.className = "status" + (kind ? " " + kind : "");
 }
 
+function setGlobalStatus(message, kind) {
+  const el = $("#global-status");
+  if (!el) return;
+  el.textContent = message || "";
+  el.className = "global-status" + (kind ? " global-" + kind : "");
+  el.hidden = !message;
+}
+
 // -------------------------------------------------------- chequeo ATS
 
 function buildDocCorpus(doc) {
@@ -101,18 +112,68 @@ function openModal(builder) {
   return new Promise((resolve) => {
     const overlay = $("#modal-overlay");
     const box = $("#modal-box");
+    const previousFocus = document.activeElement;
     box.innerHTML = "";
     let settled = false;
     const close = (value) => {
       if (settled) return;
       settled = true;
       overlay.hidden = true;
+      overlay.onclick = null;
+      overlay.onkeydown = null;
+      if (previousFocus && typeof previousFocus.focus === "function") previousFocus.focus();
       resolve(value);
     };
     box.appendChild(builder(close));
     overlay.hidden = false;
     overlay.onclick = (e) => { if (e.target === overlay) close(null); };
+    overlay.onkeydown = (e) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        close(null);
+        return;
+      }
+      if (e.key !== "Tab") return;
+      const focusables = box.querySelectorAll("button, [href], input, select, textarea, [tabindex]:not([tabindex='-1'])");
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    const firstFocusable = box.querySelector("input, button, textarea, select, [href], [tabindex]:not([tabindex='-1'])");
+    if (firstFocusable && typeof firstFocusable.focus === "function") firstFocusable.focus();
   });
+}
+
+function showMessageModal(title, message) {
+  return openModal((close) => h("div", {}, [
+    h("h3", {}, title),
+    h("p", {}, message),
+    h("div", { class: "modal-actions" }, [
+      h("button", { class: "btn btn-primary", onclick: () => close(true) }, "Entendido"),
+    ]),
+  ]));
+}
+
+function confirmAction(opts) {
+  const title = opts.title || "Confirmar acción";
+  const message = opts.message || "¿Querés continuar?";
+  const confirmLabel = opts.confirmLabel || "Confirmar";
+  const cancelLabel = opts.cancelLabel || "Cancelar";
+  return openModal((close) => h("div", {}, [
+    h("h3", {}, title),
+    h("p", {}, message),
+    h("div", { class: "modal-actions" }, [
+      h("button", { class: "btn btn-ghost", onclick: () => close(false) }, cancelLabel),
+      h("button", { class: "btn btn-primary", onclick: () => close(true) }, confirmLabel),
+    ]),
+  ]));
 }
 
 function promptAddSection() {
@@ -167,12 +228,27 @@ function promptAddSection() {
 
 // -------------------------------------------------------- section types
 
-function detectSectionType(entries) {
+function defaultSectionType(name) {
+  if (["summary", "objective", "keywords", "interests"].includes(name)) return "text";
+  if (["skills", "languages"].includes(name)) return "label_details";
+  return "entries";
+}
+
+function detectSectionType(name, entries, sectionTypes) {
   if (!entries || entries.length === 0) return null;
   const first = entries[0];
   if (typeof first === "string") return "text";
   if (first && typeof first === "object" && "highlights" in first) return "entries";
   return "label_details";
+}
+
+function deriveSectionTypes(doc) {
+  const sections = doc?.cv?.sections || {};
+  const out = {};
+  Object.keys(sections).forEach((name) => {
+    out[name] = detectSectionType(name, sections[name], null) || defaultSectionType(name);
+  });
+  return out;
 }
 
 function blankEntryFor(sectionName, type) {
@@ -202,15 +278,44 @@ function renderSections(container, ctx) {
   }
 }
 
+function renderSectionNav(container, sectionsContainer, sections) {
+  if (!container) return;
+  container.innerHTML = "";
+  const names = Object.keys(sections || {});
+  if (names.length === 0) return;
+  names.forEach((name) => {
+    const entries = sections[name] || [];
+    const count = Array.isArray(entries) ? entries.length : 0;
+    const label = `${humanizeSectionName(name)} (${count})`;
+    const btn = h("button", {
+      type: "button",
+      onclick: () => {
+        const target = sectionsContainer.querySelector(`[data-section="${name}"]`);
+        if (target) target.scrollIntoView({ behavior: "smooth", block: "start" });
+      },
+    }, label);
+    container.appendChild(btn);
+  });
+}
+
 function renderSectionBlock(name, entries, ctx) {
-  const type = detectSectionType(entries) || ctx.sectionTypes?.[name] || "entries";
+  const type = detectSectionType(name, entries, ctx.sectionTypes) || ctx.sectionTypes?.[name] || defaultSectionType(name);
   const block = h("div", { class: "section-block", "data-section": name });
 
   const removeBtn = h("button", {
     class: "btn-icon danger", title: "Sacar sección",
-    onclick: () => {
-      if (!confirm(`¿Sacar la sección "${name}" del ${ctx.isTarget ? "CV generado" : "CV maestro"}?`)) return;
+    onclick: async () => {
+      const isCoreMasterSection = !ctx.isTarget && ["experience", "education", "skills"].includes(name);
+      const confirmed = await confirmAction({
+        title: "Eliminar sección",
+        message: isCoreMasterSection
+          ? `La sección "${humanizeSectionName(name)}" es base para el armado del CV. ¿Seguro que querés eliminarla del CV maestro?`
+          : `¿Sacar la sección "${humanizeSectionName(name)}" del ${ctx.isTarget ? "CV generado" : "CV maestro"}?`,
+        confirmLabel: "Eliminar sección",
+      });
+      if (!confirmed) return;
       delete ctx.doc.cv.sections[name];
+      if (ctx.sectionTypes) delete ctx.sectionTypes[name];
       ctx.onRerender();
     },
   }, "×");
@@ -221,7 +326,10 @@ function renderSectionBlock(name, entries, ctx) {
     regenBtn = h("button", { class: "btn-icon regen", title: "Regenerar esta sección con la IA" }, "↻");
     regenBtn.addEventListener("click", async () => {
       const jd = $("#job-description").value;
-      if (!jd.trim()) { alert("Necesito el texto de la oferta (pestaña de arriba) para regenerar."); return; }
+      if (!jd.trim()) {
+        await showMessageModal("Falta la oferta laboral", "Primero pegá la oferta laboral para poder regenerar esta sección.");
+        return;
+      }
       regenBtn.disabled = true;
       regenBtn.textContent = "…";
       try {
@@ -230,11 +338,14 @@ function renderSectionBlock(name, entries, ctx) {
           body: JSON.stringify({ job_description: jd, section_name: name }),
         });
         ctx.doc.cv.sections[name] = result.entries;
+        if (ctx.sectionTypes) ctx.sectionTypes[name] = detectSectionType(name, result.entries, ctx.sectionTypes) || defaultSectionType(name);
         state.selection = state.selection || {};
         Object.assign(state.selection, result.selection);
         ctx.onRerender();
+        setGlobalStatus(`Se regeneró "${humanizeSectionName(name)}".`, "ok");
       } catch (e) {
-        alert("No se pudo regenerar la sección: " + e.message);
+        setGlobalStatus("No se pudo regenerar la sección: " + e.message, "error");
+      } finally {
         regenBtn.disabled = false;
         regenBtn.textContent = "↻";
       }
@@ -286,6 +397,29 @@ function renderTextList(sectionName, entries, ctx) {
     class: "btn btn-ghost",
     onclick: () => { entries.push(""); ctx.onRerender(); },
   }, "+ Agregar"));
+  wrap.appendChild(h("button", {
+    class: "btn btn-ghost",
+    style: "margin-left:0.45rem",
+    onclick: async () => {
+      const lines = await openModal((close) => {
+        const ta = h("textarea", { rows: "8", placeholder: "Pegá una línea por ítem" });
+        return h("div", {}, [
+          h("h3", {}, "Agregar varios ítems"),
+          h("div", { class: "field" }, [ta]),
+          h("div", { class: "modal-actions" }, [
+            h("button", { class: "btn btn-ghost", onclick: () => close(null) }, "Cancelar"),
+            h("button", {
+              class: "btn btn-primary",
+              onclick: () => close(ta.value.split(/\r?\n/).map((x) => x.trim()).filter(Boolean)),
+            }, "Agregar"),
+          ]),
+        ]);
+      });
+      if (!lines || lines.length === 0) return;
+      entries.push(...lines);
+      ctx.onRerender();
+    },
+  }, "Pegar varios"));
 
   return wrap;
 }
@@ -333,7 +467,8 @@ function renderEntriesList(sectionName, entries, ctx) {
     wrap.appendChild(renderEntryCard(sectionName, entries, entry, i, ctx));
   });
 
-  wrap.appendChild(h("button", {
+  const actions = h("div", { class: "save-bar" });
+  actions.appendChild(h("button", {
     class: "btn btn-ghost",
     onclick: () => {
       const template = entries.length > 0
@@ -344,6 +479,18 @@ function renderEntriesList(sectionName, entries, ctx) {
       ctx.onRerender();
     },
   }, "+ Agregar entrada"));
+  actions.appendChild(h("button", {
+    class: "btn btn-ghost",
+    disabled: entries.length === 0 ? "disabled" : null,
+    onclick: () => {
+      const last = entries[entries.length - 1];
+      if (!last) return;
+      const copy = JSON.parse(JSON.stringify(last));
+      entries.push(copy);
+      ctx.onRerender();
+    },
+  }, "Duplicar última"));
+  wrap.appendChild(actions);
 
   return wrap;
 }
@@ -367,7 +514,16 @@ function renderEntryCard(sectionName, entries, entry, index, ctx) {
   }, "↓");
   const del = h("button", {
     class: "btn-icon danger", title: "Sacar entrada",
-    onclick: () => { entries.splice(index, 1); ctx.onRerender(); },
+    onclick: async () => {
+      const confirmed = await confirmAction({
+        title: "Eliminar entrada",
+        message: "¿Querés eliminar esta entrada?",
+        confirmLabel: "Eliminar",
+      });
+      if (!confirmed) return;
+      entries.splice(index, 1);
+      ctx.onRerender();
+    },
   }, "×");
 
   const card = h("div", { class: "entry-card" });
@@ -425,10 +581,37 @@ function renderHighlights(entry, ctx) {
     ]));
   });
 
-  wrap.appendChild(h("button", {
+  const actions = h("div", { class: "save-bar" });
+  actions.appendChild(h("button", {
     class: "btn btn-ghost",
     onclick: () => { entry.highlights.push(""); ctx.onRerender(); },
   }, "+ Agregar bullet"));
+  actions.appendChild(h("button", {
+    class: "btn btn-ghost",
+    onclick: async () => {
+      const paste = await openModal((close) => {
+        const ta = h("textarea", { rows: "8", placeholder: "Pegá una línea por bullet" });
+        return h("div", {}, [
+          h("h3", {}, "Agregar varios bullets"),
+          h("div", { class: "field" }, [ta]),
+          h("div", { class: "modal-actions" }, [
+            h("button", { class: "btn btn-ghost", onclick: () => close(null) }, "Cancelar"),
+            h("button", {
+              class: "btn btn-primary",
+              onclick: () => {
+                const lines = ta.value.split(/\r?\n/).map((x) => x.trim()).filter(Boolean);
+                close(lines);
+              },
+            }, "Agregar"),
+          ]),
+        ]);
+      });
+      if (!paste || paste.length === 0) return;
+      entry.highlights.push(...paste);
+      ctx.onRerender();
+    },
+  }, "Pegar varios bullets"));
+  wrap.appendChild(actions);
 
   return wrap;
 }
@@ -488,12 +671,22 @@ function renderHeader(container, doc, onDirty) {
     listEl.innerHTML = "";
     socials.forEach((s, i) => {
       const netInput = h("input", { type: "text", value: s.network || "", placeholder: "LinkedIn" });
-      netInput.addEventListener("input", () => (s.network = netInput.value));
+      netInput.addEventListener("input", () => { s.network = netInput.value; onDirty && onDirty(); });
       const userInput = h("input", { type: "text", value: s.username || "", placeholder: "usuario" });
-      userInput.addEventListener("input", () => (s.username = userInput.value));
+      userInput.addEventListener("input", () => { s.username = userInput.value; onDirty && onDirty(); });
       const del = h("button", {
         class: "btn-icon danger",
-        onclick: () => { socials.splice(i, 1); drawSocials(); },
+        onclick: async () => {
+          const confirmed = await confirmAction({
+            title: "Eliminar red social",
+            message: "¿Eliminar este enlace de redes?",
+            confirmLabel: "Eliminar",
+          });
+          if (!confirmed) return;
+          socials.splice(i, 1);
+          onDirty && onDirty();
+          drawSocials();
+        },
       }, "×");
       listEl.appendChild(h("div", { class: "social-row" }, [netInput, userInput, del]));
     });
@@ -502,7 +695,7 @@ function renderHeader(container, doc, onDirty) {
   socialWrap.appendChild(listEl);
   socialWrap.appendChild(h("button", {
     class: "btn btn-ghost",
-    onclick: () => { socials.push({ network: "", username: "" }); drawSocials(); },
+    onclick: () => { socials.push({ network: "", username: "" }); onDirty && onDirty(); drawSocials(); },
   }, "+ Agregar red"));
   container.appendChild(socialWrap);
 }
@@ -511,14 +704,17 @@ function renderHeader(container, doc, onDirty) {
 
 async function loadMasterView() {
   state.masterDoc = await api("/api/master-cv");
+  state.masterSectionTypes = deriveSectionTypes(state.masterDoc);
   drawMasterView();
 }
 
 function drawMasterView() {
   renderHeader($("#master-header"), state.masterDoc, null);
+  renderSectionNav($("#master-nav"), $("#master-sections"), state.masterDoc.cv.sections);
   const ctx = {
     doc: state.masterDoc,
     isTarget: false,
+    sectionTypes: state.masterSectionTypes,
     onRerender: drawMasterView,
   };
   renderSections($("#master-sections"), ctx);
@@ -527,19 +723,29 @@ function drawMasterView() {
 $("#add-section-master").addEventListener("click", async () => {
   const result = await promptAddSection();
   if (!result) return;
-  if (state.masterDoc.cv.sections[result.name]) { alert("Ya existe una sección con ese nombre."); return; }
+  if (state.masterDoc.cv.sections[result.name]) {
+    setStatus($("#master-status"), "Ya existe una sección con ese nombre.", "error");
+    return;
+  }
   state.masterDoc.cv.sections[result.name] = result.type === "entries" ? [blankEntryFor(result.name, "entries")] : [];
+  state.masterSectionTypes[result.name] = result.type;
   drawMasterView();
 });
 
 $("#save-master").addEventListener("click", async () => {
   const statusEl = $("#master-status");
   setStatus(statusEl, "Guardando…");
+  const btn = $("#save-master");
+  btn.disabled = true;
   try {
     await api("/api/master-cv", { method: "POST", body: JSON.stringify(state.masterDoc) });
     setStatus(statusEl, "Guardado.", "ok");
+    setGlobalStatus("CV maestro guardado.", "ok");
   } catch (e) {
     setStatus(statusEl, e.message, "error");
+    setGlobalStatus("No se pudo guardar el CV maestro: " + e.message, "error");
+  } finally {
+    btn.disabled = false;
   }
 });
 
@@ -550,10 +756,11 @@ $("#generate-btn").addEventListener("click", async () => {
   const jd = $("#job-description").value;
   if (!jd.trim()) { setStatus(statusEl, "Pegá la oferta laboral primero.", "error"); return; }
   if (jd.trim().length < 40) {
-    const proceed = confirm(
-      "La oferta parece muy corta. Con poco texto el modelo tiene menos para basarse y puede " +
-      "traer contenido genérico. ¿Generar igual?"
-    );
+    const proceed = await confirmAction({
+      title: "Oferta laboral corta",
+      message: "La oferta parece muy corta. Con poco texto el modelo puede traer contenido genérico. ¿Generar igual?",
+      confirmLabel: "Generar igual",
+    });
     if (!proceed) return;
   }
 
@@ -561,6 +768,7 @@ $("#generate-btn").addEventListener("click", async () => {
 
   const btn = $("#generate-btn");
   btn.disabled = true;
+  setGlobalStatus("");
   setStatus(statusEl, "Consultando al modelo local (puede tardar según tu hardware)…");
   try {
     const result = await api("/api/generate", {
@@ -568,14 +776,17 @@ $("#generate-btn").addEventListener("click", async () => {
       body: JSON.stringify({ job_description: jd, manual_keywords: manualKeywords }),
     });
     state.targetDoc = { cv: result.target_cv.cv, design: result.target_cv.design };
+    state.targetSectionTypes = deriveSectionTypes(state.targetDoc);
     state.selection = result.selection;
     state.masterDocSnapshot = result.master_cv;
     setStatus(statusEl, "Listo. Revisá la selección abajo.", "ok");
+    setGlobalStatus("CV generado. Revisá las secciones y luego exportá PDF.", "ok");
     $("#apply-result").hidden = false;
     $("#download-link").hidden = true;
     drawTargetView();
   } catch (e) {
     setStatus(statusEl, e.message, "error");
+    setGlobalStatus("No se pudo generar el CV: " + e.message, "error");
   } finally {
     btn.disabled = false;
   }
@@ -595,10 +806,12 @@ function drawTargetView() {
   const ctx = {
     doc: state.targetDoc,
     isTarget: true,
+    sectionTypes: state.targetSectionTypes,
     masterDoc: state.masterDocSnapshot,
     selection: state.selection,
     onRerender: drawTargetView,
   };
+  renderSectionNav($("#target-nav"), $("#target-sections"), state.targetDoc.cv.sections);
   renderSections($("#target-sections"), ctx);
   renderAtsChecklist();
 }
@@ -608,8 +821,12 @@ $("#ats-keywords").addEventListener("input", renderAtsChecklist);
 $("#add-section-target").addEventListener("click", async () => {
   const result = await promptAddSection();
   if (!result) return;
-  if (state.targetDoc.cv.sections[result.name]) { alert("Ya existe una sección con ese nombre."); return; }
+  if (state.targetDoc.cv.sections[result.name]) {
+    setStatus($("#render-status"), "Ya existe una sección con ese nombre.", "error");
+    return;
+  }
   state.targetDoc.cv.sections[result.name] = result.type === "entries" ? [blankEntryFor(result.name, "entries")] : [];
+  state.targetSectionTypes[result.name] = result.type;
   drawTargetView();
 });
 
@@ -617,13 +834,19 @@ $("#render-btn").addEventListener("click", async () => {
   const statusEl = $("#render-status");
   setStatus(statusEl, "Compilando PDF…");
   $("#download-link").hidden = true;
+  const btn = $("#render-btn");
+  btn.disabled = true;
   try {
     await api("/api/render", { method: "POST", body: JSON.stringify(state.targetDoc) });
     setStatus(statusEl, "PDF listo.", "ok");
     $("#download-link").hidden = false;
     $("#download-link").href = "/api/download-pdf?t=" + Date.now();
+    setGlobalStatus("PDF listo para descargar.", "ok");
   } catch (e) {
     setStatus(statusEl, e.message, "error");
+    setGlobalStatus("Error al generar PDF: " + e.message, "error");
+  } finally {
+    btn.disabled = false;
   }
 });
 
@@ -640,6 +863,24 @@ const SETTINGS_FIELDS = [
   { key: "max_keywords", label: "Máx. keywords ATS", type: "number" },
 ];
 
+function validateConfig(config) {
+  const validated = { ...config };
+  for (const field of SETTINGS_FIELDS) {
+    const value = validated[field.key];
+    if (field.type === "number") {
+      if (!Number.isInteger(value) || value < 1) {
+        throw new Error(`"${field.label}" debe ser un número entero mayor o igual a 1.`);
+      }
+      continue;
+    }
+    if (typeof value !== "string" || value.trim() === "") {
+      throw new Error(`"${field.label}" no puede estar vacío.`);
+    }
+    validated[field.key] = value.trim();
+  }
+  return validated;
+}
+
 async function loadSettingsView() {
   state.config = await api("/api/config");
   drawSettingsView();
@@ -649,9 +890,18 @@ function drawSettingsView() {
   const form = $("#settings-form");
   form.innerHTML = "";
   SETTINGS_FIELDS.forEach((f) => {
-    const input = h("input", { type: f.type, value: state.config[f.key], min: f.type === "number" ? 1 : null });
+    const input = h("input", {
+      type: f.type,
+      value: state.config[f.key],
+      min: f.type === "number" ? 1 : null,
+      step: f.type === "number" ? 1 : null,
+    });
     input.addEventListener("input", () => {
-      state.config[f.key] = f.type === "number" ? Number(input.value) : input.value;
+      if (f.type === "number") {
+        state.config[f.key] = input.value === "" ? null : Number.parseInt(input.value, 10);
+      } else {
+        state.config[f.key] = input.value;
+      }
     });
     const fieldEl = h("div", { class: "settings-field" }, [
       h("label", {}, f.label),
@@ -665,11 +915,18 @@ function drawSettingsView() {
 $("#save-settings").addEventListener("click", async () => {
   const statusEl = $("#settings-status");
   setStatus(statusEl, "Guardando…");
+  const btn = $("#save-settings");
+  btn.disabled = true;
   try {
-    state.config = await api("/api/config", { method: "POST", body: JSON.stringify(state.config) });
+    const payload = validateConfig(state.config);
+    state.config = await api("/api/config", { method: "POST", body: JSON.stringify(payload) });
     setStatus(statusEl, "Guardado.", "ok");
+    setGlobalStatus("Configuración guardada.", "ok");
   } catch (e) {
     setStatus(statusEl, e.message, "error");
+    setGlobalStatus("No se pudo guardar la configuración: " + e.message, "error");
+  } finally {
+    btn.disabled = false;
   }
 });
 
@@ -683,9 +940,11 @@ $("#tabs").addEventListener("click", (e) => {
 });
 
 (async function init() {
-  try {
-    await Promise.all([loadMasterView(), loadSettingsView()]);
-  } catch (e) {
-    console.error(e);
+  const [master, settings] = await Promise.allSettled([loadMasterView(), loadSettingsView()]);
+  const failures = [master, settings].filter((x) => x.status === "rejected");
+  if (failures.length > 0) {
+    const detail = failures.map((f) => f.reason && f.reason.message ? f.reason.message : String(f.reason)).join(" | ");
+    setGlobalStatus("No se pudo cargar toda la app: " + detail, "error");
+    console.error(detail);
   }
 })();
