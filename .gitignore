@@ -13,3 +13,5 @@ target_cv.yaml
 config.json
 
 __pycache__
+
+/data/retrieval_index

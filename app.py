@@ -8,7 +8,9 @@ No agrega lógica nueva de negocio: reusa exactamente las mismas funciones
 que el pipeline CLI (main.py) — generate_selection, build_target_cv,
 run_rendercv, save_yaml — así que las garantías anti-alucinación y el
 presupuesto de una página son idénticos, uses la web o la consola.
+
 """
+
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -20,8 +22,14 @@ from pydantic import BaseModel
 
 from src.config import DEFAULTS, load_config, save_config
 from src.llm_node import generate_section_selection, generate_selection
-from src.merge import build_section_entries, build_target_cv, strip_internal_keys, validate_master_cv_structure
+from src.merge import (
+    build_section_entries,
+    build_target_cv,
+    strip_internal_keys,
+    validate_master_cv_structure,
+)
 from src.render_node import run_rendercv, save_yaml
+from src.retrieval.store import IndexStore
 
 BASE_DIR = Path(__file__).resolve().parent
 MASTER_CV_PATH = BASE_DIR / "data" / "master_cv.yaml"
@@ -55,6 +63,7 @@ class CVDocumentIn(BaseModel):
 
 # ---------------------------------------------------------------- master CV
 
+
 @app.get("/api/master-cv")
 def get_master_cv() -> Dict[str, Any]:
     if not MASTER_CV_PATH.exists():
@@ -67,7 +76,12 @@ def get_master_cv() -> Dict[str, Any]:
                 "email": "",
                 "phone": "",
                 "social_networks": [],
-                "sections": {"summary": [], "experience": [], "projects": [], "skills": []},
+                "sections": {
+                    "summary": [],
+                    "experience": [],
+                    "projects": [],
+                    "skills": [],
+                },
             },
             "design": {"theme": load_config()["rendercv_theme"]},
         }
@@ -87,6 +101,7 @@ def save_master_cv(payload: CVDocumentIn) -> Dict[str, Any]:
 
 # ------------------------------------------------------------------- config
 
+
 @app.get("/api/config")
 def get_config() -> Dict[str, Any]:
     return load_config()
@@ -96,11 +111,85 @@ def get_config() -> Dict[str, Any]:
 def update_config(payload: Dict[str, Any]) -> Dict[str, Any]:
     unknown = set(payload) - set(DEFAULTS)
     if unknown:
-        raise HTTPException(status_code=400, detail=f"Claves desconocidas: {sorted(unknown)}")
+        raise HTTPException(
+            status_code=400, detail=f"Claves desconocidas: {sorted(unknown)}"
+        )
     return save_config(payload)
 
 
+# --------------------------------------------------------- health / status
+
+
+@app.get("/api/health")
+def health_check() -> Dict[str, Any]:
+    """Verifica el estado de los servicios y modelos locales."""
+    import ollama
+
+    status = {
+        "ollama": {"ok": False, "model": None, "error": None},
+        "embeddings": {
+            "ok": False,
+            "dense_model": None,
+            "cross_encoder": None,
+            "error": None,
+        },
+    }
+
+    # Check Ollama
+    try:
+        config = load_config()
+        model = config["ollama_model"]
+        ollama.list()
+        # Verificar que el modelo específico esté disponible
+        models = ollama.list()
+        available = any(m["model"] == model for m in models.get("models", []))
+        status["ollama"]["ok"] = available
+        status["ollama"]["model"] = model
+        if not available:
+            status["ollama"][
+                "error"
+            ] = f"Modelo '{model}' no descargado. Ejecutá: ollama pull {model}"
+    except Exception as e:
+        status["ollama"]["error"] = str(e)
+
+    # Check embeddings (lazy: solo verificamos que las librerías estén instaladas)
+    try:
+        from sentence_transformers import SentenceTransformer
+
+        config = load_config()
+        status["embeddings"]["dense_model"] = config.get(
+            "dense_model", "sentence-transformers/all-MiniLM-L6-v2"
+        )
+        status["embeddings"]["cross_encoder"] = config.get(
+            "cross_encoder_model", "cross-encoder/ms-marco-MiniLM-L-6-v2"
+        )
+        status["embeddings"]["ok"] = True
+    except ImportError as e:
+        status["embeddings"]["error"] = f"Librerías de embeddings no instaladas: {e}"
+
+    all_ok = status["ollama"]["ok"] and status["embeddings"]["ok"]
+    return {"ok": all_ok, **status}
+
+
+@app.post("/api/clear-index")
+def clear_retrieval_index() -> Dict[str, Any]:
+    """Invalida y elimina todos los índices de retrieval persistidos.
+    Útil si los índices se corrompen o si querés forzar una reconstrucción."""
+    try:
+        store = IndexStore()
+        store.clear()
+        return {
+            "ok": True,
+            "message": "Índices de retrieval eliminados. Se reconstruirán en la próxima generación.",
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"No se pudieron eliminar los índices: {e}"
+        )
+
+
 # --------------------------------------------------------- generar / render
+
 
 @app.post("/api/generate")
 def generate(payload: JobDescriptionIn) -> Dict[str, Any]:
@@ -110,7 +199,9 @@ def generate(payload: JobDescriptionIn) -> Dict[str, Any]:
             detail="Todavía no guardaste tu CV maestro. Completá la sección 'CV maestro' primero.",
         )
     if not payload.job_description.strip():
-        raise HTTPException(status_code=400, detail="Pegá el texto de la oferta laboral.")
+        raise HTTPException(
+            status_code=400, detail="Pegá el texto de la oferta laboral."
+        )
 
     with open(MASTER_CV_PATH, "r", encoding="utf-8") as f:
         master_cv = yaml.safe_load(f)
@@ -122,7 +213,9 @@ def generate(payload: JobDescriptionIn) -> Dict[str, Any]:
         raise HTTPException(status_code=502, detail=str(e))
 
     target_cv = build_target_cv(
-        master_cv, selection, config,
+        master_cv,
+        selection,
+        config,
         job_description=payload.job_description,
         manual_keywords=payload.manual_keywords,
     )
@@ -132,7 +225,9 @@ def generate(payload: JobDescriptionIn) -> Dict[str, Any]:
 @app.post("/api/regenerate-section")
 def regenerate_section(payload: RegenerateSectionIn) -> Dict[str, Any]:
     if payload.section_name not in ("experience", "projects", "skills"):
-        raise HTTPException(status_code=400, detail="Sección no soportada para regenerar.")
+        raise HTTPException(
+            status_code=400, detail="Sección no soportada para regenerar."
+        )
     if not MASTER_CV_PATH.exists():
         raise HTTPException(status_code=404, detail="No existe data/master_cv.yaml.")
 
@@ -147,7 +242,9 @@ def regenerate_section(payload: RegenerateSectionIn) -> Dict[str, Any]:
     except RuntimeError as e:
         raise HTTPException(status_code=502, detail=str(e))
 
-    entries = build_section_entries(master_cv, payload.section_name, section_selection, config)
+    entries = build_section_entries(
+        master_cv, payload.section_name, section_selection, config
+    )
     return {"entries": entries, "selection": section_selection}
 
 

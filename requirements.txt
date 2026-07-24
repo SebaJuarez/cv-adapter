@@ -16,9 +16,23 @@ ollama>=0.4.4
 PyYAML>=6.0.2
 
 # --- Renderizado CV YAML -> PDF ---
-# OJO: el extra [full] es obligatorio, si instalás solo "rendercv" el CLI
-# te va a pedir que reinstales con [full] (trae el motor Typst embebido).
 rendercv[full]>=2.8
+
+# --- Motor de Information Retrieval  ---
+# BM25 léxico + sinónimos (Python puro)
+rank-bm25>=0.2.2
+
+# Embeddings densos locales (CPU-only)
+sentence-transformers>=3.0.0
+
+# Álgebra lineal para similitud coseno
+numpy>=1.26.0
+
+# Framework de deep learning (carga de cross-encoders, backend CPU)
+torch>=2.0.0
+
+# Transformers (carga de tokenizers y modelos de re-ranking)
+transformers>=4.35.0
 
 # --- Utilidades de consola (opcional, mejora los prints) ---
 rich>=13.9.4
