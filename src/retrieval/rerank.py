@@ -43,17 +43,21 @@ class CrossEncoderReranker:
 
         Returns:
             Lista de (bullet_id, score) ordenada por score descendente.
+            Los scores están calibrados a [0, 1] vía sigmoid.
         """
         if not bullet_docs:
             return []
 
         pairs = [(query, b["text"]) for b in bullet_docs]
-        scores = self.model.predict(
+        raw_scores = self.model.predict(
             pairs,
             show_progress_bar=False,
             convert_to_numpy=True,
         )
 
-        indexed = [(b["id"], float(scores[i])) for i, b in enumerate(bullet_docs)]
+        # Calibración: sigmoid para llevar scores crudos a rango acotado [0, 1]
+        norm_scores = 1.0 / (1.0 + np.exp(-raw_scores))
+
+        indexed = [(b["id"], float(norm_scores[i])) for i, b in enumerate(bullet_docs)]
         indexed.sort(key=lambda x: x[1], reverse=True)
         return indexed[:top_k]

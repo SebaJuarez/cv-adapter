@@ -720,3 +720,8 @@ textarea.highlight-text { min-height: 1.6em; resize: none; overflow: hidden; }
   overflow-y: auto;
   margin: 0.5rem 0;
 }
+
+/* -------------------------------------------------- score fallback */
+.bullet-score-fill.fallback {
+  background: var(--ink-faint);
+}

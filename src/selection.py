@@ -300,6 +300,9 @@ class SelectionEngine:
 
         master_json = json.dumps(master_cv, ensure_ascii=False, sort_keys=True)
 
+        reranker = self._get_reranker()
+        score_mode = "cross_encoder" if reranker is not None else "positional_fallback"
+
         selection: dict[str, Any] = {
             "selected_experience": [],
             "selected_projects": [],
@@ -310,6 +313,7 @@ class SelectionEngine:
             "bullet_scores": {},       # NUEVO: bullet_id -> score (0-1)
             "jd_snippets": {},         # NUEVO: bullet_id -> snippet del JD
             "section_scores": {},      # NUEVO: section -> {entry_idx: score}
+            "score_mode": score_mode,  # NUEVO: "cross_encoder" | "positional_fallback"
         }
 
         for section in _RETRIEVAL_SECTIONS:
@@ -328,7 +332,6 @@ class SelectionEngine:
             dense_ranking, chunk_map = dense_idx.query(chunk_embeddings, top_k=50)
             hybrid_ranking = reciprocal_rank_fusion(sparse_ranking, dense_ranking)
 
-            reranker = self._get_reranker()
             bullet_map = {b.id: b for b in bullets}
 
             if reranker is not None:
@@ -479,6 +482,7 @@ class SelectionEngine:
         hybrid_ranking = reciprocal_rank_fusion(sparse_ranking, dense_ranking)
 
         reranker = self._get_reranker()
+        score_mode = "cross_encoder" if reranker is not None else "positional_fallback"
         bullet_map = {b.id: b for b in bullets}
 
         if reranker is not None:
@@ -547,7 +551,7 @@ class SelectionEngine:
                 if idx not in seen:
                     seen.add(idx)
                     skill_indices.append(idx)
-            return {"selected_skills_indices": skill_indices[:max_entries]}
+            return {"selected_skills_indices": skill_indices[:max_entries], "score_mode": score_mode}
 
         elif section_name == "education":
             seen = set()
@@ -557,7 +561,7 @@ class SelectionEngine:
                 if idx != 0 and idx not in seen:
                     seen.add(idx)
                     edu_indices.append(idx)
-            return {"selected_education_indices": edu_indices[:max_entries]}
+            return {"selected_education_indices": edu_indices[:max_entries], "score_mode": score_mode}
 
         else:
             grouped = _group_bullets_into_entries(
@@ -567,7 +571,7 @@ class SelectionEngine:
                 grouped = _reorder_entries_chronologically(
                     master_cv, section_name, grouped
                 )
-            return {f"selected_{section_name}": grouped}
+            return {f"selected_{section_name}": grouped, "score_mode": score_mode}
 
 
 # ---------------------------------------------------------------------

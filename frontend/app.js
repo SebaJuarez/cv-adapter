@@ -251,6 +251,10 @@ function getJDSnippet(bulletId) {
   return state.selection.jd_snippets[bulletId] || null;
 }
 
+function getScoreMode() {
+  return state.selection?.score_mode || "positional_fallback";
+}
+
 function getEntryScore(section, entryIdx) {
   if (!state.selection || !state.selection.section_scores) return null;
   const sec = state.selection.section_scores[section];
@@ -262,11 +266,17 @@ function renderBulletScore(bulletId) {
   const score = getBulletScore(bulletId);
   if (score === null) return null;
   const pct = Math.round(score * 100);
-  const bar = h("div", { class: "bullet-score" }, [
+  const isFallback = getScoreMode() === "positional_fallback";
+  const fillClass = isFallback ? "bullet-score-fill fallback" : "bullet-score-fill";
+  const label = isFallback ? `${pct}*` : `${pct}`;
+  const title = isFallback
+    ? "Score estimado por posición (cross-encoder no disponible)"
+    : "Score de relevancia (cross-encoder)";
+  const bar = h("div", { class: "bullet-score", title }, [
     h("div", { class: "bullet-score-bar" }, [
-      h("div", { class: "bullet-score-fill", style: `width:${pct}%` }),
+      h("div", { class: fillClass, style: `width:${pct}%` }),
     ]),
-    h("span", { class: "bullet-score-num" }, `${pct}`),
+    h("span", { class: "bullet-score-num" }, label),
   ]);
   return bar;
 }
