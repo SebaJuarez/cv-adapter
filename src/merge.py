@@ -11,9 +11,29 @@ siempre, sin importar cuánto contenido pida devolver el LLM.
 """
 
 from copy import deepcopy
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
 from .config import load_config
+from .retrieval.sparse import SYNONYMS
+
+
+# ------------------------------------------------------------------
+# Mapa bidireccional de sinónimos (compartido con retrieval)
+# ------------------------------------------------------------------
+_SYNONYM_GROUPS: Dict[str, Set[str]] = {}
+for _key, _syns in SYNONYMS.items():
+    _group = {_key.lower()} | {s.lower() for s in _syns}
+    for _term in _group:
+        _SYNONYM_GROUPS[_term] = _group
+
+
+def _get_synonym_variants(keyword: str) -> Set[str]:
+    """Devuelve todas las variantes sinónimas de una keyword.
+
+    Si la keyword no está en la tabla, devuelve un singleton con ella misma.
+    """
+    kw_low = keyword.lower().strip()
+    return _SYNONYM_GROUPS.get(kw_low, {kw_low})
 
 
 def validate_master_cv_structure(master_cv: Dict[str, Any]) -> List[str]:
@@ -155,8 +175,13 @@ def _build_verified_keywords(
     max_keywords: int,
 ) -> List[str]:
     """El LLM puede 'alucinar' una keyword que suena bien pero no tiene nada
-    que ver con la oferta real. Una keyword solo sobrevive si aparece literalmente
-    en AMBOS lados: master_cv (respaldo real) y job_description (relevancia real).
+    que ver con la oferta real. Una keyword solo sobrevive si aparece
+    (o alguna de sus variantes sinónimas) en AMBOS lados: master_cv
+    (respaldo real) y job_description (relevancia real).
+
+    Reutiliza la tabla SYNONYMS de src/retrieval/sparse.py para que
+    "postgres" y "postgresql" se consideren el mismo término, evitando
+    inconsistencias entre retrieval y verificación ATS.
     """
     master_corpus = _master_cv_corpus(master_cv)
     jd_corpus = (job_description or "").lower()
@@ -167,7 +192,12 @@ def _build_verified_keywords(
             continue
         kw_clean = kw.strip()
         kw_low = kw_clean.lower()
-        if kw_low in master_corpus and kw_low in jd_corpus and kw_clean not in verified:
+        variants = _get_synonym_variants(kw_low)
+        if (
+            any(v in master_corpus for v in variants)
+            and any(v in jd_corpus for v in variants)
+            and kw_clean not in verified
+        ):
             verified.append(kw_clean)
         if len(verified) >= max_keywords:
             break
@@ -249,14 +279,21 @@ def build_target_cv(
         selection.get("keywords_detected", []) or [],
         config["max_keywords"],
     )
+
+    # Manual keywords con la misma lógica de sinónimos
+    master_corpus = _master_cv_corpus(master_cv)
     for kw in manual_keywords or []:
         kw_clean = (kw or "").strip()
+        if not kw_clean:
+            continue
+        kw_low = kw_clean.lower()
+        variants = _get_synonym_variants(kw_low)
         if (
-            kw_clean
-            and kw_clean.lower() in _master_cv_corpus(master_cv)
+            any(v in master_corpus for v in variants)
             and kw_clean not in verified_keywords
         ):
             verified_keywords.append(kw_clean)
+
     verified_keywords = verified_keywords[: config["max_keywords"]]
     if verified_keywords:
         new_sections["keywords"] = ["Palabras clave: " + ", ".join(verified_keywords)]
