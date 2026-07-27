@@ -20,7 +20,12 @@ DEFAULTS: Dict[str, Any] = {
     "max_skill_categories": 6,
     "max_education_extra": 1,
     "max_keywords": 10,
+    # --- para motor de IR ---
+    "use_reranker": True,
+    "dense_model": "sentence-transformers/all-MiniLM-L6-v2",
+    "cross_encoder_model": "cross-encoder/ms-marco-MiniLM-L-6-v2",
 }
+
 
 def load_config() -> Dict[str, Any]:
     """Lee config.json y lo completa con los defaults para cualquier clave

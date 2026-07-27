@@ -1,12 +1,14 @@
 "use strict";
 
 /* =====================================================================
-   cv-adapter — frontend
-   Vanilla JS, sin build step. Un único modelo de datos por vista
-   (masterDoc / targetDoc) que se muta in-place; las acciones estructurales
-   (agregar/sacar/reordenar) vuelven a dibujar la sección afectada, pero
-   escribir texto en un input NUNCA dispara un re-render (se perdería el
-   foco/cursor) — solo actualiza el dato en memoria.
+   cv-adapter — frontend v2.1
+   Nuevas features:
+   - Relevancia por bullet (score 0-100 con mini barra)
+   - Heatmap de entrada (borde colorido según score promedio)
+   - JD snippet en hover (tooltip flotante con el fragmento de oferta)
+   - Oportunidades críticas (keywords de alta frecuencia missing)
+   - Delta de fit al agregar bullets
+   - Pullback ordenado por relevancia
    ===================================================================== */
 
 const state = {
@@ -17,6 +19,7 @@ const state = {
   masterDocSnapshot: null,
   masterSectionTypes: {},
   targetSectionTypes: {},
+  keywordReport: null,
 };
 
 // ---------------------------------------------------------------- utils
@@ -70,6 +73,23 @@ function setGlobalStatus(message, kind) {
   el.hidden = !message;
 }
 
+// -------------------------------------------------------- tooltip JD
+
+function showJDSnippet(text, el) {
+  const tooltip = $("#jd-tooltip");
+  if (!tooltip || !text) return;
+  tooltip.textContent = text;
+  tooltip.hidden = false;
+  const rect = el.getBoundingClientRect();
+  tooltip.style.left = (rect.left + window.scrollX) + "px";
+  tooltip.style.top = (rect.bottom + window.scrollY + 6) + "px";
+}
+
+function hideJDSnippet() {
+  const tooltip = $("#jd-tooltip");
+  if (tooltip) tooltip.hidden = true;
+}
+
 // -------------------------------------------------------- chequeo ATS
 
 function buildDocCorpus(doc) {
@@ -104,6 +124,483 @@ function renderAtsChecklist() {
     else if (masterCorpus.includes(low)) { cls = "ats-gap"; title = "está en tu master pero no en esta selección — probá 'traer bullet del master'"; }
     container.appendChild(h("span", { class: "ats-item " + cls, title }, kw));
   });
+}
+
+// ----------------------------------------------------- keyword report
+
+function renderFitScore() {
+  const row = $("#fit-score-row");
+  const fill = $("#fit-score-fill");
+  const label = $("#fit-score-label");
+  if (!state.keywordReport) {
+    row.hidden = true;
+    return;
+  }
+  const all = state.keywordReport.all_keywords || [];
+  if (all.length === 0) {
+    row.hidden = true;
+    return;
+  }
+  // Usar ats_impact_score si está disponible (ponderado por frecuencia)
+  const pct = state.keywordReport.ats_impact_score || 0;
+
+  row.hidden = false;
+  fill.style.width = pct + "%";
+  fill.className = "fit-score-fill" + (pct >= 80 ? " fit-good" : pct >= 50 ? " fit-mid" : " fit-bad");
+  label.textContent = `ATS Impact Score: ${pct}%`;
+}
+
+function renderKeywordReport() {
+  const container = $("#keyword-report");
+  if (!container) return;
+  container.innerHTML = "";
+
+  if (!state.keywordReport) return;
+  const { all_keywords, frequencies, in_master, in_target, missing_in_target, not_in_master } = state.keywordReport;
+  if (!all_keywords || all_keywords.length === 0) return;
+
+  const wrap = h("div", { class: "kw-report" });
+
+  const legend = h("div", { class: "kw-legend" }, [
+    h("span", { class: "kw-legend-item" }, [h("span", { class: "kw-dot kw-dot-ok" }), " en el CV"]),
+    h("span", { class: "kw-legend-item" }, [h("span", { class: "kw-dot kw-dot-missing" }), " en master, no en target"]),
+    h("span", { class: "kw-legend-item" }, [h("span", { class: "kw-dot kw-dot-notmaster" }), " no está en master"]),
+  ]);
+  wrap.appendChild(legend);
+
+  const list = h("div", { class: "keywords-list" });
+  all_keywords.forEach((kw) => {
+    const freq = frequencies[kw] || 1;
+    let cls = "kw-chip";
+    let title = "";
+    let clickable = false;
+    if (in_target[kw]) {
+      cls += " kw-chip-ok";
+      title = `Presente en el CV generado (aparece ${freq}x en la oferta)`;
+    } else if (in_master[kw]) {
+      cls += " kw-chip-missing";
+      title = `Está en tu CV maestro pero no en esta selección. Aparece ${freq}x en la oferta. Clic para traer bullets.`;
+      clickable = true;
+    } else {
+      cls += " kw-chip-notmaster";
+      title = `La oferta la pide (${freq}x) pero no está en tu CV maestro — gap real`;
+    }
+    const label = freq > 1 ? `${kw} ×${freq}` : kw;
+    const chip = h("span", { class: cls, title }, label);
+    if (clickable) {
+      chip.style.cursor = "pointer";
+      chip.addEventListener("click", () => handleMissingKeywordClick(kw));
+    }
+    list.appendChild(chip);
+  });
+  wrap.appendChild(list);
+
+  if (missing_in_target && missing_in_target.length > 0) {
+    wrap.appendChild(h("p", { class: "kw-summary" },
+      `Faltan en el target: ${missing_in_target.join(", ")}. Clic en una para traer bullets del master.`));
+  }
+  if (not_in_master && not_in_master.length > 0) {
+    wrap.appendChild(h("p", { class: "kw-summary kw-summary-gap" },
+      `No tenés en el master: ${not_in_master.join(", ")}.`));
+  }
+
+  container.appendChild(wrap);
+}
+
+// ----------------------------------------------------- oportunidades
+
+function renderOpportunities() {
+  const panel = $("#opportunities-panel");
+  const list = $("#opportunities-list");
+  if (!panel || !list) return;
+
+  const critical = state.keywordReport?.critical_missing || [];
+  if (critical.length === 0) {
+    panel.hidden = true;
+    return;
+  }
+
+  panel.hidden = false;
+  list.innerHTML = "";
+
+  critical.forEach((kw) => {
+    const freq = state.keywordReport.frequencies[kw] || 1;
+    const item = h("div", { class: "opp-item" }, [
+      h("div", { class: "opp-keyword" }, [
+        h("strong", {}, kw),
+        h("span", { class: "opp-freq" }, `×${freq}`),
+      ]),
+      h("button", {
+        class: "btn btn-sm",
+        onclick: () => handleMissingKeywordClick(kw),
+      }, "Traer bullet"),
+    ]);
+    list.appendChild(item);
+  });
+}
+
+// ----------------------------------------------------- bullet scores
+
+
+// ----------------------------------------------------- excluded panel
+
+function addEntryToTarget(sectionName, entryIdx) {
+  if (!state.masterDocSnapshot || !state.targetDoc) return;
+  const masterSections = state.masterDocSnapshot.cv?.sections || {};
+  const masterEntry = masterSections[sectionName]?.[entryIdx];
+  if (!masterEntry) return;
+
+  const targetSections = state.targetDoc.cv.sections;
+  if (!targetSections[sectionName]) {
+    targetSections[sectionName] = [];
+  }
+  const exists = targetSections[sectionName].find(
+    (e) => e._src_section === sectionName && e._src_index === entryIdx
+  );
+  if (exists) return;
+
+  const copy = JSON.parse(JSON.stringify(masterEntry));
+  copy._src_section = sectionName;
+  copy._src_index = entryIdx;
+  targetSections[sectionName].push(copy);
+}
+
+function addBulletToTarget(sectionName, entryIdx, bulletText) {
+  if (!state.masterDocSnapshot || !state.targetDoc) return;
+  const targetSections = state.targetDoc.cv.sections;
+  if (!targetSections[sectionName]) {
+    addEntryToTarget(sectionName, entryIdx);
+  }
+  const targetEntry = targetSections[sectionName].find(
+    (e) => e._src_section === sectionName && e._src_index === entryIdx
+  );
+  if (!targetEntry) return;
+  if (!targetEntry.highlights.includes(bulletText)) {
+    targetEntry.highlights.push(bulletText);
+  }
+}
+
+function renderExcludedPanel() {
+  const panel = $("#excluded-panel");
+  const content = $("#excluded-content");
+  if (!panel || !content) return;
+
+  if (!state.selection || !state.masterDocSnapshot) {
+    panel.hidden = true;
+    return;
+  }
+
+  const masterSections = state.masterDocSnapshot.cv?.sections || {};
+  const hasAny = (
+    (state.selection.excluded_experience?.length || 0) > 0 ||
+    (state.selection.excluded_projects?.length || 0) > 0 ||
+    (state.selection.excluded_skills_indices?.length || 0) > 0 ||
+    (state.selection.excluded_education_indices?.length || 0) > 0
+  );
+
+  if (!hasAny) {
+    panel.hidden = true;
+    return;
+  }
+
+  panel.hidden = false;
+  content.innerHTML = "";
+
+  const sections = [
+    { key: "experience", label: "Experiencia", nameKey: "company" },
+    { key: "projects", label: "Proyectos", nameKey: "name" },
+    { key: "skills", label: "Skills", nameKey: "label" },
+    { key: "education", label: "Educación", nameKey: "institution" },
+  ];
+
+  sections.forEach((sec) => {
+    let excludedItems;
+    if (sec.key === "skills") {
+      excludedItems = (state.selection.excluded_skills_indices || []).map((idx) => ({ index: idx }));
+    } else if (sec.key === "education") {
+      excludedItems = (state.selection.excluded_education_indices || []).map((idx) => ({ index: idx }));
+    } else {
+      excludedItems = state.selection[`excluded_${sec.key}`] || [];
+    }
+
+    if (excludedItems.length === 0) return;
+
+    const secWrap = h("div", { class: "excluded-section" });
+    secWrap.appendChild(h("h4", {}, sec.label));
+
+    excludedItems.forEach((item) => {
+      const idx = item.index;
+      const masterEntry = masterSections[sec.key]?.[idx];
+      if (!masterEntry) return;
+
+      const name = masterEntry[sec.nameKey] || masterEntry.position || masterEntry.degree || `Entrada ${idx}`;
+      const score = item.entry_score || null;
+      const scoreLabel = score !== null ? `score: ${Math.round(score * 100)}%` : "";
+
+      const entryWrap = h("div", { class: "excluded-entry" });
+      entryWrap.appendChild(h("div", { class: "excluded-entry-header" }, [
+        h("strong", {}, name),
+        h("span", { class: "excluded-score" }, scoreLabel),
+      ]));
+
+      // Botón traer entrada completa
+      entryWrap.appendChild(h("button", {
+        class: "btn btn-sm btn-ghost",
+        style: "margin-bottom:0.4rem",
+        onclick: () => {
+          addEntryToTarget(sec.key, idx);
+          drawTargetView();
+          setGlobalStatus(`Entrada "${name}" agregada desde excluidos.`, "ok");
+        },
+      }, "+ Traer entrada completa"));
+
+      // Bullets individuales (solo para experience/projects)
+      if (sec.key === "experience" || sec.key === "projects") {
+        const highlights = masterEntry.highlights || [];
+        const order = item.highlight_order || highlights.map((_, i) => i);
+        order.forEach((bIdx) => {
+          const text = highlights[bIdx];
+          if (!text) return;
+          const bulletId = `${sec.key}_${idx}_bullet_${bIdx}`;
+          const bScore = state.selection.bullet_scores?.[bulletId];
+          const bScoreLabel = bScore !== null ? `${Math.round(bScore * 100)}%` : "";
+
+          const row = h("div", { class: "excluded-bullet" }, [
+            h("span", { class: "bullet-mark" }, "—"),
+            h("p", {}, text),
+            h("span", { style: "font-family:var(--font-mono);font-size:0.7rem;color:var(--ink-faint);white-space:nowrap;" }, bScoreLabel),
+            h("button", {
+              class: "btn-icon",
+              title: "Agregar este bullet",
+              onclick: () => {
+                addBulletToTarget(sec.key, idx, text);
+                drawTargetView();
+                setGlobalStatus("Bullet agregado desde excluidos.", "ok");
+              },
+            }, "+"),
+          ]);
+          entryWrap.appendChild(row);
+        });
+      }
+
+      // Para skills: mostrar details
+      if (sec.key === "skills") {
+        const details = masterEntry.details || "";
+        if (details) {
+          entryWrap.appendChild(h("p", { style: "font-size:0.85rem;color:var(--ink-soft);margin:0.3rem 0;" }, details));
+        }
+        entryWrap.appendChild(h("button", {
+          class: "btn btn-sm btn-ghost",
+          onclick: () => {
+            addEntryToTarget(sec.key, idx);
+            drawTargetView();
+            setGlobalStatus(`Skill "${name}" agregada desde excluidos.`, "ok");
+          },
+        }, "+ Traer skill"));
+      }
+
+      // Para education: mostrar highlights si existen
+      if (sec.key === "education") {
+        const highlights = masterEntry.highlights || [];
+        highlights.forEach((text) => {
+          entryWrap.appendChild(h("p", { style: "font-size:0.85rem;color:var(--ink-soft);margin:0.2rem 0;" }, `— ${text}`));
+        });
+        entryWrap.appendChild(h("button", {
+          class: "btn btn-sm btn-ghost",
+          onclick: () => {
+            addEntryToTarget(sec.key, idx);
+            drawTargetView();
+            setGlobalStatus(`Educación "${name}" agregada desde excluidos.`, "ok");
+          },
+        }, "+ Traer educación"));
+      }
+
+      secWrap.appendChild(entryWrap);
+    });
+
+    content.appendChild(secWrap);
+  });
+}
+
+function getBulletScore(bulletId) {
+  if (!state.selection || !state.selection.bullet_scores) return null;
+  return state.selection.bullet_scores[bulletId] || null;
+}
+
+function getJDSnippet(bulletId) {
+  if (!state.selection || !state.selection.jd_snippets) return null;
+  return state.selection.jd_snippets[bulletId] || null;
+}
+
+function getScoreMode() {
+  return state.selection?.score_mode || "positional_fallback";
+}
+
+function getEntryScore(section, entryIdx) {
+  if (!state.selection || !state.selection.section_scores) return null;
+  const sec = state.selection.section_scores[section];
+  if (!sec) return null;
+  return sec[entryIdx] || null;
+}
+
+function renderBulletScore(bulletId) {
+  const score = getBulletScore(bulletId);
+  if (score === null) return null;
+  const pct = Math.round(score * 100);
+  const isFallback = getScoreMode() === "positional_fallback";
+  const fillClass = isFallback ? "bullet-score-fill fallback" : "bullet-score-fill";
+  const label = isFallback ? `${pct}% (estimado)` : `${pct}%`;
+  const title = isFallback
+    ? `Score estimado por posición: ${pct}% (cross-encoder no disponible)`
+    : `Score de relevancia: ${pct}% (cross-encoder)`;
+  const bar = h("div", { class: "bullet-score", title }, [
+    h("div", { class: "bullet-score-bar" }, [
+      h("div", { class: fillClass, style: `width:${pct}%` }),
+    ]),
+  ]);
+  return bar;
+}
+
+function renderEntryHeatBorder(section, entryIdx) {
+  const score = getEntryScore(section, entryIdx);
+  if (score === null) return "";
+  if (score >= 0.7) return "entry-heat-high";
+  if (score >= 0.4) return "entry-heat-mid";
+  return "entry-heat-low";
+}
+
+// ----------------------------------------------------- keyword click
+
+async function handleMissingKeywordClick(keyword) {
+  if (!state.masterDocSnapshot || !state.targetDoc) return;
+  const kwLow = keyword.toLowerCase();
+
+  // Buscar bullets en el master que contengan la keyword, con scores
+  const matches = [];
+  const sections = state.masterDocSnapshot.cv?.sections || {};
+  for (const [sectionName, entries] of Object.entries(sections)) {
+    if (!Array.isArray(entries)) continue;
+    for (let entryIdx = 0; entryIdx < entries.length; entryIdx++) {
+      const entry = entries[entryIdx];
+      if (!entry || typeof entry !== "object") continue;
+      const highlights = entry.highlights || [];
+      for (let bulletIdx = 0; bulletIdx < highlights.length; bulletIdx++) {
+        const text = highlights[bulletIdx];
+        if (typeof text === "string" && text.toLowerCase().includes(kwLow)) {
+          const bulletId = `${sectionName}_${entryIdx}_bullet_${bulletIdx}`;
+          const score = getBulletScore(bulletId) || 0;
+          matches.push({ sectionName, entryIdx, bulletIdx, text, entry, score });
+        }
+      }
+    }
+  }
+
+  if (matches.length === 0) {
+    await showMessageModal("Sin coincidencias", `No se encontró ningún bullet en el CV maestro que contenga "${keyword}".`);
+    return;
+  }
+
+  // Ordenar por relevancia (score descendente)
+  matches.sort((a, b) => b.score - a.score);
+
+  const chosen = await openModal((close) => {
+    const list = h("div", { class: "pullback-list" });
+    matches.forEach((m) => {
+      const label = m.entry.company || m.entry.name || m.entry.institution || `Entrada ${m.entryIdx}`;
+      const scorePct = m.score > 0 ? Math.round(m.score * 100) : "—";
+      const row = h("div", { class: "pullback-item" }, [
+        h("div", { class: "pullback-info" }, [
+          h("div", { class: "pullback-header" }, [
+            h("strong", {}, label),
+            h("span", { class: "pullback-score" }, `relevancia: ${scorePct}%`),
+          ]),
+          h("p", { class: "pullback-text" }, m.text),
+        ]),
+        h("button", {
+          class: "btn-icon",
+          title: "Agregar este bullet",
+          onclick: () => close(m),
+        }, "+"),
+      ]);
+      list.appendChild(row);
+    });
+
+    return h("div", {}, [
+      h("h3", {}, `Bullets con "${keyword}"`),
+      h("p", { class: "hint" }, "Ordenados por relevancia para esta oferta:"),
+      list,
+      h("div", { class: "modal-actions" }, [
+        h("button", { class: "btn btn-ghost", onclick: () => close(null) }, "Cancelar"),
+      ]),
+    ]);
+  });
+
+  if (!chosen) return;
+
+  // Calcular fit score antes
+  const beforeScore = state.keywordReport?.ats_impact_score || 0;
+
+  // Agregar el bullet al target
+  const targetSections = state.targetDoc.cv.sections;
+  const targetEntries = targetSections[chosen.sectionName];
+  if (!targetEntries) {
+    const masterEntry = JSON.parse(JSON.stringify(chosen.entry));
+    masterEntry._src_section = chosen.sectionName;
+    masterEntry._src_index = chosen.entryIdx;
+    targetSections[chosen.sectionName] = [masterEntry];
+  } else {
+    let targetEntry = targetEntries.find((e) => e._src_index === chosen.entryIdx && e._src_section === chosen.sectionName);
+    if (!targetEntry) {
+      const masterEntry = JSON.parse(JSON.stringify(chosen.entry));
+      masterEntry._src_section = chosen.sectionName;
+      masterEntry._src_index = chosen.entryIdx;
+      targetEntries.push(masterEntry);
+      targetEntry = masterEntry;
+    }
+    if (!targetEntry.highlights.includes(chosen.text)) {
+      targetEntry.highlights.push(chosen.text);
+    }
+  }
+
+  // Recalcular keyword report localmente (aproximado)
+  recalcKeywordReport();
+  const afterScore = state.keywordReport?.ats_impact_score || 0;
+  const delta = afterScore - beforeScore;
+
+  drawTargetView();
+  const deltaMsg = delta > 0 ? ` (+${delta}% ATS)` : "";
+  setGlobalStatus(`Bullet agregado para "${keyword}"${deltaMsg}.`, "ok");
+}
+
+function recalcKeywordReport() {
+  if (!state.keywordReport || !state.targetDoc) return;
+  const jd = $("#job-description").value || "";
+  const { all_keywords, frequencies } = state.keywordReport;
+  const targetCorpus = buildDocCorpus(state.targetDoc);
+
+  let coveredWeight = 0;
+  let totalWeight = 0;
+  const newInTarget = {};
+  const newMissing = [];
+  const newCritical = [];
+
+  for (const kw of all_keywords) {
+    const present = targetCorpus.includes(kw.toLowerCase());
+    newInTarget[kw] = present;
+    const freq = frequencies[kw] || 1;
+    const weight = freq;
+    totalWeight += weight;
+    if (present) coveredWeight += weight;
+    else {
+      if (state.keywordReport.in_master[kw]) newMissing.push(kw);
+      if (freq >= 2 && state.keywordReport.in_master[kw]) newCritical.push(kw);
+    }
+  }
+
+  state.keywordReport.in_target = newInTarget;
+  state.keywordReport.missing_in_target = newMissing;
+  state.keywordReport.critical_missing = newCritical;
+  state.keywordReport.ats_impact_score = totalWeight > 0 ? Math.round((coveredWeight / totalWeight) * 100) : 100;
 }
 
 // -------------------------------------------------------------- modal
@@ -254,22 +751,17 @@ function deriveSectionTypes(doc) {
 function blankEntryFor(sectionName, type) {
   if (type === "text") return "";
   if (type === "label_details") return { label: "", details: "" };
-  // "entries"
   if (sectionName === "experience") {
     return { company: "", position: "", location: "", start_date: "", end_date: "", highlights: [] };
   }
   if (sectionName === "education") {
     return { institution: "", area: "", degree: "", start_date: "", end_date: "", highlights: [] };
   }
-  return { name: "", date: "", highlights: [] }; // projects u otras secciones custom
+  return { name: "", date: "", highlights: [] };
 }
 
 // ------------------------------------------------------------ renderer
 
-/**
- * Dibuja el documento completo (todas las secciones) dentro de `container`.
- * ctx = { doc, isTarget, masterDoc, selection, onRerender }
- */
 function renderSections(container, ctx) {
   container.innerHTML = "";
   const sections = ctx.doc.cv.sections || {};
@@ -371,7 +863,7 @@ function humanizeSectionName(name) {
   return name.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-// -- tipo "text": lista de strings (summary, keywords, etc.) -----------
+// -- tipo "text" -----------
 
 function renderTextList(sectionName, entries, ctx) {
   const wrap = h("div", {});
@@ -424,7 +916,7 @@ function renderTextList(sectionName, entries, ctx) {
   return wrap;
 }
 
-// -- tipo "label_details": skills, languages ----------------------------
+// -- tipo "label_details" ----------------------------
 
 function renderLabelDetailsList(sectionName, entries, ctx) {
   const wrap = h("div", {});
@@ -458,7 +950,7 @@ function renderLabelDetailsList(sectionName, entries, ctx) {
   return wrap;
 }
 
-// -- tipo "entries": experience, projects, education, custom -----------
+// -- tipo "entries" -----------
 
 function renderEntriesList(sectionName, entries, ctx) {
   const wrap = h("div", {});
@@ -526,17 +1018,31 @@ function renderEntryCard(sectionName, entries, entry, index, ctx) {
     },
   }, "×");
 
-  const card = h("div", { class: "entry-card" });
+  // Heatmap: clase extra según score de la entrada
+  const heatClass = ctx.isTarget ? renderEntryHeatBorder(sectionName, entry._src_index) : "";
+  const card = h("div", { class: "entry-card" + (heatClass ? " " + heatClass : "") });
   card.appendChild(h("div", { class: "entry-top-row" }, [
     fieldsWrap,
     h("div", { class: "row-controls" }, [moveUp, moveDown, del]),
   ]));
 
   const matchReason = ctx.isTarget ? getMatchReason(entry, ctx.selection) : null;
-  if (matchReason) card.appendChild(h("p", { class: "match-reason" }, "por qué se eligió: " + matchReason));
+  if (matchReason) {
+    const reasonEl = h("p", { class: "match-reason" }, "por qué se eligió: " + matchReason);
+    // Tooltip con JD snippet
+    if (ctx.isTarget && entry._src_section && entry._src_index !== undefined) {
+      const firstBulletId = `${entry._src_section}_${entry._src_index}_bullet_0`;
+      const snippet = getJDSnippet(firstBulletId);
+      if (snippet) {
+        reasonEl.addEventListener("mouseenter", () => showJDSnippet(snippet, reasonEl));
+        reasonEl.addEventListener("mouseleave", hideJDSnippet);
+      }
+    }
+    card.appendChild(reasonEl);
+  }
 
   if ("highlights" in entry) {
-    card.appendChild(renderHighlights(entry, ctx));
+    card.appendChild(renderHighlights(entry, ctx, sectionName, index));
   }
 
   if (ctx.isTarget && entry._src_section && entry._src_index !== undefined) {
@@ -547,13 +1053,20 @@ function renderEntryCard(sectionName, entries, entry, index, ctx) {
   return card;
 }
 
-function renderHighlights(entry, ctx) {
+function renderHighlights(entry, ctx, sectionName, entryIndex) {
   const wrap = h("div", { class: "highlights" });
   entry.highlights.forEach((text, i) => {
     const ta = h("textarea", { class: "highlight-text" });
     ta.value = text;
     setTimeout(() => autoResize(ta), 0);
     ta.addEventListener("input", () => { entry.highlights[i] = ta.value; autoResize(ta); });
+
+    // Score de relevancia del bullet
+    let scoreEl = null;
+    if (ctx.isTarget && entry._src_section !== undefined && entry._src_index !== undefined) {
+      const bulletId = `${entry._src_section}_${entry._src_index}_bullet_${i}`;
+      scoreEl = renderBulletScore(bulletId);
+    }
 
     const moveUp = h("button", {
       class: "btn-icon", title: "Subir", disabled: i === 0 ? "disabled" : null,
@@ -574,11 +1087,21 @@ function renderHighlights(entry, ctx) {
       onclick: () => { entry.highlights.splice(i, 1); ctx.onRerender(); },
     }, "×");
 
-    wrap.appendChild(h("div", { class: "highlight-row" }, [
+    const row = h("div", { class: "highlight-row" }, [
       h("span", { class: "bullet-mark" }, "—"),
       ta,
       h("div", { class: "row-controls" }, [moveUp, moveDown, del]),
-    ]));
+    ]);
+    if (scoreEl) {
+      row.appendChild(scoreEl);
+      // Tooltip con JD snippet
+      const snippet = getJDSnippet(`${entry._src_section}_${entry._src_index}_bullet_${i}`);
+      if (snippet) {
+        scoreEl.addEventListener("mouseenter", () => showJDSnippet(snippet, scoreEl));
+        scoreEl.addEventListener("mouseleave", hideJDSnippet);
+      }
+    }
+    wrap.appendChild(row);
   });
 
   const actions = h("div", { class: "save-bar" });
@@ -616,7 +1139,7 @@ function renderHighlights(entry, ctx) {
   return wrap;
 }
 
-// -- "traer bullet del master" para entradas del CV generado ------------
+// -- "traer bullet del master" ------------
 
 function getMatchReason(entry, selection) {
   if (!selection || !entry._src_section) return null;
@@ -633,16 +1156,29 @@ function renderPullback(entry, ctx) {
   const missing = (original.highlights || []).filter((h) => !entry.highlights.includes(h));
   if (missing.length === 0) return null;
 
+  // Ordenar missing por relevancia (score del bullet)
+  const scoredMissing = missing.map((text, idx) => {
+    const bulletId = `${entry._src_section}_${entry._src_index}_bullet_${idx}`;
+    const score = getBulletScore(bulletId) || 0;
+    return { text, score, idx };
+  });
+  scoredMissing.sort((a, b) => b.score - a.score);
+
   const details = h("details", { class: "pullback" });
   details.appendChild(h("summary", {}, `+ traer bullet del master (${missing.length} sin usar)`));
-  missing.forEach((text) => {
-    details.appendChild(h("div", { class: "pullback-item" }, [
-      h("p", {}, text),
+  scoredMissing.forEach((item) => {
+    const scorePct = item.score > 0 ? Math.round(item.score * 100) : null;
+    const row = h("div", { class: "pullback-item" }, [
+      h("div", { class: "pullback-info" }, [
+        h("p", {}, item.text),
+        scorePct ? h("span", { class: "pullback-mini-score" }, `relevancia: ${scorePct}%`) : null,
+      ]),
       h("button", {
         class: "btn-icon", title: "Agregar",
-        onclick: () => { entry.highlights.push(text); ctx.onRerender(); },
+        onclick: () => { entry.highlights.push(item.text); ctx.onRerender(); },
       }, "+"),
-    ]));
+    ]);
+    details.appendChild(row);
   });
   return details;
 }
@@ -779,6 +1315,7 @@ $("#generate-btn").addEventListener("click", async () => {
     state.targetSectionTypes = deriveSectionTypes(state.targetDoc);
     state.selection = result.selection;
     state.masterDocSnapshot = result.master_cv;
+    state.keywordReport = result.keyword_report;
     setStatus(statusEl, "Listo. Revisá la selección abajo.", "ok");
     setGlobalStatus("CV generado. Revisá las secciones y luego exportá PDF.", "ok");
     $("#apply-result").hidden = false;
@@ -802,6 +1339,11 @@ function drawTargetView() {
     const kws = kwSection[0].replace(/^Palabras clave:\s*/, "").split(",").map((s) => s.trim()).filter(Boolean);
     kws.forEach((kw) => kwList.appendChild(h("span", { class: "kw-chip" }, kw)));
   }
+
+  renderFitScore();
+  renderKeywordReport();
+  renderOpportunities();
+  renderExcludedPanel();
 
   const ctx = {
     doc: state.targetDoc,
