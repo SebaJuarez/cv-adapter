@@ -10,8 +10,10 @@ Nuevas features:
 - Section scores: score promedio por entrada para heatmap de secciones.
 """
 
+import hashlib
 import json
 from copy import deepcopy
+from datetime import datetime
 from typing import Any
 
 import numpy as np
@@ -178,6 +180,44 @@ def _generate_match_reason(bullet_text: str, jd_chunk: str) -> str:
     if len(common) == 2:
         return f"Matchea con requisitos de la oferta: menciona {common[0]} y {common[1]}"
     return f"Matchea con requisitos de la oferta: menciona {', '.join(common[:-1])} y {common[-1]}"
+
+
+
+
+def _parse_date(date_str: str) -> datetime:
+    """Parsea fechas tipo '2021-03', '2021' o 'present'."""
+    if not date_str or str(date_str).lower() == "present":
+        return datetime(9999, 12, 31)
+    try:
+        return datetime.strptime(str(date_str), "%Y-%m")
+    except ValueError:
+        try:
+            return datetime.strptime(str(date_str), "%Y")
+        except ValueError:
+            return datetime(1, 1, 1)
+
+
+def _reorder_entries_chronologically(
+    master_cv: dict[str, Any],
+    section_name: str,
+    selected_entries: list[dict],
+) -> list[dict]:
+    """Reordena las entradas seleccionadas por start_date descendente
+    (más reciente primero), respetando la convención universal de CVs.
+    """
+    sections = master_cv.get("cv", {}).get("sections", {})
+    master_list = sections.get(section_name, [])
+
+    def _entry_date(entry_sel: dict) -> datetime:
+        idx = entry_sel.get("index")
+        if idx is None or idx < 0 or idx >= len(master_list):
+            return datetime(1, 1, 1)
+        original = master_list[idx]
+        if not isinstance(original, dict):
+            return datetime(1, 1, 1)
+        return _parse_date(original.get("start_date", ""))
+
+    return sorted(selected_entries, key=_entry_date, reverse=True)
 
 
 def _group_bullets_into_entries(
@@ -386,6 +426,11 @@ class SelectionEngine:
                 )
                 key = f"selected_{section}"
                 selection[key] = grouped
+                # Reordenar cronológicamente (más reciente primero) después de seleccionar por score
+                if section in ("experience", "projects") and selection[key]:
+                    selection[key] = _reorder_entries_chronologically(
+                        master_cv, section, selection[key]
+                    )
 
         if not self.store.is_fresh(master_json):
             self.store.save_hash(master_json)
@@ -518,4 +563,43 @@ class SelectionEngine:
             grouped = _group_bullets_into_entries(
                 final_ranking, max_entries, max_highlights
             )
+            if section_name in ("experience", "projects") and grouped:
+                grouped = _reorder_entries_chronologically(
+                    master_cv, section_name, grouped
+                )
             return {f"selected_{section_name}": grouped}
+
+
+# ---------------------------------------------------------------------
+# Singleton global para evitar recarga de modelos en cada request
+# ---------------------------------------------------------------------
+_engine_singleton: SelectionEngine | None = None
+_engine_singleton_hash: str | None = None
+
+
+def get_selection_engine(config: dict[str, Any] | None = None) -> SelectionEngine:
+    """Devuelve una instancia de SelectionEngine, reutilizando la misma
+    en memoria si la configuración relevante no cambió.
+
+    Esto evita recargar los modelos de embeddings y cross-encoder en cada
+    request de FastAPI (o cada corrida del CLI), reduciendo la latencia
+    percibida de varios segundos a fracciones de segundo después del
+    primer uso.
+    """
+    global _engine_singleton, _engine_singleton_hash
+    config = config or load_config()
+    # Solo hasheamos las claves que afectan a los modelos o a la selección
+    hashable = json.dumps(
+        {k: config.get(k) for k in (
+            "dense_model", "cross_encoder_model", "use_reranker",
+            "max_experience_entries", "max_project_entries",
+            "max_highlights_per_entry", "max_skill_categories",
+            "max_education_extra", "max_keywords",
+        )},
+        sort_keys=True,
+    )
+    config_hash = hashlib.sha256(hashable.encode("utf-8")).hexdigest()
+    if _engine_singleton is None or _engine_singleton_hash != config_hash:
+        _engine_singleton = SelectionEngine(config)
+        _engine_singleton_hash = config_hash
+    return _engine_singleton

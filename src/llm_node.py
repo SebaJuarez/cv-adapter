@@ -22,7 +22,7 @@ from .prompts import (
     build_selection_schema,
     build_system_prompt,
 )
-from .selection import SelectionEngine
+from .selection import get_selection_engine
 from .state import CVState
 
 
@@ -123,7 +123,7 @@ def generate_selection(
     config = config or load_config()
 
     # --- Fase 1: IR (rápido, determinístico) ---
-    engine = SelectionEngine(config)
+    engine = get_selection_engine(config)
     ir_selection = engine.select(master_cv, job_description)
 
     # --- Fase 2: LLM Estratégico (liviano) ---
@@ -185,8 +185,8 @@ def generate_section_selection(
     """
     config = config or load_config()
 
-    # Fase IR para una sola sección
-    engine = SelectionEngine(config)
+    # Fase IR para una sola sección (singleton, reutiliza modelos en memoria)
+    engine = get_selection_engine(config)
     return engine.select_section(master_cv, job_description, section_name)
 
 
