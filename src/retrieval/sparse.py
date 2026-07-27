@@ -6,10 +6,13 @@ Cada sección tiene su propio índice BM25 independiente.
 
 import re
 
+import numpy as np
 from rank_bm25 import BM25Okapi
 
 # Diccionario curado de sinónimos técnicos para expandir queries.
 # Se aplica tanto a la query (JD) como a los documentos (bullets).
+# NOTA: cada clave debe ser única. Para términos ambiguos, preferir
+# la forma más común o manejarlo por contexto.
 SYNONYMS = {
     "postgres": ["postgresql"],
     "k8s": ["kubernetes"],
@@ -17,8 +20,8 @@ SYNONYMS = {
     "js": ["javascript"],
     "ts": ["typescript"],
     "py": ["python"],
-    "tf": ["tensorflow"],
-    "tf": ["terraform"],  # ambiguo; se maneja por contexto
+    "tf": ["tensorflow"],  # "terraform" se maneja como forma completa
+    "terraform": ["infrastructure as code", "iac"],
     "aws": ["amazon web services"],
     "gcp": ["google cloud platform"],
     "azure": ["microsoft azure"],
@@ -40,14 +43,38 @@ SYNONYMS = {
 
 
 def tokenize_with_synonyms(text: str) -> list[str]:
-    """Tokeniza un texto en palabras y expande con sinónimos conocidos."""
-    tokens = re.findall(r"\b\w+(?:/\w+)?\b", text.lower())
+    """Tokeniza un texto en palabras y expande con sinónimos conocidos.
+
+    Captura términos compuestos (bigramas) y términos con slash.
+    """
+    text = text.lower()
+    # Normalizar separadores: reemplazar guiones por espacios para bigramas
+    text = text.replace("-", " ").replace("/", " / ")
+
+    tokens = re.findall(r"\b\w+(?:\s+/\s+\w+)?\b", text)
+    # También capturar bigramas comunes manualmente
+    words = text.split()
+
     expanded = []
-    for token in tokens:
+    i = 0
+    while i < len(words):
+        # Intentar bigrama primero
+        if i + 1 < len(words):
+            bigram = words[i] + " " + words[i + 1]
+            if bigram in SYNONYMS:
+                expanded.append(bigram)
+                for syn in SYNONYMS[bigram]:
+                    expanded.extend(syn.split())
+                i += 2
+                continue
+        # Unigrama
+        token = words[i]
         expanded.append(token)
         if token in SYNONYMS:
             for syn in SYNONYMS[token]:
                 expanded.extend(syn.split())
+        i += 1
+
     return expanded
 
 
@@ -73,7 +100,6 @@ class SparseIndex:
             return []
         tokens = tokenize_with_synonyms(query_text)
         scores = self.bm25.get_scores(tokens)
-        import numpy as np
         n = len(scores)
         k = min(top_k, n)
         if k == 0:

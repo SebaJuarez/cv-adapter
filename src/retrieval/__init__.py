@@ -7,13 +7,15 @@ Módulos:
 - dense: embeddings con Late Interaction (Max-Sim), NumPy puro.
 - hybrid: Reciprocal Rank Fusion.
 - rerank: Cross-encoder re-ranker.
+- keywords: extracción y verificación ATS de keywords técnicas.
 """
-from .jd_processor import extract_requirements_section, chunk_text
+from .jd_processor import chunk_text, extract_requirements_section
 from .store import BulletDoc, IndexStore
 from .sparse import SparseIndex
 from .dense import DenseIndex
 from .hybrid import reciprocal_rank_fusion
 from .rerank import CrossEncoderReranker
+from .keywords import build_keyword_report, extract_keywords
 
 __all__ = [
     "extract_requirements_section",
@@ -24,4 +26,6 @@ __all__ = [
     "DenseIndex",
     "reciprocal_rank_fusion",
     "CrossEncoderReranker",
+    "build_keyword_report",
+    "extract_keywords",
 ]

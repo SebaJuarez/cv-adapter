@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>cv-adapter</title>
 <link rel="stylesheet" href="style.css">
+<base target="_blank">
 </head>
 <body>
 
@@ -18,6 +19,9 @@
 </header>
 
 <div id="global-status" class="global-status" hidden></div>
+
+<!-- Tooltip flotante para JD snippets -->
+<div id="jd-tooltip" class="jd-tooltip" hidden></div>
 
 <main id="view-master" class="view is-active">
   <div class="view-head">
@@ -52,11 +56,33 @@
   </section>
 
   <section id="apply-result" class="apply-result" hidden>
+    <!-- Score de fit principal -->
+    <div id="fit-score-row" class="fit-score-row" hidden>
+      <div class="fit-score-bar">
+        <div id="fit-score-fill" class="fit-score-fill"></div>
+      </div>
+      <span id="fit-score-label" class="fit-score-label"></span>
+    </div>
+
+    <!-- Keywords detectadas automáticamente -->
     <div class="keywords-row">
-      <span class="eyebrow">keywords</span>
+      <span class="eyebrow">keywords detectadas</span>
       <div id="keywords-list" class="keywords-list"></div>
     </div>
+
+    <!-- Keyword report con frecuencias e impacto -->
+    <div id="keyword-report" class="keyword-report"></div>
+
+    <!-- Oportunidades críticas -->
+    <div id="opportunities-panel" class="opportunities-panel" hidden>
+      <h3 class="opp-title">🎯 Oportunidades críticas</h3>
+      <p class="opp-subtitle">Estas keywords aparecen varias veces en la oferta pero no están en tu CV generado. Incluirlas aumenta fuertemente tu probabilidad de pasar el ATS.</p>
+      <div id="opportunities-list" class="opportunities-list"></div>
+    </div>
+
+    <!-- ATS checklist manual (legacy) -->
     <div id="ats-checklist" class="ats-checklist"></div>
+
     <div id="target-header"></div>
     <div id="target-nav" class="section-nav"></div>
     <div id="target-sections"></div>

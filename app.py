@@ -3,12 +3,6 @@
 Corré con:
     uvicorn app:app --reload
 y abrí http://127.0.0.1:8000 en el navegador.
-
-No agrega lógica nueva de negocio: reusa exactamente las mismas funciones
-que el pipeline CLI (main.py) — generate_selection, build_target_cv,
-run_rendercv, save_yaml — así que las garantías anti-alucinación y el
-presupuesto de una página son idénticos, uses la web o la consola.
-
 """
 
 from pathlib import Path
@@ -29,6 +23,7 @@ from src.merge import (
     validate_master_cv_structure,
 )
 from src.render_node import run_rendercv, save_yaml
+from src.retrieval.keywords import build_keyword_report
 from src.retrieval.store import IndexStore
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -47,7 +42,7 @@ class JobDescriptionIn(BaseModel):
 
 class RegenerateSectionIn(BaseModel):
     job_description: str
-    section_name: str  # "experience" | "projects" | "skills"
+    section_name: str
 
 
 class CVDocumentIn(BaseModel):
@@ -61,14 +56,9 @@ class CVDocumentIn(BaseModel):
         return strip_internal_keys(data)
 
 
-# ---------------------------------------------------------------- master CV
-
-
 @app.get("/api/master-cv")
 def get_master_cv() -> Dict[str, Any]:
     if not MASTER_CV_PATH.exists():
-        # Devolvemos un esqueleto vacío en vez de 404: la UI arranca desde
-        # cero sin que el usuario tenga que crear el archivo a mano.
         return {
             "cv": {
                 "name": "",
@@ -99,9 +89,6 @@ def save_master_cv(payload: CVDocumentIn) -> Dict[str, Any]:
     return {"ok": True}
 
 
-# ------------------------------------------------------------------- config
-
-
 @app.get("/api/config")
 def get_config() -> Dict[str, Any]:
     return load_config()
@@ -117,12 +104,8 @@ def update_config(payload: Dict[str, Any]) -> Dict[str, Any]:
     return save_config(payload)
 
 
-# --------------------------------------------------------- health / status
-
-
 @app.get("/api/health")
 def health_check() -> Dict[str, Any]:
-    """Verifica el estado de los servicios y modelos locales."""
     import ollama
 
     status = {
@@ -135,34 +118,23 @@ def health_check() -> Dict[str, Any]:
         },
     }
 
-    # Check Ollama
     try:
         config = load_config()
         model = config["ollama_model"]
-        ollama.list()
-        # Verificar que el modelo específico esté disponible
         models = ollama.list()
         available = any(m["model"] == model for m in models.get("models", []))
         status["ollama"]["ok"] = available
         status["ollama"]["model"] = model
         if not available:
-            status["ollama"][
-                "error"
-            ] = f"Modelo '{model}' no descargado. Ejecutá: ollama pull {model}"
+            status["ollama"]["error"] = f"Modelo '{model}' no descargado. Ejecutá: ollama pull {model}"
     except Exception as e:
         status["ollama"]["error"] = str(e)
 
-    # Check embeddings (lazy: solo verificamos que las librerías estén instaladas)
     try:
         from sentence_transformers import SentenceTransformer
-
         config = load_config()
-        status["embeddings"]["dense_model"] = config.get(
-            "dense_model", "sentence-transformers/all-MiniLM-L6-v2"
-        )
-        status["embeddings"]["cross_encoder"] = config.get(
-            "cross_encoder_model", "cross-encoder/ms-marco-MiniLM-L-6-v2"
-        )
+        status["embeddings"]["dense_model"] = config.get("dense_model", "sentence-transformers/all-MiniLM-L6-v2")
+        status["embeddings"]["cross_encoder"] = config.get("cross_encoder_model", "cross-encoder/ms-marco-MiniLM-L-6-v2")
         status["embeddings"]["ok"] = True
     except ImportError as e:
         status["embeddings"]["error"] = f"Librerías de embeddings no instaladas: {e}"
@@ -173,8 +145,6 @@ def health_check() -> Dict[str, Any]:
 
 @app.post("/api/clear-index")
 def clear_retrieval_index() -> Dict[str, Any]:
-    """Invalida y elimina todos los índices de retrieval persistidos.
-    Útil si los índices se corrompen o si querés forzar una reconstrucción."""
     try:
         store = IndexStore()
         store.clear()
@@ -186,9 +156,6 @@ def clear_retrieval_index() -> Dict[str, Any]:
         raise HTTPException(
             status_code=500, detail=f"No se pudieron eliminar los índices: {e}"
         )
-
-
-# --------------------------------------------------------- generar / render
 
 
 @app.post("/api/generate")
@@ -219,7 +186,15 @@ def generate(payload: JobDescriptionIn) -> Dict[str, Any]:
         job_description=payload.job_description,
         manual_keywords=payload.manual_keywords,
     )
-    return {"target_cv": target_cv, "selection": selection, "master_cv": master_cv}
+
+    keyword_report = build_keyword_report(master_cv, target_cv, payload.job_description)
+
+    return {
+        "target_cv": target_cv,
+        "selection": selection,
+        "master_cv": master_cv,
+        "keyword_report": keyword_report,
+    }
 
 
 @app.post("/api/regenerate-section")
@@ -274,8 +249,4 @@ def download_pdf() -> FileResponse:
     return FileResponse(latest, media_type="application/pdf", filename=latest.name)
 
 
-# --------------------------------------------------------------- frontend
-
-# Va al final: es un mount "catch-all" en "/", tiene que registrarse
-# después de las rutas /api/* para no taparlas.
 app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")

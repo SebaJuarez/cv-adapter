@@ -4,15 +4,10 @@ Reemplaza la función `generate_selection()` de `llm_node.py` para la fase de
 retrieval (selección de bullets/experiencias/skills). El LLM se relega a una
 fase estratégica posterior (summary, keywords implícitas, match_reasons).
 
-Pipeline por sección:
-    1. Extraer bullets del master_cv por sección.
-    2. Cargar o reconstruir índices BM25 + Dense (cacheados en disco).
-    3. Procesar JD: extract_requirements_section → chunk → embed chunks.
-    4. Late Interaction (Max-Sim): cada bullet contra su mejor chunk.
-    5. Hybrid Retrieval (RRF de sparse + dense).
-    6. Cross-Encoder re-rank (query fija = requisitos extraídos).
-    7. Agrupar bullets en entradas por score máximo (no por cantidad).
-    8. Devolver formato compatible con merge.py.
+Nuevas features:
+- Exposición de scores por bullet para el frontend (relevancia visual).
+- JD snippets: el fragmento del JD que mejor matcheó con cada bullet.
+- Section scores: score promedio por entrada para heatmap de secciones.
 """
 
 import json
@@ -34,10 +29,7 @@ from .retrieval import (
     reciprocal_rank_fusion,
 )
 
-# Secciones soportadas para retrieval híbrido
 _RETRIEVAL_SECTIONS = ["experience", "projects", "skills", "education"]
-
-# Mapeo de sección -> clave de config para límites
 _SECTION_LIMIT_KEYS = {
     "experience": "max_experience_entries",
     "projects": "max_project_entries",
@@ -49,11 +41,6 @@ _SECTION_LIMIT_KEYS = {
 def _extract_bullets_from_section(
     master_cv: dict[str, Any], section_name: str
 ) -> list[BulletDoc]:
-    """Extrae todos los bullets de una sección del CV maestro como BulletDocs.
-
-    Para "skills", cada skill entry se trata como un "bullet" de una sola línea.
-    Para "education", los highlights se tratan como bullets.
-    """
     sections = master_cv.get("cv", {}).get("sections", {})
     entries = sections.get(section_name, [])
     bullets: list[BulletDoc] = []
@@ -62,7 +49,6 @@ def _extract_bullets_from_section(
         if not isinstance(entry, dict):
             continue
 
-        # Determinar label de la entrada
         if section_name == "experience":
             label = entry.get("company", "") or entry.get("position", "")
         elif section_name == "projects":
@@ -75,7 +61,6 @@ def _extract_bullets_from_section(
             label = ""
 
         if section_name == "skills":
-            # Skills: un "bullet" por entry, texto = label + details
             text = f"{entry.get('label', '')}: {entry.get('details', '')}".strip(": ")
             if text:
                 bullets.append(
@@ -89,7 +74,6 @@ def _extract_bullets_from_section(
                     )
                 )
         else:
-            # Experience, projects, education: un bullet por highlight
             for bullet_idx, highlight in enumerate(entry.get("highlights", [])):
                 if isinstance(highlight, str) and highlight.strip():
                     bullets.append(
@@ -102,7 +86,6 @@ def _extract_bullets_from_section(
                             entry_label=label,
                         )
                     )
-
     return bullets
 
 
@@ -112,7 +95,6 @@ def _build_indices_for_section(
     dense_model: SentenceTransformer,
     store: IndexStore,
 ) -> tuple[SparseIndex, DenseIndex]:
-    """Construye (o carga) índices sparse y dense para una sección."""
     sparse_idx = SparseIndex()
     dense_idx = DenseIndex(dense_model)
 
@@ -131,9 +113,8 @@ def _build_indices_for_section(
     sparse_idx.build(bullet_dicts)
     dense_idx.build(bullet_dicts)
 
-    # Persistir
     store.save_bullets(section_name, bullets)
-    store.save_sparse(section_name, sparse_idx)
+    store.save_sparse(section_name, sparse_idx.bm25)
     store.save_dense(section_name, dense_idx.embeddings)
 
     return sparse_idx, dense_idx
@@ -144,12 +125,14 @@ def _load_indices_for_section(
     dense_model: SentenceTransformer,
     store: IndexStore,
 ) -> tuple[SparseIndex, DenseIndex] | None:
-    """Carga índices persistidos para una sección. Devuelve None si no existen."""
     bullets = store.load_bullets(section_name)
     dense_emb = store.load_dense(section_name)
     sparse_obj = store.load_sparse(section_name)
 
     if bullets is None or dense_emb is None or sparse_obj is None:
+        return None
+
+    if not hasattr(sparse_obj, "get_scores"):
         return None
 
     sparse_idx = SparseIndex()
@@ -163,17 +146,45 @@ def _load_indices_for_section(
     return sparse_idx, dense_idx
 
 
+def _generate_match_reason(bullet_text: str, jd_chunk: str) -> str:
+    import re
+
+    stopwords = {
+        "the", "and", "for", "with", "you", "will", "are", "our", "that", "have",
+        "this", "your", "from", "they", "been", "their", "what", "when", "where",
+        "than", "then", "them", "these", "those", "being", "having", "doing",
+        "about", "into", "through", "during", "before", "after", "above", "below",
+        "between", "under", "over", "again", "further", "once", "here", "there",
+        "why", "how", "all", "any", "both", "each", "few", "more", "most", "other",
+        "some", "such", "only", "own", "same", "so", "than", "too", "very", "can",
+        "just", "should", "now", "use", "using", "used", "work", "working", "worked",
+        "experience", "experienced", "years", "year", "least", "plus", "good", "strong",
+        "excellent", "solid", "deep", "proven", "track", "record", "ability", "able",
+        "looking", "seeking", "join", "team", "company", "role", "position", "job",
+    }
+
+    def extract_words(text: str) -> set[str]:
+        words = re.findall(r"\b[a-z]{3,}\b", text.lower())
+        return {w for w in words if w not in stopwords}
+
+    bullet_words = extract_words(bullet_text)
+    jd_words = extract_words(jd_chunk)
+    common = sorted(bullet_words & jd_words)
+
+    if not common:
+        return "Relevante para la oferta"
+    if len(common) == 1:
+        return f"Matchea con requisitos de la oferta: menciona {common[0]}"
+    if len(common) == 2:
+        return f"Matchea con requisitos de la oferta: menciona {common[0]} y {common[1]}"
+    return f"Matchea con requisitos de la oferta: menciona {', '.join(common[:-1])} y {common[-1]}"
+
+
 def _group_bullets_into_entries(
     ranked_bullets: list[dict],
     max_entries: int,
     max_highlights_per_entry: int,
 ) -> list[dict]:
-    """Agrupa bullets rankeados en entradas, respetando presupuestos.
-
-    ORDENA POR SCORE MÁXIMO DE LA ENTRADA (no por cantidad de bullets).
-    Esto evita que un proyecto con 3 bullets mediocres supere una
-    experiencia con 2 bullets excelentes.
-    """
     from collections import defaultdict
 
     entries = defaultdict(list)
@@ -185,7 +196,6 @@ def _group_bullets_into_entries(
     if not entries:
         return []
 
-    # Ordenar entradas por score máximo (calidad), no por cantidad
     sorted_entries = sorted(
         entries.items(),
         key=lambda x: max(b["score"] for b in x[1]),
@@ -194,27 +204,20 @@ def _group_bullets_into_entries(
 
     result = []
     for (section, entry_idx), bullets in sorted_entries:
-        # Ordenar bullets dentro de la entrada por score descendente
         bullets_sorted = sorted(bullets, key=lambda b: b["score"], reverse=True)
+        avg_score = round(sum(b["score"] for b in bullets_sorted) / len(bullets_sorted), 3)
         result.append(
             {
                 "index": entry_idx,
                 "highlight_order": [b["bullet_index"] for b in bullets_sorted],
-                "match_reason": bullets_sorted[0]["text"][:120] + "...",
+                "match_reason": bullets_sorted[0].get("match_reason", bullets_sorted[0]["text"][:120] + "..."),
+                "entry_score": avg_score,  # NUEVO: score promedio de la entrada
             }
         )
     return result
 
 
 class SelectionEngine:
-    """Orquesta el pipeline de retrieval híbrido para seleccionar contenido del CV.
-
-    Uso típico:
-        engine = SelectionEngine(config)
-        selection = engine.select(master_cv, job_description)
-        # selection es un dict compatible con merge.py
-    """
-
     def __init__(self, config: dict[str, Any] | None = None):
         self.config = config or load_config()
         self.store = IndexStore()
@@ -244,20 +247,6 @@ class SelectionEngine:
         master_cv: dict[str, Any],
         job_description: str,
     ) -> dict[str, Any]:
-        """Ejecuta el pipeline completo de retrieval híbrido.
-
-        Devuelve un dict con el mismo formato que `generate_selection()`
-        del LLM (para compatibilidad con merge.py):
-            {
-                "selected_experience": [{"index": int, "highlight_order": [...], "match_reason": str}],
-                "selected_projects": [...],
-                "selected_skills_indices": [int, ...],
-                "selected_education_indices": [int, ...],
-                "summary_index": None,  # el LLM lo elige después
-                "keywords_detected": [],  # el LLM lo elige después
-            }
-        """
-        # --- 1. Preparar JD: extraer requisitos + chunk + embed ---
         query_text = extract_requirements_section(job_description)
         query_chunks = chunk_text(query_text, max_tokens=200, overlap=50)
 
@@ -267,12 +256,10 @@ class SelectionEngine:
             convert_to_numpy=True,
             normalize_embeddings=True,
             show_progress_bar=False,
-        )  # (n_chunks, dim)
+        )
 
-        # --- 2. Serializar master_cv para verificar cache ---
         master_json = json.dumps(master_cv, ensure_ascii=False, sort_keys=True)
 
-        # --- 3. Por cada sección: retrieval híbrido ---
         selection: dict[str, Any] = {
             "selected_experience": [],
             "selected_projects": [],
@@ -280,6 +267,9 @@ class SelectionEngine:
             "selected_education_indices": [],
             "summary_index": None,
             "keywords_detected": [],
+            "bullet_scores": {},       # NUEVO: bullet_id -> score (0-1)
+            "jd_snippets": {},         # NUEVO: bullet_id -> snippet del JD
+            "section_scores": {},      # NUEVO: section -> {entry_idx: score}
         }
 
         for section in _RETRIEVAL_SECTIONS:
@@ -287,7 +277,6 @@ class SelectionEngine:
             if not bullets:
                 continue
 
-            # Cargar o construir índices
             indices = _load_indices_for_section(section, dense_model, self.store)
             if indices is None or not self.store.is_fresh(master_json):
                 indices = _build_indices_for_section(
@@ -295,21 +284,14 @@ class SelectionEngine:
                 )
 
             sparse_idx, dense_idx = indices
-
-            # Sparse retrieval
             sparse_ranking = sparse_idx.query(query_text, top_k=50)
-
-            # Dense retrieval (Late Interaction / Max-Sim)
-            dense_ranking = dense_idx.query(chunk_embeddings, top_k=50)
-
-            # Hybrid fusion (RRF)
+            dense_ranking, chunk_map = dense_idx.query(chunk_embeddings, top_k=50)
             hybrid_ranking = reciprocal_rank_fusion(sparse_ranking, dense_ranking)
 
-            # Cross-encoder re-rank (query fija = requisitos extraídos)
             reranker = self._get_reranker()
+            bullet_map = {b.id: b for b in bullets}
+
             if reranker is not None:
-                # Mapear ids a bullets
-                bullet_map = {b.id: b for b in bullets}
                 candidate_bullets = [
                     {
                         "id": bid,
@@ -322,10 +304,12 @@ class SelectionEngine:
                     if bid in bullet_map
                 ]
                 reranked = reranker.rerank(query_text, candidate_bullets, top_k=30)
-                # Reconstruir ranking con scores
                 final_ranking = []
                 for bid, score in reranked:
                     b = bullet_map[bid]
+                    best_chunk_idx = chunk_map.get(bid, 0)
+                    jd_chunk = query_chunks[best_chunk_idx] if best_chunk_idx < len(query_chunks) else query_text
+                    match_reason = _generate_match_reason(b.text, jd_chunk)
                     final_ranking.append(
                         {
                             "id": bid,
@@ -333,17 +317,21 @@ class SelectionEngine:
                             "section": b.section,
                             "entry_index": b.entry_index,
                             "bullet_index": b.bullet_index,
-                            "score": score,
+                            "score": round(score, 3),
+                            "match_reason": match_reason,
+                            "best_chunk_idx": best_chunk_idx,
+                            "jd_snippet": jd_chunk[:200],  # NUEVO
                         }
                     )
             else:
-                # Sin re-ranker: usar ranking híbrido con scores simulados
-                bullet_map = {b.id: b for b in bullets}
                 final_ranking = []
                 for rank, bid in enumerate(hybrid_ranking):
                     if bid not in bullet_map:
                         continue
                     b = bullet_map[bid]
+                    best_chunk_idx = chunk_map.get(bid, 0)
+                    jd_chunk = query_chunks[best_chunk_idx] if best_chunk_idx < len(query_chunks) else query_text
+                    match_reason = _generate_match_reason(b.text, jd_chunk)
                     final_ranking.append(
                         {
                             "id": bid,
@@ -351,16 +339,28 @@ class SelectionEngine:
                             "section": b.section,
                             "entry_index": b.entry_index,
                             "bullet_index": b.bullet_index,
-                            "score": 1.0 / (rank + 1),  # score decreciente
+                            "score": round(1.0 / (rank + 1), 3),
+                            "match_reason": match_reason,
+                            "best_chunk_idx": best_chunk_idx,
+                            "jd_snippet": jd_chunk[:200],
                         }
                     )
 
-            # Agrupar bullets en entradas
+            # Guardar scores y snippets globales
+            section_scores = {}
+            for b in final_ranking:
+                selection["bullet_scores"][b["id"]] = b["score"]
+                selection["jd_snippets"][b["id"]] = b["jd_snippet"]
+                eidx = b["entry_index"]
+                if eidx not in section_scores or b["score"] > section_scores[eidx]:
+                    section_scores[eidx] = b["score"]
+            if section_scores:
+                selection["section_scores"][section] = section_scores
+
             max_entries = self.config.get(_SECTION_LIMIT_KEYS[section], 3)
             max_highlights = self.config.get("max_highlights_per_entry", 4)
 
             if section == "skills":
-                # Skills: no hay highlights, es una lista de índices
                 seen = set()
                 skill_indices = []
                 for b in final_ranking:
@@ -371,7 +371,6 @@ class SelectionEngine:
                 selection["selected_skills_indices"] = skill_indices[:max_entries]
 
             elif section == "education":
-                # Education: índices de entradas extra (el índice 0 siempre se incluye)
                 seen = set()
                 edu_indices = []
                 for b in final_ranking:
@@ -382,14 +381,12 @@ class SelectionEngine:
                 selection["selected_education_indices"] = edu_indices[:max_entries]
 
             else:
-                # Experience / Projects: entradas con highlight_order
                 grouped = _group_bullets_into_entries(
                     final_ranking, max_entries, max_highlights
                 )
                 key = f"selected_{section}"
                 selection[key] = grouped
 
-        # Guardar hash si era la primera vez
         if not self.store.is_fresh(master_json):
             self.store.save_hash(master_json)
 
@@ -401,11 +398,6 @@ class SelectionEngine:
         job_description: str,
         section_name: str,
     ) -> dict[str, Any]:
-        """Versión acotada: regenera UNA sola sección (usado por /api/regenerate-section).
-
-        Devuelve un dict con la misma estructura que select() pero solo
-        con la clave correspondiente a la sección pedida.
-        """
         if section_name not in _RETRIEVAL_SECTIONS:
             raise ValueError(f"Sección no soportada: {section_name}")
 
@@ -438,7 +430,7 @@ class SelectionEngine:
 
         sparse_idx, dense_idx = indices
         sparse_ranking = sparse_idx.query(query_text, top_k=50)
-        dense_ranking = dense_idx.query(chunk_embeddings, top_k=50)
+        dense_ranking, chunk_map = dense_idx.query(chunk_embeddings, top_k=50)
         hybrid_ranking = reciprocal_rank_fusion(sparse_ranking, dense_ranking)
 
         reranker = self._get_reranker()
@@ -460,6 +452,9 @@ class SelectionEngine:
             final_ranking = []
             for bid, score in reranked:
                 b = bullet_map[bid]
+                best_chunk_idx = chunk_map.get(bid, 0)
+                jd_chunk = query_chunks[best_chunk_idx] if best_chunk_idx < len(query_chunks) else query_text
+                match_reason = _generate_match_reason(b.text, jd_chunk)
                 final_ranking.append(
                     {
                         "id": bid,
@@ -467,7 +462,10 @@ class SelectionEngine:
                         "section": b.section,
                         "entry_index": b.entry_index,
                         "bullet_index": b.bullet_index,
-                        "score": score,
+                        "score": round(score, 3),
+                        "match_reason": match_reason,
+                        "best_chunk_idx": best_chunk_idx,
+                        "jd_snippet": jd_chunk[:200],
                     }
                 )
         else:
@@ -476,6 +474,9 @@ class SelectionEngine:
                 if bid not in bullet_map:
                     continue
                 b = bullet_map[bid]
+                best_chunk_idx = chunk_map.get(bid, 0)
+                jd_chunk = query_chunks[best_chunk_idx] if best_chunk_idx < len(query_chunks) else query_text
+                match_reason = _generate_match_reason(b.text, jd_chunk)
                 final_ranking.append(
                     {
                         "id": bid,
@@ -483,7 +484,10 @@ class SelectionEngine:
                         "section": b.section,
                         "entry_index": b.entry_index,
                         "bullet_index": b.bullet_index,
-                        "score": 1.0 / (rank + 1),
+                        "score": round(1.0 / (rank + 1), 3),
+                        "match_reason": match_reason,
+                        "best_chunk_idx": best_chunk_idx,
+                        "jd_snippet": jd_chunk[:200],
                     }
                 )
 

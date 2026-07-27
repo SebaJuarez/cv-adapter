@@ -100,17 +100,26 @@ class IndexStore:
         return np.load(path)
 
     def save_sparse(self, section: str, bm25_index) -> None:
+        """Guarda el índice BM25Okapi (no el SparseIndex wrapper)."""
         section_dir = self._section_dir(section)
         section_dir.mkdir(parents=True, exist_ok=True)
         with open(section_dir / "sparse.pkl", "wb") as f:
             pickle.dump(bm25_index, f)
 
     def load_sparse(self, section: str):
+        """Carga el índice BM25Okapi. Devuelve None si está corrupto o no existe."""
         path = self._section_dir(section) / "sparse.pkl"
         if not path.exists():
             return None
-        with open(path, "rb") as f:
-            return pickle.load(f)
+        try:
+            with open(path, "rb") as f:
+                obj = pickle.load(f)
+            # Defensa: verificar que sea un BM25Okapi (tiene get_scores)
+            if not hasattr(obj, "get_scores"):
+                return None
+            return obj
+        except Exception:
+            return None
 
     def clear(self) -> None:
         """Elimina todos los índices persistidos."""

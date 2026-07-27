@@ -1,9 +1,7 @@
 /* ---------------------------------------------------------------------
    cv-adapter — tokens
    Paleta "papel de archivo / tinta", sin gradientes, sin acentos neón,
-   sin bordes redondeados grandes. El elemento distintivo es el uso de
-   etiquetas mono con la clave YAML real de cada sección (eyebrow), como
-   recordatorio permanente de qué se está editando en realidad.
+   sin bordes redondeados grandes.
 ------------------------------------------------------------------------ */
 :root {
   --paper: #eeece5;
@@ -18,6 +16,8 @@
   --accent-soft: #e3e9dd;
   --danger: #8a3b2b;
   --danger-soft: #f2e2db;
+  --warn: #8a7b3b;
+  --warn-soft: #f5f0d6;
 
   --font-display: "Iowan Old Style", "Palatino Linotype", Palatino, "Georgia", serif;
   --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -166,7 +166,13 @@ button, input, textarea, select { font-family: inherit; font-size: inherit; colo
   border-radius: var(--radius);
   padding: 1rem 1.1rem 1.1rem;
   margin-bottom: 0.85rem;
+  transition: border-color 0.15s ease;
 }
+
+/* Heatmap borders */
+.entry-card.entry-heat-high { border-left: 3px solid var(--accent); }
+.entry-card.entry-heat-mid  { border-left: 3px solid var(--warn); }
+.entry-card.entry-heat-low  { border-left: 3px solid var(--danger); }
 
 .entry-fields {
   display: grid;
@@ -195,6 +201,7 @@ button, input, textarea, select { font-family: inherit; font-size: inherit; colo
   color: var(--accent-strong);
   font-style: italic;
   margin: -0.3rem 0 0.7rem;
+  cursor: help;
 }
 
 /* -------------------------------------------------------------- inputs */
@@ -224,6 +231,7 @@ textarea.highlight-text { min-height: 1.6em; resize: none; overflow: hidden; }
   align-items: flex-start;
   gap: 0.5rem;
   margin-bottom: 0.4rem;
+  flex-wrap: wrap;
 }
 
 .highlight-row .bullet-mark {
@@ -236,6 +244,36 @@ textarea.highlight-text { min-height: 1.6em; resize: none; overflow: hidden; }
 .highlight-row textarea { flex: 1; }
 
 .row-controls { display: flex; gap: 0.15rem; padding-top: 0.15rem; }
+
+/* Bullet score mini bar */
+.bullet-score {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  width: 100%;
+  padding-left: 1.5rem;
+  margin-top: -0.2rem;
+  margin-bottom: 0.3rem;
+}
+
+.bullet-score-bar {
+  width: 60px;
+  height: 4px;
+  background: var(--rule);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.bullet-score-fill {
+  height: 100%;
+  background: var(--accent);
+}
+
+.bullet-score-num {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--ink-faint);
+}
 
 /* ---------------------------------------------------------- pull-back */
 
@@ -265,6 +303,11 @@ textarea.highlight-text { min-height: 1.6em; resize: none; overflow: hidden; }
 .pullback-item:first-of-type { border-top: none; }
 
 .pullback-item p { margin: 0; flex: 1; color: var(--ink-soft); }
+
+.pullback-info { flex: 1; }
+.pullback-header { display: flex; justify-content: space-between; align-items: baseline; }
+.pullback-score { font-family: var(--font-mono); font-size: 0.72rem; color: var(--ink-faint); }
+.pullback-mini-score { font-family: var(--font-mono); font-size: 0.72rem; color: var(--ink-faint); }
 
 /* --------------------------------------------------------------- chips */
 
@@ -341,6 +384,11 @@ textarea.highlight-text { min-height: 1.6em; resize: none; overflow: hidden; }
 }
 
 .btn-ghost { background: transparent; }
+
+.btn-sm {
+  padding: 0.25rem 0.55rem;
+  font-size: 0.78rem;
+}
 
 .btn-add-section { margin-top: 0.25rem; }
 
@@ -458,7 +506,7 @@ textarea.highlight-text { min-height: 1.6em; resize: none; overflow: hidden; }
   border-radius: var(--radius);
   padding: 1.4rem;
   width: 100%;
-  max-width: 380px;
+  max-width: 480px;
 }
 
 .modal-box h3 { font-family: var(--font-display); margin: 0 0 1rem; font-size: 1.1rem; }
@@ -480,4 +528,195 @@ textarea.highlight-text { min-height: 1.6em; resize: none; overflow: hidden; }
 
 @media (prefers-reduced-motion: no-preference) {
   .view { transition: opacity 0.1s ease; }
+}
+
+/* ===================================================================
+   NUEVOS ESTILOS v2.1 — Fit score, keyword report, oportunidades,
+   bullet scores, heatmap, tooltip JD
+   =================================================================== */
+
+/* -------------------------------------------------- fit score */
+.fit-score-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+  background: var(--paper-raised);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  padding: 0.7rem 1rem;
+}
+
+.fit-score-bar {
+  flex: 1;
+  height: 8px;
+  background: var(--rule);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.fit-score-fill {
+  height: 100%;
+  width: 0%;
+  background: var(--accent);
+  transition: width 0.4s ease;
+}
+
+.fit-score-fill.fit-good { background: var(--accent); }
+.fit-score-fill.fit-mid  { background: var(--warn); }
+.fit-score-fill.fit-bad  { background: var(--danger); }
+
+.fit-score-label {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+/* -------------------------------------------------- keyword report */
+.keyword-report {
+  margin-bottom: 1.5rem;
+}
+
+.kw-report {
+  background: var(--paper-raised);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  padding: 0.9rem 1rem;
+}
+
+.kw-legend {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.kw-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.76rem;
+  color: var(--ink-soft);
+}
+
+.kw-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.kw-dot-ok { background: var(--accent); }
+.kw-dot-missing { background: var(--warn); }
+.kw-dot-notmaster { background: var(--danger); }
+
+.kw-chip-ok {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  border-color: var(--rule);
+}
+
+.kw-chip-missing {
+  background: var(--warn-soft);
+  color: #5c4f1e;
+  border-color: #d9d0a8;
+  cursor: pointer;
+}
+
+.kw-chip-missing:hover {
+  background: #ede7c0;
+  border-color: #c2b87a;
+}
+
+.kw-chip-notmaster {
+  background: var(--danger-soft);
+  color: var(--danger);
+  border-color: var(--danger-soft);
+}
+
+.kw-summary {
+  font-size: 0.82rem;
+  color: var(--ink-soft);
+  margin: 0.5rem 0 0;
+}
+
+.kw-summary-gap {
+  color: var(--danger);
+}
+
+/* -------------------------------------------------- oportunidades */
+.opportunities-panel {
+  background: var(--warn-soft);
+  border: 1px solid #d9d0a8;
+  border-radius: var(--radius);
+  padding: 1rem 1.1rem;
+  margin-bottom: 1.5rem;
+}
+
+.opp-title {
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  margin: 0 0 0.3rem;
+  color: var(--ink);
+}
+
+.opp-subtitle {
+  font-size: 0.82rem;
+  color: var(--ink-soft);
+  margin: 0 0 0.8rem;
+}
+
+.opportunities-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.opp-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  padding: 0.5rem 0.7rem;
+}
+
+.opp-keyword {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.opp-freq {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--warn);
+  background: var(--warn-soft);
+  padding: 0.05rem 0.3rem;
+  border-radius: var(--radius);
+}
+
+/* -------------------------------------------------- tooltip JD */
+.jd-tooltip {
+  position: absolute;
+  z-index: 100;
+  max-width: 320px;
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 0.8rem;
+  line-height: 1.5;
+  padding: 0.7rem 0.9rem;
+  border-radius: var(--radius);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  pointer-events: none;
+}
+
+/* -------------------------------------------------- modal pullback */
+.pullback-list {
+  max-height: 300px;
+  overflow-y: auto;
+  margin: 0.5rem 0;
 }
