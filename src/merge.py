@@ -36,6 +36,45 @@ def _get_synonym_variants(keyword: str) -> Set[str]:
     return _SYNONYM_GROUPS.get(kw_low, {kw_low})
 
 
+
+
+def _reorder_skill_details(
+    skill_entry: Dict[str, Any],
+    priority_keywords: List[str],
+) -> Dict[str, Any]:
+    """Reordena los ítems dentro de `details` de una skill category.
+
+    Los ítems que contienen alguna keyword prioritaria (o su sinónimo)
+    aparecen primero, preservando su orden relativo original. El resto
+    sigue después, también en orden relativo original.
+
+    No agrega ni quita ningún ítem — solo reordena.
+    """
+    details = skill_entry.get("details", "")
+    if not isinstance(details, str) or not details.strip():
+        return skill_entry
+
+    items = [item.strip() for item in details.split(",") if item.strip()]
+    if not items:
+        return skill_entry
+
+    # Construir set de variantes sinónimas de todas las keywords prioritarias
+    priority_variants: Set[str] = set()
+    for kw in priority_keywords:
+        priority_variants.update(_get_synonym_variants(kw.lower().strip()))
+
+    def _matches(item: str) -> bool:
+        item_low = item.lower()
+        return any(v in item_low for v in priority_variants)
+
+    matched = [item for item in items if _matches(item)]
+    unmatched = [item for item in items if not _matches(item)]
+
+    reordered = deepcopy(skill_entry)
+    reordered["details"] = ", ".join(matched + unmatched)
+    return reordered
+
+
 def validate_master_cv_structure(master_cv: Dict[str, Any]) -> List[str]:
     """Chequeo defensivo post-carga: detecta el error más común al editar
     master_cv.yaml a mano — un bullet SIN comillas que contiene ': ' (dos
@@ -323,7 +362,10 @@ def build_target_cv(
     # --- Skills ---
     new_skills = build_section_entries(master_cv, "skills", selection, config)
     if new_skills:
-        new_sections["skills"] = new_skills
+        # Reordenar ítems dentro de cada categoría: matches con keywords primero
+        new_sections["skills"] = [
+            _reorder_skill_details(s, verified_keywords) for s in new_skills
+        ]
 
     # --- Languages: se mantienen siempre igual ---
     if master_sections.get("languages"):
