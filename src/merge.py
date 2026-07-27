@@ -77,7 +77,7 @@ def _reorder_skill_details(
 
 def validate_master_cv_structure(master_cv: Dict[str, Any]) -> List[str]:
     """Chequeo defensivo post-carga: detecta el error más común al editar
-    master_cv.yaml a mano — un bullet SIN comillas que contiene ': ' (dos
+    master_cv.yaml a mano — un bullet SIN comillas que contiene ": " (dos
     puntos + espacio). YAML interpreta eso como un mapeo anidado en vez de
     texto, y el 'highlight' termina siendo un dict en vez de un string.
     Devuelve una lista de mensajes de error (vacía si todo está OK).
@@ -105,7 +105,7 @@ def validate_master_cv_structure(master_cv: Dict[str, Any]) -> List[str]:
                     errors.append(
                         f"cv.sections.{section_name}[{i}] ({label}) → highlights[{j}] "
                         f"no es un texto válido (llegó como {type(h).__name__}). "
-                        "Causa típica: un bullet SIN comillas que contiene ': ' "
+                        'Causa típica: un bullet SIN comillas que contiene ": " '
                         "(dos puntos + espacio). Solución: poné ese bullet completo "
                         "entre comillas simples en el YAML."
                     )

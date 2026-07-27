@@ -6,6 +6,7 @@
 <title>cv-adapter</title>
 <link rel="stylesheet" href="style.css">
 <base target="_blank">
+<base target="_blank">
 </head>
 <body>
 
@@ -78,6 +79,15 @@
       <h3 class="opp-title">🎯 Oportunidades críticas</h3>
       <p class="opp-subtitle">Estas keywords aparecen varias veces en la oferta pero no están en tu CV generado. Incluirlas aumenta fuertemente tu probabilidad de pasar el ATS.</p>
       <div id="opportunities-list" class="opportunities-list"></div>
+    </div>
+
+    <!-- Contenido excluido por presupuesto -->
+    <div id="excluded-panel" class="excluded-panel" hidden>
+      <details>
+        <summary>📋 Contenido evaluado pero excluido por presupuesto de página</summary>
+        <p class="excluded-hint">Estas entradas y bullets fueron rankeados por relevancia pero no entraron por los límites configurados. Podés agregarlos manualmente si querés.</p>
+        <div id="excluded-content"></div>
+      </details>
     </div>
 
     <!-- ATS checklist manual (legacy) -->

@@ -241,6 +241,187 @@ function renderOpportunities() {
 
 // ----------------------------------------------------- bullet scores
 
+
+// ----------------------------------------------------- excluded panel
+
+function addEntryToTarget(sectionName, entryIdx) {
+  if (!state.masterDocSnapshot || !state.targetDoc) return;
+  const masterSections = state.masterDocSnapshot.cv?.sections || {};
+  const masterEntry = masterSections[sectionName]?.[entryIdx];
+  if (!masterEntry) return;
+
+  const targetSections = state.targetDoc.cv.sections;
+  if (!targetSections[sectionName]) {
+    targetSections[sectionName] = [];
+  }
+  const exists = targetSections[sectionName].find(
+    (e) => e._src_section === sectionName && e._src_index === entryIdx
+  );
+  if (exists) return;
+
+  const copy = JSON.parse(JSON.stringify(masterEntry));
+  copy._src_section = sectionName;
+  copy._src_index = entryIdx;
+  targetSections[sectionName].push(copy);
+}
+
+function addBulletToTarget(sectionName, entryIdx, bulletText) {
+  if (!state.masterDocSnapshot || !state.targetDoc) return;
+  const targetSections = state.targetDoc.cv.sections;
+  if (!targetSections[sectionName]) {
+    addEntryToTarget(sectionName, entryIdx);
+  }
+  const targetEntry = targetSections[sectionName].find(
+    (e) => e._src_section === sectionName && e._src_index === entryIdx
+  );
+  if (!targetEntry) return;
+  if (!targetEntry.highlights.includes(bulletText)) {
+    targetEntry.highlights.push(bulletText);
+  }
+}
+
+function renderExcludedPanel() {
+  const panel = $("#excluded-panel");
+  const content = $("#excluded-content");
+  if (!panel || !content) return;
+
+  if (!state.selection || !state.masterDocSnapshot) {
+    panel.hidden = true;
+    return;
+  }
+
+  const masterSections = state.masterDocSnapshot.cv?.sections || {};
+  const hasAny = (
+    (state.selection.excluded_experience?.length || 0) > 0 ||
+    (state.selection.excluded_projects?.length || 0) > 0 ||
+    (state.selection.excluded_skills_indices?.length || 0) > 0 ||
+    (state.selection.excluded_education_indices?.length || 0) > 0
+  );
+
+  if (!hasAny) {
+    panel.hidden = true;
+    return;
+  }
+
+  panel.hidden = false;
+  content.innerHTML = "";
+
+  const sections = [
+    { key: "experience", label: "Experiencia", nameKey: "company" },
+    { key: "projects", label: "Proyectos", nameKey: "name" },
+    { key: "skills", label: "Skills", nameKey: "label" },
+    { key: "education", label: "Educación", nameKey: "institution" },
+  ];
+
+  sections.forEach((sec) => {
+    let excludedItems;
+    if (sec.key === "skills") {
+      excludedItems = (state.selection.excluded_skills_indices || []).map((idx) => ({ index: idx }));
+    } else if (sec.key === "education") {
+      excludedItems = (state.selection.excluded_education_indices || []).map((idx) => ({ index: idx }));
+    } else {
+      excludedItems = state.selection[`excluded_${sec.key}`] || [];
+    }
+
+    if (excludedItems.length === 0) return;
+
+    const secWrap = h("div", { class: "excluded-section" });
+    secWrap.appendChild(h("h4", {}, sec.label));
+
+    excludedItems.forEach((item) => {
+      const idx = item.index;
+      const masterEntry = masterSections[sec.key]?.[idx];
+      if (!masterEntry) return;
+
+      const name = masterEntry[sec.nameKey] || masterEntry.position || masterEntry.degree || `Entrada ${idx}`;
+      const score = item.entry_score || null;
+      const scoreLabel = score !== null ? `score: ${Math.round(score * 100)}%` : "";
+
+      const entryWrap = h("div", { class: "excluded-entry" });
+      entryWrap.appendChild(h("div", { class: "excluded-entry-header" }, [
+        h("strong", {}, name),
+        h("span", { class: "excluded-score" }, scoreLabel),
+      ]));
+
+      // Botón traer entrada completa
+      entryWrap.appendChild(h("button", {
+        class: "btn btn-sm btn-ghost",
+        style: "margin-bottom:0.4rem",
+        onclick: () => {
+          addEntryToTarget(sec.key, idx);
+          drawTargetView();
+          setGlobalStatus(`Entrada "${name}" agregada desde excluidos.`, "ok");
+        },
+      }, "+ Traer entrada completa"));
+
+      // Bullets individuales (solo para experience/projects)
+      if (sec.key === "experience" || sec.key === "projects") {
+        const highlights = masterEntry.highlights || [];
+        const order = item.highlight_order || highlights.map((_, i) => i);
+        order.forEach((bIdx) => {
+          const text = highlights[bIdx];
+          if (!text) return;
+          const bulletId = `${sec.key}_${idx}_bullet_${bIdx}`;
+          const bScore = state.selection.bullet_scores?.[bulletId];
+          const bScoreLabel = bScore !== null ? `${Math.round(bScore * 100)}%` : "";
+
+          const row = h("div", { class: "excluded-bullet" }, [
+            h("span", { class: "bullet-mark" }, "—"),
+            h("p", {}, text),
+            h("span", { style: "font-family:var(--font-mono);font-size:0.7rem;color:var(--ink-faint);white-space:nowrap;" }, bScoreLabel),
+            h("button", {
+              class: "btn-icon",
+              title: "Agregar este bullet",
+              onclick: () => {
+                addBulletToTarget(sec.key, idx, text);
+                drawTargetView();
+                setGlobalStatus("Bullet agregado desde excluidos.", "ok");
+              },
+            }, "+"),
+          ]);
+          entryWrap.appendChild(row);
+        });
+      }
+
+      // Para skills: mostrar details
+      if (sec.key === "skills") {
+        const details = masterEntry.details || "";
+        if (details) {
+          entryWrap.appendChild(h("p", { style: "font-size:0.85rem;color:var(--ink-soft);margin:0.3rem 0;" }, details));
+        }
+        entryWrap.appendChild(h("button", {
+          class: "btn btn-sm btn-ghost",
+          onclick: () => {
+            addEntryToTarget(sec.key, idx);
+            drawTargetView();
+            setGlobalStatus(`Skill "${name}" agregada desde excluidos.`, "ok");
+          },
+        }, "+ Traer skill"));
+      }
+
+      // Para education: mostrar highlights si existen
+      if (sec.key === "education") {
+        const highlights = masterEntry.highlights || [];
+        highlights.forEach((text) => {
+          entryWrap.appendChild(h("p", { style: "font-size:0.85rem;color:var(--ink-soft);margin:0.2rem 0;" }, `— ${text}`));
+        });
+        entryWrap.appendChild(h("button", {
+          class: "btn btn-sm btn-ghost",
+          onclick: () => {
+            addEntryToTarget(sec.key, idx);
+            drawTargetView();
+            setGlobalStatus(`Educación "${name}" agregada desde excluidos.`, "ok");
+          },
+        }, "+ Traer educación"));
+      }
+
+      secWrap.appendChild(entryWrap);
+    });
+
+    content.appendChild(secWrap);
+  });
+}
+
 function getBulletScore(bulletId) {
   if (!state.selection || !state.selection.bullet_scores) return null;
   return state.selection.bullet_scores[bulletId] || null;
@@ -268,15 +449,14 @@ function renderBulletScore(bulletId) {
   const pct = Math.round(score * 100);
   const isFallback = getScoreMode() === "positional_fallback";
   const fillClass = isFallback ? "bullet-score-fill fallback" : "bullet-score-fill";
-  const label = isFallback ? `${pct}*` : `${pct}`;
+  const label = isFallback ? `${pct}% (estimado)` : `${pct}%`;
   const title = isFallback
-    ? "Score estimado por posición (cross-encoder no disponible)"
-    : "Score de relevancia (cross-encoder)";
+    ? `Score estimado por posición: ${pct}% (cross-encoder no disponible)`
+    : `Score de relevancia: ${pct}% (cross-encoder)`;
   const bar = h("div", { class: "bullet-score", title }, [
     h("div", { class: "bullet-score-bar" }, [
       h("div", { class: fillClass, style: `width:${pct}%` }),
     ]),
-    h("span", { class: "bullet-score-num" }, label),
   ]);
   return bar;
 }
@@ -1163,6 +1343,7 @@ function drawTargetView() {
   renderFitScore();
   renderKeywordReport();
   renderOpportunities();
+  renderExcludedPanel();
 
   const ctx = {
     doc: state.targetDoc,

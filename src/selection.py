@@ -224,37 +224,49 @@ def _group_bullets_into_entries(
     ranked_bullets: list[dict],
     max_entries: int,
     max_highlights_per_entry: int,
-) -> list[dict]:
+) -> tuple[list[dict], list[dict]]:
+    """Agrupa bullets en entradas y separa incluidos vs excluidos por presupuesto.
+
+    Returns:
+        (included_entries, excluded_entries)
+    """
     from collections import defaultdict
 
     entries = defaultdict(list)
     for bullet in ranked_bullets:
         key = (bullet["section"], bullet["entry_index"])
-        if len(entries[key]) < max_highlights_per_entry:
-            entries[key].append(bullet)
+        entries[key].append(bullet)
 
     if not entries:
-        return []
+        return [], []
 
+    # Ordenar todas las entradas por score máximo descendente
     sorted_entries = sorted(
         entries.items(),
         key=lambda x: max(b["score"] for b in x[1]),
         reverse=True,
-    )[:max_entries]
+    )
 
-    result = []
-    for (section, entry_idx), bullets in sorted_entries:
+    included = []
+    excluded = []
+
+    for idx, ((section, entry_idx), bullets) in enumerate(sorted_entries):
         bullets_sorted = sorted(bullets, key=lambda b: b["score"], reverse=True)
         avg_score = round(sum(b["score"] for b in bullets_sorted) / len(bullets_sorted), 3)
-        result.append(
-            {
-                "index": entry_idx,
-                "highlight_order": [b["bullet_index"] for b in bullets_sorted],
-                "match_reason": bullets_sorted[0].get("match_reason", bullets_sorted[0]["text"][:120] + "..."),
-                "entry_score": avg_score,  # NUEVO: score promedio de la entrada
-            }
-        )
-    return result
+        entry_data = {
+            "index": entry_idx,
+            "highlight_order": [b["bullet_index"] for b in bullets_sorted],
+            "match_reason": bullets_sorted[0].get("match_reason", bullets_sorted[0]["text"][:120] + "..."),
+            "entry_score": avg_score,
+        }
+        if idx < max_entries:
+            # Recortar highlights al presupuesto
+            entry_data["highlight_order"] = entry_data["highlight_order"][:max_highlights_per_entry]
+            included.append(entry_data)
+        else:
+            excluded.append(entry_data)
+
+    return included, excluded
 
 
 class SelectionEngine:
@@ -412,6 +424,7 @@ class SelectionEngine:
                         seen.add(idx)
                         skill_indices.append(idx)
                 selection["selected_skills_indices"] = skill_indices[:max_entries]
+                selection["excluded_skills_indices"] = skill_indices[max_entries:]
 
             elif section == "education":
                 seen = set()
@@ -422,13 +435,15 @@ class SelectionEngine:
                         seen.add(idx)
                         edu_indices.append(idx)
                 selection["selected_education_indices"] = edu_indices[:max_entries]
+                selection["excluded_education_indices"] = edu_indices[max_entries:]
 
             else:
-                grouped = _group_bullets_into_entries(
+                grouped, excluded_grouped = _group_bullets_into_entries(
                     final_ranking, max_entries, max_highlights
                 )
                 key = f"selected_{section}"
                 selection[key] = grouped
+                selection[f"excluded_{section}"] = excluded_grouped
                 # Reordenar cronológicamente (más reciente primero) después de seleccionar por score
                 if section in ("experience", "projects") and selection[key]:
                     selection[key] = _reorder_entries_chronologically(
@@ -551,7 +566,11 @@ class SelectionEngine:
                 if idx not in seen:
                     seen.add(idx)
                     skill_indices.append(idx)
-            return {"selected_skills_indices": skill_indices[:max_entries], "score_mode": score_mode}
+            return {
+                "selected_skills_indices": skill_indices[:max_entries],
+                "excluded_skills_indices": skill_indices[max_entries:],
+                "score_mode": score_mode,
+            }
 
         elif section_name == "education":
             seen = set()
@@ -561,17 +580,25 @@ class SelectionEngine:
                 if idx != 0 and idx not in seen:
                     seen.add(idx)
                     edu_indices.append(idx)
-            return {"selected_education_indices": edu_indices[:max_entries], "score_mode": score_mode}
+            return {
+                "selected_education_indices": edu_indices[:max_entries],
+                "excluded_education_indices": edu_indices[max_entries:],
+                "score_mode": score_mode,
+            }
 
         else:
-            grouped = _group_bullets_into_entries(
+            grouped, excluded_grouped = _group_bullets_into_entries(
                 final_ranking, max_entries, max_highlights
             )
             if section_name in ("experience", "projects") and grouped:
                 grouped = _reorder_entries_chronologically(
                     master_cv, section_name, grouped
                 )
-            return {f"selected_{section_name}": grouped, "score_mode": score_mode}
+            return {
+                f"selected_{section_name}": grouped,
+                f"excluded_{section_name}": excluded_grouped,
+                "score_mode": score_mode,
+            }
 
 
 # ---------------------------------------------------------------------
