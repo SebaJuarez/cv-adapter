@@ -1,50 +1,36 @@
 """System prompt y JSON Schema para la fase ESTRATÉGICA del LLM.
 
-El LLM ya NO hace retrieval de bullets. Eso lo hace SelectionEngine (IR híbrido).
-El LLM solo:
-1. Elige summary_index de las variantes disponibles.
-2. Detecta keywords implícitas/sinónimas que el IR no capturó.
-3. Mejora los match_reasons de las entradas ya seleccionadas.
-
-El contexto se reduce de ~15K tokens (CV completo) a ~2K tokens
-(JD + bullets ya seleccionados + summaries).
+Fase 5: El LLM ya NO elige summary_index (eso lo hace IR) ni detecta keywords
+(ya las extrae el motor de IR). Su única tarea es redactar match_reasons en
+lenguaje natural fluido sobre bullets YA seleccionados por IR.
 """
 
 from typing import Any, Dict
 
 
 def build_system_prompt(config: Dict[str, Any]) -> str:
-    return f"""Sos un asistente de currículums (CV) especializado en ajustes estratégicos.
-
-Un motor de búsqueda (BM25 + embeddings + cross-encoder) ya seleccionó las
-experiencias, proyectos y skills más relevantes para la oferta laboral.
-Tu trabajo es hacer AJUSTES ESTRATÉGICOS finales, NUNCA inventar contenido nuevo.
+    return """Sos un asistente de currículums (CV) especializado en redactar
+justificaciones breves de por qué una experiencia o proyecto matchea con una
+oferta laboral.
 
 REGLAS ABSOLUTAS:
-1. NUNCA inventes, agregues, completes, resumas ni corrijas texto que no exista
-   literalmente en el CV maestro.
-2. NUNCA alteres fechas, nombres de empresas, puestos, títulos ni ningún dato factual.
-3. NUNCA cambies los índices de experiencias, proyectos o skills ya seleccionados.
+1. NUNCA inventes hechos, tecnologías, empresas, fechas, métricas ni roles
+   que no aparezcan literalmente en el bullet o en la oferta.
+2. NUNCA cambies los índices de experiencias o proyectos ya seleccionados.
    Esos son INMUTABLES (los eligió el motor de búsqueda).
-
-TU TRABAJO (solo esto):
-1. Elegir qué variante de summary usar (summary_index).
-2. Detectar keywords implícitas o sinónimas que el motor de búsqueda pudo haber
-   omitido (ej. la oferta dice "Postgres" y el CV dice "PostgreSQL"; el motor
-   ya lo capturó, pero si hay discrepancias sutiles, señalalas).
-3. Mejorar los "match_reason" de las experiencias y proyectos seleccionados
-   (texto explicativo corto, bajo riesgo de alucinación).
+3. Tu texto debe ser conciso (1 oración corta, máximo 2) y en español.
+4. Solo podés mencionar conceptos que aparezcan en el bullet del CV o en
+   el job description. Si no estás seguro, usa una frase genérica como
+   "Relevante para la oferta".
 
 FORMATO DE SALIDA (JSON, sin texto conversacional ni Markdown):
-{{
-  "summary_index": <int o null>,
-  "keywords_detected": ["<string>", ...máx {config['max_keywords']}...],
-  "selected_experience": [{{"index": <int>, "match_reason": "<string corta>"}}],
-  "selected_projects": [{{"index": <int>, "match_reason": "<string corta>"}}]
-}}
+{
+  "selected_experience": [{"index": <int>, "match_reason": "<string>"}],
+  "selected_projects": [{"index": <int>, "match_reason": "<string>"}]
+}
 
-Nota: los índices de experience y projects en tu respuesta DEBEN coincidir
-exactamente con los que te paso en el prompt. No agregues ni saques índices."""
+Nota: los índices en tu respuesta DEBEN coincidir exactamente con los que te
+paso en el prompt. No agregues ni saques índices."""
 
 
 _SECTION_LABELS = {
@@ -55,23 +41,21 @@ _SECTION_LABELS = {
 
 
 def build_section_system_prompt(config: Dict[str, Any], section_name: str) -> str:
-    """Versión acotada del system prompt: se usa cuando el usuario pide
-    'regenerar' una sola sección. Ahora la regeneración la hace SelectionEngine
-    (IR), así que este prompt se usa solo para ajustes estratégicos de la
-    sección regenerada."""
+    """Versión acotada para regenerar una sola sección."""
     label, key = _SECTION_LABELS[section_name]
 
     return f"""Sos un asistente de currículums. El motor de búsqueda ya regeneró
-la sección de {label} para esta oferta. Tu trabajo es hacer ajustes estratégicos
-finales sobre esa selección.
+la sección de {label} para esta oferta. Tu trabajo es redactar justificaciones
+breves (match_reasons) para cada entrada seleccionada.
 
 REGLAS:
-1. NUNCA inventes texto nuevo.
+1. NUNCA inventes hechos, tecnologías ni métricas nuevas.
 2. NUNCA cambies los índices seleccionados (son inmutables).
-3. Podés mejorar los match_reasons o detectar keywords implícitas.
+3. Solo mencioná conceptos presentes en el bullet o en la oferta.
+4. Texto conciso: 1 oración corta, máximo 2.
 
 Devolvé SOLO este JSON (sin texto conversacional, sin Markdown):
-{{"{key}": [{{"index": <int>, "match_reason": "<string corta>"}}]}}"""
+{{"{key}": [{{"index": <int>, "match_reason": "<string>"}}]}}"""
 
 
 def build_section_schema(config: Dict[str, Any], section_name: str) -> Dict[str, Any]:
@@ -109,16 +93,10 @@ def build_section_schema(config: Dict[str, Any], section_name: str) -> Dict[str,
 
 
 def build_selection_schema(config: Dict[str, Any]) -> Dict[str, Any]:
-    """Schema simplificado: solo ajustes estratégicos, no retrieval."""
+    """Schema simplificado: solo match_reasons, nada más."""
     return {
         "type": "object",
         "properties": {
-            "summary_index": {"type": ["integer", "null"]},
-            "keywords_detected": {
-                "type": "array",
-                "maxItems": config["max_keywords"],
-                "items": {"type": "string"},
-            },
             "selected_experience": {
                 "type": "array",
                 "items": {
