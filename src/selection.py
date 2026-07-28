@@ -9,6 +9,8 @@ Nuevas features:
 - JD snippets: el fragmento del JD que mejor matcheó con cada bullet.
 - Section scores: score promedio por entrada para heatmap de secciones.
 - Canal de keyword-match en RRF (Fase 2).
+- Optimización de cobertura de keywords críticas (Fase 3).
+- Diversidad MMR al armar highlights por entrada (Fase 4).
 """
 
 import hashlib
@@ -165,6 +167,131 @@ def _build_keyword_ranking(bullets: list[BulletDoc], keywords: list[str]) -> lis
     return [bid for bid, _ in scored]
 
 
+def _optimize_coverage(
+    final_ranking: list[dict],
+    keywords_list: list[str],
+    frequencies: dict,
+    max_entries: int,
+    max_highlights: int,
+) -> list[dict]:
+    """Re-rankea bullets priorizando cobertura de keywords críticas.
+
+    Si una keyword crítica (frecuencia >= 2 en el JD) no está presente en
+    ningún bullet del top N (presupuesto global), se swapea con el bullet
+    de menor score del top que no aporte ninguna keyword crítica.
+    """
+    critical = {kw.lower() for kw in keywords_list if frequencies.get(kw, 0) >= 2}
+    if not critical or not final_ranking:
+        return final_ranking
+
+    budget = max_entries * max_highlights
+    if len(final_ranking) <= budget:
+        return final_ranking
+
+    top = final_ranking[:budget]
+    rest = final_ranking[budget:]
+
+    def bullet_kws(bullet: dict) -> set[str]:
+        text = bullet.get("text", "").lower()
+        return {kw for kw in critical if kw in text}
+
+    covered = set()
+    for b in top:
+        covered.update(bullet_kws(b))
+
+    missing = critical - covered
+    if not missing:
+        return final_ranking
+
+    for cand in rest:
+        cand_kws = bullet_kws(cand)
+        if not (cand_kws & missing):
+            continue
+
+        # Encontrar el peor bullet en top que no aporte keyword crítica
+        worst_idx = None
+        worst_score = float("inf")
+        for i, b in enumerate(top):
+            if bullet_kws(b):
+                continue
+            if b["score"] < worst_score:
+                worst_score = b["score"]
+                worst_idx = i
+
+        if worst_idx is None:
+            continue
+
+        # Swap solo si la calidad no cae demasiado
+        if cand["score"] >= worst_score * 0.6:
+            top[worst_idx] = cand
+            covered.update(cand_kws)
+            missing = critical - covered
+            if not missing:
+                break
+
+    new_top_ids = {b["id"] for b in top}
+    tail = [b for b in final_ranking if b["id"] not in new_top_ids]
+    return top + tail
+
+
+def _apply_mmr(
+    bullets: list[dict],
+    embeddings_map: dict[str, np.ndarray],
+    max_highlights: int,
+    lambda_param: float = 0.5,
+) -> list[dict]:
+    """Maximal Marginal Relevance para diversidad de bullets dentro de una entrada.
+
+    Balancea relevancia (score del bullet) vs diversidad (similitud coseno
+    con bullets ya seleccionados). Los embeddings deben ser L2-normalizados.
+    """
+    if not bullets:
+        return []
+
+    has_embeddings = all(b["id"] in embeddings_map for b in bullets)
+    if not has_embeddings or len(bullets) <= 1:
+        return sorted(bullets, key=lambda b: b["score"], reverse=True)[:max_highlights]
+
+    # Normalizar scores de esta entrada a [0,1]
+    max_score = max(b["score"] for b in bullets)
+    min_score = min(b["score"] for b in bullets)
+    score_range = max_score - min_score if max_score != min_score else 1.0
+
+    def norm_score(b: dict) -> float:
+        return (b["score"] - min_score) / score_range
+
+    selected: list[dict] = []
+    remaining = list(bullets)
+
+    # Primer bullet: mayor relevancia pura
+    remaining.sort(key=lambda b: b["score"], reverse=True)
+    selected.append(remaining.pop(0))
+
+    while remaining and len(selected) < max_highlights:
+        best_mmr = -float("inf")
+        best_idx = -1
+
+        for i, candidate in enumerate(remaining):
+            rel = norm_score(candidate)
+            cand_emb = embeddings_map.get(candidate["id"])
+            max_sim = 0.0
+            if cand_emb is not None:
+                for sel in selected:
+                    sel_emb = embeddings_map.get(sel["id"])
+                    if sel_emb is not None:
+                        sim = float(np.dot(cand_emb, sel_emb))
+                        if sim > max_sim:
+                            max_sim = sim
+            mmr = lambda_param * rel - (1.0 - lambda_param) * max_sim
+            if mmr > best_mmr:
+                best_mmr = mmr
+                best_idx = i
+
+        selected.append(remaining.pop(best_idx))
+
+    return selected
+
+
 def _generate_match_reason(bullet_text: str, jd_chunk: str) -> str:
     import re
 
@@ -225,9 +352,11 @@ def _group_bullets_into_entries(
     ranked_bullets: list[dict],
     max_entries: int,
     max_highlights_per_entry: int,
+    embeddings_map: dict[str, np.ndarray] | None = None,
 ) -> tuple[list[dict], list[dict]]:
     """Agrupa bullets en entradas y separa incluidos vs excluidos por presupuesto.
 
+    Aplica MMR dentro de cada entrada para diversidad de highlights.
     Returns:
         (included_entries, excluded_entries)
     """
@@ -252,17 +381,16 @@ def _group_bullets_into_entries(
     excluded = []
 
     for idx, ((section, entry_idx), bullets) in enumerate(sorted_entries):
-        bullets_sorted = sorted(bullets, key=lambda b: b["score"], reverse=True)
-        avg_score = round(sum(b["score"] for b in bullets_sorted) / len(bullets_sorted), 3)
+        # Aplicar MMR para seleccionar bullets diversos dentro de la entrada
+        bullets_mmr = _apply_mmr(bullets, embeddings_map, max_highlights_per_entry)
+        avg_score = round(sum(b["score"] for b in bullets) / len(bullets), 3)
         entry_data = {
             "index": entry_idx,
-            "highlight_order": [b["bullet_index"] for b in bullets_sorted],
-            "match_reason": bullets_sorted[0].get("match_reason", bullets_sorted[0]["text"][:120] + "..."),
+            "highlight_order": [b["bullet_index"] for b in bullets_mmr],
+            "match_reason": bullets_mmr[0].get("match_reason", bullets_mmr[0]["text"][:120] + "...") if bullets_mmr else "",
             "entry_score": avg_score,
         }
         if idx < max_entries:
-            # Recortar highlights al presupuesto
-            entry_data["highlight_order"] = entry_data["highlight_order"][:max_highlights_per_entry]
             included.append(entry_data)
         else:
             excluded.append(entry_data)
@@ -317,7 +445,7 @@ class SelectionEngine:
         score_mode = "cross_encoder" if reranker is not None else "positional_fallback"
 
         # Keywords técnicas del JD (una sola extracción para todo el CV)
-        keywords_list, _ = extract_keywords(job_description)
+        keywords_list, keyword_frequencies = extract_keywords(job_description)
 
         selection: dict[str, Any] = {
             "selected_experience": [],
@@ -326,10 +454,10 @@ class SelectionEngine:
             "selected_education_indices": [],
             "summary_index": None,
             "keywords_detected": [],
-            "bullet_scores": {},       # NUEVO: bullet_id -> score (0-1)
-            "jd_snippets": {},         # NUEVO: bullet_id -> snippet del JD
-            "section_scores": {},      # NUEVO: section -> {entry_idx: score}
-            "score_mode": score_mode,  # NUEVO: "cross_encoder" | "positional_fallback"
+            "bullet_scores": {},
+            "jd_snippets": {},
+            "section_scores": {},
+            "score_mode": score_mode,
         }
 
         for section in _RETRIEVAL_SECTIONS:
@@ -352,6 +480,12 @@ class SelectionEngine:
             )
 
             bullet_map = {b.id: b for b in bullets}
+
+            # Mapa de embeddings para MMR (Fase 4)
+            embeddings_map: dict[str, np.ndarray] = {}
+            if dense_idx.embeddings is not None:
+                for i, bid in enumerate(dense_idx.bullet_ids):
+                    embeddings_map[bid] = dense_idx.embeddings[i]
 
             if reranker is not None:
                 candidate_bullets = [
@@ -382,7 +516,7 @@ class SelectionEngine:
                             "score": round(score, 3),
                             "match_reason": match_reason,
                             "best_chunk_idx": best_chunk_idx,
-                            "jd_snippet": jd_chunk[:200],  # NUEVO
+                            "jd_snippet": jd_chunk[:200],
                         }
                     )
             else:
@@ -408,6 +542,15 @@ class SelectionEngine:
                         }
                     )
 
+            max_entries = self.config.get(_SECTION_LIMIT_KEYS[section], 3)
+            max_highlights = self.config.get("max_highlights_per_entry", 4)
+
+            # FASE 3: optimizar cobertura de keywords críticas antes de agrupar
+            final_ranking = _optimize_coverage(
+                final_ranking, keywords_list, keyword_frequencies,
+                max_entries, max_highlights
+            )
+
             # Guardar scores y snippets globales
             section_scores = {}
             for b in final_ranking:
@@ -418,9 +561,6 @@ class SelectionEngine:
                     section_scores[eidx] = b["score"]
             if section_scores:
                 selection["section_scores"][section] = section_scores
-
-            max_entries = self.config.get(_SECTION_LIMIT_KEYS[section], 3)
-            max_highlights = self.config.get("max_highlights_per_entry", 4)
 
             if section == "skills":
                 seen = set()
@@ -445,8 +585,9 @@ class SelectionEngine:
                 selection["excluded_education_indices"] = edu_indices[max_entries:]
 
             else:
+                # FASE 4: pasar embeddings_map para MMR interno
                 grouped, excluded_grouped = _group_bullets_into_entries(
-                    final_ranking, max_entries, max_highlights
+                    final_ranking, max_entries, max_highlights, embeddings_map
                 )
                 key = f"selected_{section}"
                 selection[key] = grouped
@@ -502,11 +643,17 @@ class SelectionEngine:
         sparse_ranking = sparse_idx.query(query_text, top_k=50)
         dense_ranking, chunk_map = dense_idx.query(chunk_embeddings, top_k=50)
 
-        keywords_list, _ = extract_keywords(job_description)
+        keywords_list, keyword_frequencies = extract_keywords(job_description)
         keyword_ranking = _build_keyword_ranking(bullets, keywords_list)
         hybrid_ranking = reciprocal_rank_fusion(
             sparse_ranking, dense_ranking, keyword_ranking
         )
+
+        # Mapa de embeddings para MMR (Fase 4)
+        embeddings_map: dict[str, np.ndarray] = {}
+        if dense_idx.embeddings is not None:
+            for i, bid in enumerate(dense_idx.bullet_ids):
+                embeddings_map[bid] = dense_idx.embeddings[i]
 
         reranker = self._get_reranker()
         score_mode = "cross_encoder" if reranker is not None else "positional_fallback"
@@ -570,6 +717,12 @@ class SelectionEngine:
         max_entries = self.config.get(_SECTION_LIMIT_KEYS[section_name], 3)
         max_highlights = self.config.get("max_highlights_per_entry", 4)
 
+        # FASE 3: optimizar cobertura de keywords críticas antes de agrupar
+        final_ranking = _optimize_coverage(
+            final_ranking, keywords_list, keyword_frequencies,
+            max_entries, max_highlights
+        )
+
         if section_name == "skills":
             seen = set()
             skill_indices = []
@@ -599,8 +752,9 @@ class SelectionEngine:
             }
 
         else:
+            # FASE 4: pasar embeddings_map para MMR interno
             grouped, excluded_grouped = _group_bullets_into_entries(
-                final_ranking, max_entries, max_highlights
+                final_ranking, max_entries, max_highlights, embeddings_map
             )
             if section_name in ("experience", "projects") and grouped:
                 grouped = _reorder_entries_chronologically(
