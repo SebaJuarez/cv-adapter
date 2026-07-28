@@ -41,11 +41,91 @@ SYNONYMS = {
     "devops": ["sre", "site reliability engineering"],
 }
 
+# ------------------------------------------------------------------
+# Stopwords combinadas ES + EN para retrieval léxico.
+# NO aplicar en embeddings densos ni en extracción de keywords técnicas.
+# ------------------------------------------------------------------
+COMBINED_STOPWORDS = {
+    # --- Español ---
+    "el", "la", "los", "las", "un", "una", "unos", "unas", "lo", "al", "del",
+    "de", "a", "en", "por", "para", "con", "sin", "sobre", "entre", "hacia",
+    "desde", "hasta", "bajo", "ante", "tras", "durante", "según", "mediante",
+    "excepto", "salvo", "contra",
+    "y", "e", "o", "u", "ni", "pero", "sino", "aunque", "porque", "pues", "como",
+    "cuando", "donde", "mientras",
+    "ya", "todavía", "aún", "aquí", "allí", "ahora", "antes", "después", "luego",
+    "entonces", "así", "bien", "mal", "muy", "mucho", "poco", "más", "menos", "tan",
+    "tanto", "también", "tampoco", "sí", "no", "apenas",
+    "que", "quien", "cual", "cuyo", "cuanto",
+    "yo", "tú", "él", "ella", "nosotros", "vosotros", "ellos", "ellas", "me", "te",
+    "se", "le", "les", "nos", "os", "mi", "tu", "su", "nuestro", "vuestra", "este",
+    "ese", "aquel", "esto", "eso", "aquello", "mío", "tuyo", "suyo", "nuestra",
+    "vuestra", "míos", "tuyos", "suyos", "nuestras", "vuestras",
+    # Verbos auxiliares / funcionales comunes (infinitivo + 3ra persona presente/pasado)
+    "ser", "es", "son", "fue", "era", "soy", "eres", "somos", "sois", "fui",
+    "fuiste", "fueron", "fuimos", "fuisteis", "sea", "seas", "seamos", "seáis",
+    "sean", "sido", "estado", "siendo",
+    "haber", "ha", "han", "había", "habían", "he", "has", "hemos", "habéis", "haya",
+    "tener", "tiene", "tienen", "tenía", "tenían", "tengo", "tienes", "tenemos",
+    "tenéis", "tuvieron", "tuvimos", "tuvisteis",
+    "hacer", "hace", "hacen", "hizo", "hicieron", "hacemos", "hacéis", "hicimos",
+    "hicisteis",
+    "poder", "puede", "pueden", "podía", "podían", "puedo", "puedes", "podemos",
+    "podéis",
+    "decir", "dice", "dicen", "dijo", "dijeron", "decimos", "decís", "dijimos",
+    "dijisteis",
+    "ir", "va", "van", "iba", "iban", "voy", "vas", "vamos", "vais",
+    "ver", "ve", "ven", "vio", "vieron", "vimos", "visteis",
+    "dar", "da", "dan", "dio", "dieron", "damos", "dais",
+    "saber", "sabe", "saben", "sabía", "sabían", "sé", "sabes", "sabemos", "sabéis",
+    "querer", "quiere", "quieren", "quería", "querían", "quiero", "quieres",
+    "queremos", "queréis",
+    "llegar", "llega", "llegan", "llegó", "llegaron",
+    "pasar", "pasa", "pasan", "pasó", "pasaron",
+    "deber", "debe", "deben", "debía", "debían",
+    "poner", "pone", "ponen", "puso", "pusieron",
+    "parecer", "parece", "parecen", "parecía", "parecían",
+    "quedar", "queda", "quedan", "quedó", "quedaron",
+    "pensar", "piensa", "piensan", "pensó", "pensaron",
+    "salir", "sale", "salen", "salió", "salieron",
+    "volver", "vuelve", "vuelven", "volvió", "volvieron",
+    "tomar", "toma", "toman", "tomó", "tomaron",
+    "conseguir", "consigue", "consiguen", "consiguió", "consiguieron",
+    "empezar", "empieza", "empiezan", "empezó", "empezaron",
+    "sentir", "siente", "sienten", "sintió", "sintieron",
+    "tratar", "trata", "tratan", "trató", "trataron",
+    "mantener", "mantiene", "mantienen", "mantuvo", "mantuvieron",
+    "terminar", "termina", "terminan", "terminó", "terminaron",
+    "llevar", "lleva", "llevan", "llevó", "llevaron",
+    "encontrar", "encuentra", "encuentran", "encontró", "encontraron",
+    "seguir", "sigue", "siguen", "siguió", "siguieron",
+    "crear", "crea", "crean", "creó", "crearon",
+    "dejar", "deja", "dejan", "dejó", "dejaron",
+    # --- Inglés (lista original + ampliación básica) ---
+    "the", "and", "for", "with", "you", "will", "are", "our", "that", "have",
+    "this", "your", "from", "they", "been", "their", "what", "when", "where",
+    "than", "then", "them", "these", "those", "being", "having", "doing",
+    "about", "into", "through", "during", "before", "after", "above", "below",
+    "between", "under", "over", "again", "further", "once", "here", "there",
+    "why", "how", "all", "any", "both", "each", "few", "more", "most", "other",
+    "some", "such", "only", "own", "same", "so", "too", "very", "can",
+    "just", "should", "now", "use", "using", "used", "work", "working", "worked",
+    "experience", "experienced", "years", "year", "least", "plus", "good", "strong",
+    "excellent", "solid", "deep", "proven", "track", "record", "ability", "able",
+    "looking", "seeking", "join", "team", "company", "role", "position", "job",
+    "a", "an", "as", "at", "be", "by", "do", "did", "does", "done", "had", "has",
+    "he", "her", "him", "his", "i", "if", "in", "is", "it", "its", "me", "my",
+    "not", "of", "on", "or", "out", "she", "to", "up", "us", "was", "we", "were",
+}
+
 
 def tokenize_with_synonyms(text: str) -> list[str]:
     """Tokeniza un texto en palabras y expande con sinónimos conocidos.
 
     Captura términos compuestos (bigramas) y términos con slash.
+    Las stopwords se filtran DESPUÉS de la expansión de sinónimos,
+    para no descartar un sinónimo expandido que por casualidad
+    coincida con la lista.
     """
     text = text.lower()
     # Normalizar separadores: reemplazar guiones por espacios para bigramas
@@ -75,7 +155,8 @@ def tokenize_with_synonyms(text: str) -> list[str]:
                 expanded.extend(syn.split())
         i += 1
 
-    return expanded
+    # Filtrar stopwords DESPUÉS de expandir sinónimos
+    return [t for t in expanded if t not in COMBINED_STOPWORDS]
 
 
 class SparseIndex:

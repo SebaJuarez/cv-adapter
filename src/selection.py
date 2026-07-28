@@ -8,6 +8,7 @@ Nuevas features:
 - Exposición de scores por bullet para el frontend (relevancia visual).
 - JD snippets: el fragmento del JD que mejor matcheó con cada bullet.
 - Section scores: score promedio por entrada para heatmap de secciones.
+- Canal de keyword-match en RRF (Fase 2).
 """
 
 import hashlib
@@ -30,6 +31,8 @@ from .retrieval import (
     extract_requirements_section,
     reciprocal_rank_fusion,
 )
+from .retrieval.keywords import extract_keywords, _count_keyword_occurrences
+from .retrieval.sparse import COMBINED_STOPWORDS
 
 _RETRIEVAL_SECTIONS = ["experience", "projects", "skills", "education"]
 _SECTION_LIMIT_KEYS = {
@@ -148,26 +151,26 @@ def _load_indices_for_section(
     return sparse_idx, dense_idx
 
 
+def _build_keyword_ranking(bullets: list[BulletDoc], keywords: list[str]) -> list[str]:
+    """Construye un ranking de bullets basado en cantidad de keywords
+    técnicas verificadas del JD presentes en cada bullet."""
+    scored = []
+    for b in bullets:
+        count = sum(
+            1 for kw in keywords if _count_keyword_occurrences(b.text, kw) > 0
+        )
+        scored.append((b.id, count))
+    # Ordenar por count descendente, luego por id para estabilidad
+    scored.sort(key=lambda x: (x[1], x[0]), reverse=True)
+    return [bid for bid, _ in scored]
+
+
 def _generate_match_reason(bullet_text: str, jd_chunk: str) -> str:
     import re
 
-    stopwords = {
-        "the", "and", "for", "with", "you", "will", "are", "our", "that", "have",
-        "this", "your", "from", "they", "been", "their", "what", "when", "where",
-        "than", "then", "them", "these", "those", "being", "having", "doing",
-        "about", "into", "through", "during", "before", "after", "above", "below",
-        "between", "under", "over", "again", "further", "once", "here", "there",
-        "why", "how", "all", "any", "both", "each", "few", "more", "most", "other",
-        "some", "such", "only", "own", "same", "so", "than", "too", "very", "can",
-        "just", "should", "now", "use", "using", "used", "work", "working", "worked",
-        "experience", "experienced", "years", "year", "least", "plus", "good", "strong",
-        "excellent", "solid", "deep", "proven", "track", "record", "ability", "able",
-        "looking", "seeking", "join", "team", "company", "role", "position", "job",
-    }
-
     def extract_words(text: str) -> set[str]:
         words = re.findall(r"\b[a-z]{3,}\b", text.lower())
-        return {w for w in words if w not in stopwords}
+        return {w for w in words if w not in COMBINED_STOPWORDS}
 
     bullet_words = extract_words(bullet_text)
     jd_words = extract_words(jd_chunk)
@@ -180,8 +183,6 @@ def _generate_match_reason(bullet_text: str, jd_chunk: str) -> str:
     if len(common) == 2:
         return f"Matchea con requisitos de la oferta: menciona {common[0]} y {common[1]}"
     return f"Matchea con requisitos de la oferta: menciona {', '.join(common[:-1])} y {common[-1]}"
-
-
 
 
 def _parse_date(date_str: str) -> datetime:
@@ -315,6 +316,9 @@ class SelectionEngine:
         reranker = self._get_reranker()
         score_mode = "cross_encoder" if reranker is not None else "positional_fallback"
 
+        # Keywords técnicas del JD (una sola extracción para todo el CV)
+        keywords_list, _ = extract_keywords(job_description)
+
         selection: dict[str, Any] = {
             "selected_experience": [],
             "selected_projects": [],
@@ -342,7 +346,10 @@ class SelectionEngine:
             sparse_idx, dense_idx = indices
             sparse_ranking = sparse_idx.query(query_text, top_k=50)
             dense_ranking, chunk_map = dense_idx.query(chunk_embeddings, top_k=50)
-            hybrid_ranking = reciprocal_rank_fusion(sparse_ranking, dense_ranking)
+            keyword_ranking = _build_keyword_ranking(bullets, keywords_list)
+            hybrid_ranking = reciprocal_rank_fusion(
+                sparse_ranking, dense_ranking, keyword_ranking
+            )
 
             bullet_map = {b.id: b for b in bullets}
 
@@ -494,7 +501,12 @@ class SelectionEngine:
         sparse_idx, dense_idx = indices
         sparse_ranking = sparse_idx.query(query_text, top_k=50)
         dense_ranking, chunk_map = dense_idx.query(chunk_embeddings, top_k=50)
-        hybrid_ranking = reciprocal_rank_fusion(sparse_ranking, dense_ranking)
+
+        keywords_list, _ = extract_keywords(job_description)
+        keyword_ranking = _build_keyword_ranking(bullets, keywords_list)
+        hybrid_ranking = reciprocal_rank_fusion(
+            sparse_ranking, dense_ranking, keyword_ranking
+        )
 
         reranker = self._get_reranker()
         score_mode = "cross_encoder" if reranker is not None else "positional_fallback"
