@@ -14,26 +14,7 @@ from copy import deepcopy
 from typing import Any, Dict, List, Optional, Set
 
 from .config import load_config
-from .retrieval.sparse import SYNONYMS
-
-
-# ------------------------------------------------------------------
-# Mapa bidireccional de sinónimos (compartido con retrieval)
-# ------------------------------------------------------------------
-_SYNONYM_GROUPS: Dict[str, Set[str]] = {}
-for _key, _syns in SYNONYMS.items():
-    _group = {_key.lower()} | {s.lower() for s in _syns}
-    for _term in _group:
-        _SYNONYM_GROUPS[_term] = _group
-
-
-def _get_synonym_variants(keyword: str) -> Set[str]:
-    """Devuelve todas las variantes sinónimas de una keyword.
-
-    Si la keyword no está en la tabla, devuelve un singleton con ella misma.
-    """
-    kw_low = keyword.lower().strip()
-    return _SYNONYM_GROUPS.get(kw_low, {kw_low})
+from .retrieval.sparse import get_synonym_variants as _get_synonym_variants
 
 
 
@@ -334,7 +315,11 @@ def build_target_cv(
             verified_keywords.append(kw_clean)
 
     verified_keywords = verified_keywords[: config["max_keywords"]]
-    if verified_keywords:
+    if verified_keywords and config.get("show_keywords_line", True):
+        # Línea visible "Palabras clave: ..." — opcional (ver [5.1] de la
+        # review): ayuda contra ATS basados en conteo simple de términos,
+        # pero un reclutador humano puede leerla como relleno. El toggle
+        # deja la decisión en manos del usuario en vez de aplicarla siempre.
         new_sections["keywords"] = ["Palabras clave: " + ", ".join(verified_keywords)]
 
     # --- Experiencia y proyectos ---

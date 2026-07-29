@@ -24,6 +24,9 @@ DEFAULTS: Dict[str, Any] = {
     "use_reranker": True,
     "dense_model": "sentence-transformers/all-MiniLM-L6-v2",
     "cross_encoder_model": "cross-encoder/ms-marco-MiniLM-L-6-v2",
+    "keyword_boost_weight": 0.5,
+    "show_keywords_line": True,
+    "diversity_lambda": 0.7,
 }
 
 

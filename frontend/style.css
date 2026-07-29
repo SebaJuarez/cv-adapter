@@ -477,6 +477,25 @@ textarea.highlight-text { min-height: 1.6em; resize: none; overflow: hidden; }
   margin-top: 0.25rem;
 }
 
+.settings-field-boolean {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.settings-checkbox-label {
+  display: flex !important;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+}
+
+.settings-checkbox-label input[type="checkbox"] {
+  width: 1rem;
+  height: 1rem;
+  flex-shrink: 0;
+}
+
 /* ---------------------------------------------------------------- modal */
 
 .modal-overlay {

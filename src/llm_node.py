@@ -22,8 +22,38 @@ from .prompts import (
     build_selection_schema,
     build_system_prompt,
 )
+from .retrieval.keywords import _count_keyword_occurrences, _normalize_text, extract_keywords
+from .retrieval.sparse import get_synonym_variants
 from .selection import get_selection_engine
 from .state import CVState
+
+
+def _verify_match_reason(llm_reason: str, bullet_text: str, jd_text: str) -> bool:
+    """Guardarail anti-alucinación para el match_reason que redacta el LLM.
+
+    A diferencia de las keywords ATS (que ya se verifican contra el master_cv
+    en merge.py vía _build_verified_keywords), el texto libre de
+    `match_reason` no pasaba por ningún chequeo — era la única superficie
+    donde el LLM podía generar texto visible sin verificación, algo
+    inconsistente con el resto del pipeline.
+
+    Chequeo deliberadamente acotado: si el LLM menciona una tecnología/
+    keyword técnica que NO está ni en el bullet ni en el JD (ni en alguna
+    variante sinónima), se rechaza el texto completo y se usa el
+    match_reason determinístico de IR en su lugar. No intenta validar
+    matices de redacción, solo el riesgo real: que el LLM invente una
+    tecnología o herramienta que el candidato nunca mencionó.
+    """
+    mentioned_keywords, _ = extract_keywords(llm_reason)
+    if not mentioned_keywords:
+        return True  # No menciona ninguna tecnología puntual, no hay nada que verificar
+
+    context = _normalize_text(bullet_text) + " " + _normalize_text(jd_text)
+    for kw in mentioned_keywords:
+        variants = get_synonym_variants(kw)
+        if not any(_count_keyword_occurrences(context, v) > 0 for v in variants):
+            return False
+    return True
 
 
 def _call_ollama(system_prompt: str, user_prompt: str, schema: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
@@ -160,14 +190,28 @@ def generate_selection(
             final_selection.get("keywords_detected", []) + new_keywords
         )[: config["max_keywords"]]
 
-    # Match reasons: el LLM puede mejorar los que ya tiene IR
-    for section_key in ["selected_experience", "selected_projects"]:
+    # Match reasons: el LLM puede mejorar los que ya tiene IR, pero solo si
+    # pasan el guardarail anti-alucinación (ver _verify_match_reason). Si
+    # el LLM inventa una tecnología no presente ni en el bullet ni en el
+    # JD, se descarta silenciosamente y queda el match_reason de IR.
+    sections_by_key = master_cv.get("cv", {}).get("sections", {})
+    for section_key, entries_key in [
+        ("selected_experience", "experience"),
+        ("selected_projects", "projects"),
+    ]:
         llm_reasons = {item["index"]: item.get("match_reason", "")
                        for item in llm_output.get(section_key, [])
                        if "index" in item}
+        entries = sections_by_key.get(entries_key, [])
         for item in final_selection.get(section_key, []):
-            if item["index"] in llm_reasons and llm_reasons[item["index"]]:
-                item["match_reason"] = llm_reasons[item["index"]]
+            idx = item["index"]
+            if idx not in llm_reasons or not llm_reasons[idx]:
+                continue
+            highlights = entries[idx].get("highlights", []) if 0 <= idx < len(entries) else []
+            bullet_text = " ".join(h for h in highlights if isinstance(h, str))
+            if _verify_match_reason(llm_reasons[idx], bullet_text, job_description):
+                item["match_reason"] = llm_reasons[idx]
+            # si no pasa el guardarail, se deja el match_reason de IR intacto
 
     return final_selection
 

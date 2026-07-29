@@ -26,10 +26,14 @@ from .retrieval import (
     DenseIndex,
     IndexStore,
     SparseIndex,
+    build_keyword_ranking,
     chunk_text,
+    extract_keywords,
     extract_requirements_section,
     reciprocal_rank_fusion,
 )
+from .retrieval.keywords import _count_keyword_occurrences, _normalize_text
+from .retrieval.sparse import get_synonym_variants
 
 _RETRIEVAL_SECTIONS = ["experience", "projects", "skills", "education"]
 _SECTION_LIMIT_KEYS = {
@@ -151,22 +155,23 @@ def _load_indices_for_section(
 def _generate_match_reason(bullet_text: str, jd_chunk: str) -> str:
     import re
 
-    stopwords = {
-        "the", "and", "for", "with", "you", "will", "are", "our", "that", "have",
-        "this", "your", "from", "they", "been", "their", "what", "when", "where",
-        "than", "then", "them", "these", "those", "being", "having", "doing",
-        "about", "into", "through", "during", "before", "after", "above", "below",
-        "between", "under", "over", "again", "further", "once", "here", "there",
-        "why", "how", "all", "any", "both", "each", "few", "more", "most", "other",
-        "some", "such", "only", "own", "same", "so", "than", "too", "very", "can",
-        "just", "should", "now", "use", "using", "used", "work", "working", "worked",
+    from .retrieval.stopwords import STOPWORDS
+
+    # Palabras "de relleno" propias de un JD (no son stopwords léxicas
+    # generales, pero tampoco aportan nada como explicación de match:
+    # "menciona experiencia y años" no le dice nada útil al usuario).
+    filler = {
+        "use", "using", "used", "work", "working", "worked",
         "experience", "experienced", "years", "year", "least", "plus", "good", "strong",
         "excellent", "solid", "deep", "proven", "track", "record", "ability", "able",
         "looking", "seeking", "join", "team", "company", "role", "position", "job",
     }
+    stopwords = STOPWORDS | filler
 
     def extract_words(text: str) -> set[str]:
-        words = re.findall(r"\b[a-z]{3,}\b", text.lower())
+        # \w+ (con re.UNICODE implícito en Python 3) para no perder tildes
+        # ("según", "más") al filtrar texto en español.
+        words = re.findall(r"\b[a-záéíóúñü]{3,}\b", text.lower())
         return {w for w in words if w not in stopwords}
 
     bullet_words = extract_words(bullet_text)
@@ -220,10 +225,125 @@ def _reorder_entries_chronologically(
     return sorted(selected_entries, key=_entry_date, reverse=True)
 
 
+def _jaccard(a: set[str], b: set[str]) -> float:
+    if not a or not b:
+        return 0.0
+    return len(a & b) / len(a | b)
+
+
+def _mmr_select(
+    bullets_sorted: list[dict],
+    max_highlights: int,
+    diversity_lambda: float = 0.7,
+) -> list[dict]:
+    """Selecciona highlights balanceando relevancia y diversidad (MMR).
+
+    Antes, dentro de una entrada, se tomaban directamente los N bullets de
+    mayor score — sin nada que impida que esos N digan, en el fondo, lo
+    mismo con otras palabras ("REST APIs en Java" repetido 3 veces),
+    desperdiciando el presupuesto de página en vez de cubrir más
+    competencias distintas.
+
+    Usa similitud de Jaccard sobre tokens (BM25-style, con sinónimos y
+    stopwords ya filtradas) como proxy de redundancia — deliberadamente
+    léxico y no basado en embeddings, así corre siempre (aunque
+    `use_reranker=False`) sin costo de inferencia extra. Se puede migrar
+    a similitud por embeddings más adelante reusando el DenseIndex ya
+    calculado; queda anotado como mejora futura, no bloquea esta fase.
+
+    diversity_lambda=1.0 desactiva la diversidad por completo (equivale al
+    comportamiento anterior: puro top-N por score). Es el default
+    conservador si en algún momento se quiere apagar sin tocar código.
+    """
+    if len(bullets_sorted) <= max_highlights or diversity_lambda >= 1.0:
+        return bullets_sorted[:max_highlights]
+
+    from .retrieval.sparse import tokenize_with_synonyms
+
+    token_sets = [set(tokenize_with_synonyms(b["text"])) for b in bullets_sorted]
+    scores = [b["score"] for b in bullets_sorted]
+    max_score = max(scores) or 1.0
+
+    selected = [0]  # el de mejor score siempre entra primero, nunca se sacrifica
+    remaining = list(range(1, len(bullets_sorted)))
+
+    while len(selected) < max_highlights and remaining:
+        best_i, best_mmr = remaining[0], float("-inf")
+        for i in remaining:
+            relevance = scores[i] / max_score  # normalizado a [0,1] para que pese parecido a la similitud
+            redundancy = max(_jaccard(token_sets[i], token_sets[j]) for j in selected)
+            mmr = diversity_lambda * relevance - (1 - diversity_lambda) * redundancy
+            if mmr > best_mmr:
+                best_mmr, best_i = mmr, i
+        selected.append(best_i)
+        remaining.remove(best_i)
+
+    selected.sort()  # preservar el orden original (por score) para la presentación
+    return [bullets_sorted[i] for i in selected]
+
+
+def _select_highlights_with_coverage(
+    bullets_sorted: list[dict],
+    max_highlights: int,
+    critical_keyword_variants: dict[str, set[str]] | None,
+    diversity_lambda: float = 0.7,
+) -> list[int]:
+    """Elige qué bullets de una entrada entran al presupuesto de highlights.
+
+    Dos pasadas, en orden:
+    1. Diversidad (MMR): elige N bullets que balancean relevancia y
+       variedad de contenido, en vez de los N de mayor score a secas
+       (ver `_mmr_select`).
+    2. Cobertura de keywords: si alguna keyword crítica del JD (frecuencia
+       alta, ver `select()`) no quedó cubierta por esos N, pero SÍ está
+       cubierta por un bullet descartado de la MISMA entrada, hace UN
+       intercambio — nunca agrega, nunca inventa, solo prioriza qué texto
+       YA seleccionable entra en el presupuesto. Como máximo un swap por
+       entrada, para no desarmar el orden más de lo necesario.
+
+    Nota: la cobertura es un ajuste local a la entrada (no busca cobertura
+    global entre TODAS las entradas seleccionadas) — puede terminar
+    reforzando una keyword que ya está cubierta en otra entrada. Es una
+    limitación conocida y aceptable para esta primera versión.
+    """
+    top = _mmr_select(bullets_sorted, max_highlights, diversity_lambda)
+    top_ids = {id(b) for b in top}
+    rest = [b for b in bullets_sorted if id(b) not in top_ids]
+
+    if not rest or not critical_keyword_variants:
+        return [b["bullet_index"] for b in top]
+
+    def _covers(bullet: dict, variants: set[str]) -> bool:
+        text = _normalize_text(bullet["text"])
+        return any(_count_keyword_occurrences(text, v) > 0 for v in variants)
+
+    covered = {
+        kw
+        for kw, variants in critical_keyword_variants.items()
+        if any(_covers(b, variants) for b in top)
+    }
+    uncovered_variants = [
+        variants
+        for kw, variants in critical_keyword_variants.items()
+        if kw not in covered
+    ]
+    if not uncovered_variants:
+        return [b["bullet_index"] for b in top]
+
+    for candidate in rest:
+        if any(_covers(candidate, variants) for variants in uncovered_variants):
+            top = top[:-1] + [candidate]  # swap: afuera el de menor score del top
+            break
+
+    return [b["bullet_index"] for b in top]
+
+
 def _group_bullets_into_entries(
     ranked_bullets: list[dict],
     max_entries: int,
     max_highlights_per_entry: int,
+    critical_keyword_variants: dict[str, set[str]] | None = None,
+    diversity_lambda: float = 0.7,
 ) -> tuple[list[dict], list[dict]]:
     """Agrupa bullets en entradas y separa incluidos vs excluidos por presupuesto.
 
@@ -260,8 +380,11 @@ def _group_bullets_into_entries(
             "entry_score": avg_score,
         }
         if idx < max_entries:
-            # Recortar highlights al presupuesto
-            entry_data["highlight_order"] = entry_data["highlight_order"][:max_highlights_per_entry]
+            # Recortar highlights al presupuesto, con ajuste de cobertura
+            # de keywords críticas (ver _select_highlights_with_coverage).
+            entry_data["highlight_order"] = _select_highlights_with_coverage(
+                bullets_sorted, max_highlights_per_entry, critical_keyword_variants, diversity_lambda
+            )
             included.append(entry_data)
         else:
             excluded.append(entry_data)
@@ -294,6 +417,50 @@ class SelectionEngine:
             self._reranker = CrossEncoderReranker(model_name, device="cpu")
         return self._reranker
 
+    def _resolve_summary_index(
+        self, master_cv: dict[str, Any], query_text: str
+    ) -> tuple[int | None, str]:
+        """Elige qué variante de summary usar, de forma determinística.
+
+        Antes esto era responsabilidad exclusiva del LLM estratégico
+        (Ollama). Es, en el fondo, el mismo problema de similitud
+        JD↔texto que ya resuelve IR para todo lo demás — no hay motivo
+        para depender de un servicio externo (con su propia latencia y
+        riesgo de falla) para una decisión que el cross-encoder/BM25 ya
+        cargados en memoria resuelven igual de bien y sin red.
+
+        El LLM todavía puede sugerir un índice distinto después (ver
+        llm_node.py), pero ya no hace falta que lo haga: si Ollama no
+        está disponible, el summary_index deja de quedar en None.
+
+        Returns:
+            (índice elegido o None si no hay variantes, modo usado).
+        """
+        summaries = master_cv.get("cv", {}).get("sections", {}).get("summary", [])
+        if not summaries:
+            return None, "none"
+        if len(summaries) == 1:
+            return 0, "single_option"
+
+        reranker = self._get_reranker()
+        candidates = [{"id": str(i), "text": s} for i, s in enumerate(summaries)]
+
+        if reranker is not None:
+            ranked = reranker.rerank(query_text, candidates, top_k=1)
+            if ranked:
+                return int(ranked[0][0]), "cross_encoder"
+
+        # Fallback léxico: overlap de tokens (BM25-style, sin IDF) contra el JD.
+        from .retrieval.sparse import tokenize_with_synonyms
+
+        jd_tokens = set(tokenize_with_synonyms(query_text))
+        best_idx, best_score = 0, -1
+        for i, s in enumerate(summaries):
+            overlap = len(jd_tokens & set(tokenize_with_synonyms(s)))
+            if overlap > best_score:
+                best_idx, best_score = i, overlap
+        return best_idx, "positional_fallback"
+
     def select(
         self,
         master_cv: dict[str, Any],
@@ -315,12 +482,27 @@ class SelectionEngine:
         reranker = self._get_reranker()
         score_mode = "cross_encoder" if reranker is not None else "positional_fallback"
 
+        # Keywords "críticas" (mismo umbral de frecuencia que critical_missing
+        # en retrieval/keywords.py) para el paso de optimización de cobertura
+        # dentro de _group_bullets_into_entries: si una de estas quedó afuera
+        # del top-N de una entrada por poco margen de score, se prioriza su
+        # inclusión sobre el bullet de menor score, sin agregar contenido nuevo.
+        _jd_kws, _jd_freqs = extract_keywords(job_description)
+        critical_keyword_variants = {
+            kw: get_synonym_variants(kw)
+            for kw in _jd_kws
+            if _jd_freqs.get(kw, 0) >= 2
+        }
+
+        summary_index, summary_index_mode = self._resolve_summary_index(master_cv, query_text)
+
         selection: dict[str, Any] = {
             "selected_experience": [],
             "selected_projects": [],
             "selected_skills_indices": [],
             "selected_education_indices": [],
-            "summary_index": None,
+            "summary_index": summary_index,
+            "summary_index_mode": summary_index_mode,  # NUEVO: transparencia de cómo se eligió
             "keywords_detected": [],
             "bullet_scores": {},       # NUEVO: bullet_id -> score (0-1)
             "jd_snippets": {},         # NUEVO: bullet_id -> snippet del JD
@@ -342,7 +524,15 @@ class SelectionEngine:
             sparse_idx, dense_idx = indices
             sparse_ranking = sparse_idx.query(query_text, top_k=50)
             dense_ranking, chunk_map = dense_idx.query(chunk_embeddings, top_k=50)
-            hybrid_ranking = reciprocal_rank_fusion(sparse_ranking, dense_ranking)
+            keyword_ranking = build_keyword_ranking(
+                [{"id": b.id, "text": b.text} for b in bullets], job_description
+            )
+            hybrid_ranking = reciprocal_rank_fusion(
+                sparse_ranking,
+                dense_ranking,
+                keyword_ranking=keyword_ranking,
+                keyword_weight=self.config.get("keyword_boost_weight", 0.5),
+            )
 
             bullet_map = {b.id: b for b in bullets}
 
@@ -439,7 +629,11 @@ class SelectionEngine:
 
             else:
                 grouped, excluded_grouped = _group_bullets_into_entries(
-                    final_ranking, max_entries, max_highlights
+                    final_ranking,
+                    max_entries,
+                    max_highlights,
+                    critical_keyword_variants,
+                    self.config.get("diversity_lambda", 0.7),
                 )
                 key = f"selected_{section}"
                 selection[key] = grouped
@@ -478,6 +672,13 @@ class SelectionEngine:
         master_json = json.dumps(master_cv, ensure_ascii=False, sort_keys=True)
         bullets = _extract_bullets_from_section(master_cv, section_name)
 
+        _jd_kws, _jd_freqs = extract_keywords(job_description)
+        critical_keyword_variants = {
+            kw: get_synonym_variants(kw)
+            for kw in _jd_kws
+            if _jd_freqs.get(kw, 0) >= 2
+        }
+
         if not bullets:
             return (
                 {f"selected_{section_name}": []}
@@ -494,7 +695,15 @@ class SelectionEngine:
         sparse_idx, dense_idx = indices
         sparse_ranking = sparse_idx.query(query_text, top_k=50)
         dense_ranking, chunk_map = dense_idx.query(chunk_embeddings, top_k=50)
-        hybrid_ranking = reciprocal_rank_fusion(sparse_ranking, dense_ranking)
+        keyword_ranking = build_keyword_ranking(
+            [{"id": b.id, "text": b.text} for b in bullets], job_description
+        )
+        hybrid_ranking = reciprocal_rank_fusion(
+            sparse_ranking,
+            dense_ranking,
+            keyword_ranking=keyword_ranking,
+            keyword_weight=self.config.get("keyword_boost_weight", 0.5),
+        )
 
         reranker = self._get_reranker()
         score_mode = "cross_encoder" if reranker is not None else "positional_fallback"
@@ -588,7 +797,11 @@ class SelectionEngine:
 
         else:
             grouped, excluded_grouped = _group_bullets_into_entries(
-                final_ranking, max_entries, max_highlights
+                final_ranking,
+                max_entries,
+                max_highlights,
+                critical_keyword_variants,
+                self.config.get("diversity_lambda", 0.7),
             )
             if section_name in ("experience", "projects") and grouped:
                 grouped = _reorder_entries_chronologically(

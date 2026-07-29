@@ -132,6 +132,55 @@ def extract_keywords(job_description: str) -> Tuple[List[str], Dict[str, int]]:
     return sorted_keywords, frequencies
 
 
+def build_keyword_ranking(
+    bullets: List[Dict[str, Any]],
+    job_description: str,
+) -> List[str]:
+    """Rankea bullets por peso de keywords técnicas del JD que contienen
+    literalmente (o alguna variante sinónima), ponderado por la frecuencia
+    de esa keyword en el JD.
+
+    Este es el tercer canal que se fusiona en el RRF (junto a BM25 y dense),
+    para asegurar que un bullet con la keyword exacta más importante de la
+    oferta tenga prioridad EXPLÍCITA en el ranking, no solo la influencia
+    indirecta que ya tiene vía BM25.
+
+    Un bullet que no contiene ninguna keyword del JD simplemente no aparece
+    en el resultado (igual que hacen sparse/dense con bullets sin match).
+
+    Args:
+        bullets: lista de dicts con al menos "id" y "text".
+        job_description: texto completo de la oferta.
+
+    Returns:
+        Lista de bullet_ids ordenada por peso de keywords descendente.
+    """
+    from .sparse import get_synonym_variants
+
+    jd_keywords, frequencies = extract_keywords(job_description)
+    if not jd_keywords:
+        return []
+
+    # Variantes sinónimas de cada keyword del JD, precalculadas una vez.
+    keyword_variants = {
+        kw: get_synonym_variants(kw) for kw in jd_keywords
+    }
+
+    scored: List[tuple[str, float]] = []
+    for b in bullets:
+        text_norm = _normalize_text(b.get("text", ""))
+        weight = 0.0
+        for kw in jd_keywords:
+            variants = keyword_variants[kw]
+            if any(_count_keyword_occurrences(text_norm, v) > 0 for v in variants):
+                weight += frequencies.get(kw, 1)
+        if weight > 0:
+            scored.append((b["id"], weight))
+
+    scored.sort(key=lambda x: x[1], reverse=True)
+    return [bid for bid, _ in scored]
+
+
 def _corpus_text(doc: Dict[str, Any]) -> str:
     """Extrae todo el texto de un CV dict para búsqueda de keywords."""
     parts = []

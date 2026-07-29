@@ -9,6 +9,8 @@ import re
 import numpy as np
 from rank_bm25 import BM25Okapi
 
+from .stopwords import is_stopword
+
 # Diccionario curado de sinónimos técnicos para expandir queries.
 # Se aplica tanto a la query (JD) como a los documentos (bullets).
 # NOTA: cada clave debe ser única. Para términos ambiguos, preferir
@@ -40,6 +42,27 @@ SYNONYMS = {
     "agile": ["scrum", "kanban"],
     "devops": ["sre", "site reliability engineering"],
 }
+
+
+# ------------------------------------------------------------------
+# Mapa bidireccional de sinónimos, expuesto para quien necesite
+# "¿esta keyword y esta otra son la misma cosa?" fuera del tokenizador
+# BM25 (ej. merge.py para verificar keywords ATS, o el canal de
+# keyword-boost del RRF). Única fuente de verdad: si se agrega un
+# sinónimo acá, todo el pipeline lo ve igual.
+# ------------------------------------------------------------------
+_SYNONYM_GROUPS: dict[str, set[str]] = {}
+for _key, _syns in SYNONYMS.items():
+    _group = {_key.lower()} | {s.lower() for s in _syns}
+    for _term in _group:
+        _SYNONYM_GROUPS[_term] = _group
+
+
+def get_synonym_variants(keyword: str) -> set[str]:
+    """Devuelve todas las variantes sinónimas de una keyword (incluida ella
+    misma). Si no está en la tabla, devuelve un singleton con ella misma."""
+    kw_low = keyword.lower().strip()
+    return _SYNONYM_GROUPS.get(kw_low, {kw_low})
 
 
 def tokenize_with_synonyms(text: str) -> list[str]:
@@ -75,7 +98,11 @@ def tokenize_with_synonyms(text: str) -> list[str]:
                 expanded.extend(syn.split())
         i += 1
 
-    return expanded
+    # Filtrar stopwords DESPUÉS de expandir sinónimos (así un bigrama tipo
+    # "gh actions" ya quedó armado antes de tocar nada). Con un corpus tan
+    # chico por sección, el IDF de BM25 no diluye solo las palabras vacías
+    # como lo haría en un corpus grande, así que conviene sacarlas a mano.
+    return [t for t in expanded if not is_stopword(t)]
 
 
 class SparseIndex:
