@@ -1403,6 +1403,12 @@ const SETTINGS_FIELDS = [
   { key: "max_skill_categories", label: "Máx. categorías de skills", type: "number" },
   { key: "max_education_extra", label: "Máx. certificaciones extra", type: "number" },
   { key: "max_keywords", label: "Máx. keywords ATS", type: "number" },
+  {
+    key: "show_keywords_line",
+    label: "Mostrar línea \"Palabras clave\" en el CV",
+    type: "boolean",
+    hint: "Ayuda contra ATS de conteo simple, pero un reclutador humano puede leerla como relleno. Si lo apagás, las keywords siguen influyendo en qué bullets/skills se priorizan — solo se oculta la línea explícita.",
+  },
 ];
 
 function validateConfig(config) {
@@ -1413,6 +1419,10 @@ function validateConfig(config) {
       if (!Number.isInteger(value) || value < 1) {
         throw new Error(`"${field.label}" debe ser un número entero mayor o igual a 1.`);
       }
+      continue;
+    }
+    if (field.type === "boolean") {
+      validated[field.key] = Boolean(value);
       continue;
     }
     if (typeof value !== "string" || value.trim() === "") {
@@ -1432,6 +1442,19 @@ function drawSettingsView() {
   const form = $("#settings-form");
   form.innerHTML = "";
   SETTINGS_FIELDS.forEach((f) => {
+    if (f.type === "boolean") {
+      const checkbox = h("input", { type: "checkbox" });
+      checkbox.checked = Boolean(state.config[f.key]);
+      checkbox.addEventListener("change", () => {
+        state.config[f.key] = checkbox.checked;
+      });
+      const fieldEl = h("div", { class: "settings-field settings-field-boolean" }, [
+        h("label", { class: "settings-checkbox-label" }, [checkbox, " " + f.label]),
+      ]);
+      if (f.hint) fieldEl.appendChild(h("span", { class: "hint" }, f.hint));
+      form.appendChild(fieldEl);
+      return;
+    }
     const input = h("input", {
       type: f.type,
       value: state.config[f.key],

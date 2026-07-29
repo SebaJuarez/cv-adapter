@@ -15,7 +15,7 @@ from .sparse import SparseIndex
 from .dense import DenseIndex
 from .hybrid import reciprocal_rank_fusion
 from .rerank import CrossEncoderReranker
-from .keywords import build_keyword_report, extract_keywords
+from .keywords import build_keyword_ranking, build_keyword_report, extract_keywords
 
 __all__ = [
     "extract_requirements_section",
@@ -28,4 +28,5 @@ __all__ = [
     "CrossEncoderReranker",
     "build_keyword_report",
     "extract_keywords",
+    "build_keyword_ranking",
 ]
