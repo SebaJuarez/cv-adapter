@@ -119,21 +119,35 @@ cv-adapter/
 ├── requirements.txt
 ├── config.json               # límites configurables (se crea al guardar desde la web)
 ├── main.py                   # CLI: arma y corre el grafo LangGraph
-├── app.py                    # backend web (FastAPI) — reusa src/ tal cual
+├── app.py                    # entry point de uvicorn (re-exporta api.main:app)
+├── api/                      # backend web (FastAPI)
+│   ├── main.py               # arma la app (routers + mount del frontend)
+│   ├── schemas.py            # modelos pydantic de request/response
+│   ├── deps.py               # rutas del filesystem compartidas
+│   └── routers/              # un router por recurso (master_cv, config, generate, render, system)
 ├── frontend/
 │   ├── index.html
 │   ├── style.css
-│   └── app.js                # sin build step, JS plano
+│   ├── package.json          # declara ESM ("type": "module"), sin build step
+│   └── js/                   # ES modules nativos (sin bundler)
+│       ├── main.js           # bootstrap: tabs, init
+│       ├── dom.js / api.js / state.js / labels.js / notify.js / modals.js
+│       ├── widgets.js        # keyword report, oportunidades, excluidos
+│       ├── components.js     # renderers compartidos master/target (ctx)
+│       └── views/            # master.js, apply.js, settings.js
 ├── data/
 │   ├── master_cv.yaml        # tu CV completo (reemplazar por el real)
 │   └── job_description.txt   # oferta laboral (solo la usa el CLI)
 ├── src/
 │   ├── config.py             # carga/guarda config.json
 │   ├── state.py              # TypedDict del estado del grafo (CLI)
+│   ├── storage.py            # persistencia YAML (master/target)
 │   ├── prompts.py            # system prompt + JSON Schema, dinámicos según config
 │   ├── llm_node.py           # llamada a Ollama (función pelada + nodo del grafo)
 │   ├── merge.py              # fusión determinística + presupuesto de una página
-│   └── render_node.py        # guardar YAML + render PDF (función pelada + nodos)
+│   ├── render_node.py        # guardar YAML + render PDF (función pelada + nodos)
+│   └── services/
+│       └── generation.py     # orquestación del pipeline (compartida web/CLI)
 ├── target_cv.yaml            # generado en cada corrida (revisar antes de aprobar)
 └── output/                   # PDFs finales generados por RenderCV
 ```
