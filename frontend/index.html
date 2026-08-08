@@ -6,34 +6,47 @@
 <title>cv-adapter</title>
 <link rel="stylesheet" href="style.css">
 <base target="_blank">
-<base target="_blank">
 </head>
 <body>
 
 <header class="topbar">
   <span class="brand">cv&#8209;adapter</span>
-  <nav class="tabs" id="tabs">
-    <button class="tab is-active" data-view="master">CV maestro</button>
-    <button class="tab" data-view="apply">Nueva aplicación</button>
-    <button class="tab" data-view="settings">Configuración</button>
+  <nav class="tabs" id="tabs" role="tablist" aria-label="Vistas principales">
+    <button class="tab is-active" role="tab" aria-selected="true" aria-controls="view-master" data-view="master">CV maestro</button>
+    <button class="tab" role="tab" aria-selected="false" aria-controls="view-apply" data-view="apply">Nueva aplicación</button>
+    <button class="tab" role="tab" aria-selected="false" aria-controls="view-settings" data-view="settings">Configuración</button>
   </nav>
+  <button id="undo-btn" class="btn btn-sm btn-ghost btn-undo" hidden>↩ Deshacer</button>
 </header>
 
 <div id="global-status" class="global-status" hidden></div>
+
+<!-- Toasts de confirmación no crítica -->
+<div id="toasts" class="toasts" aria-live="polite"></div>
 
 <!-- Tooltip flotante para JD snippets -->
 <div id="jd-tooltip" class="jd-tooltip" hidden></div>
 
 <main id="view-master" class="view is-active">
   <div class="view-head">
-    <h1>CV maestro</h1>
+    <h1 tabindex="-1">CV maestro</h1>
     <p class="lede">Toda tu experiencia, sin filtrar. No excluyas nada acá — cuanto más completo esté, mejor se puede adaptar a cada oferta.</p>
   </div>
   <div id="master-nav" class="section-nav"></div>
+  <div class="master-tools">
+    <div class="filter-bar">
+      <input type="text" id="master-filter" placeholder="Filtrar entradas y bullets…" aria-label="Filtrar el CV maestro">
+      <span id="master-filter-count" class="filter-count" hidden></span>
+    </div>
+    <div class="master-tool-buttons">
+      <button id="collapse-all-master" class="btn btn-sm btn-ghost">Contraer todo</button>
+      <button id="expand-all-master" class="btn btn-sm btn-ghost">Expandir todo</button>
+    </div>
+  </div>
   <div id="master-header"></div>
   <div id="master-sections"></div>
   <button id="add-section-master" class="btn btn-ghost btn-add-section">+ Agregar sección</button>
-  <div class="save-bar">
+  <div class="save-bar sticky">
     <span id="master-status" class="status"></span>
     <button id="save-master" class="btn btn-primary">Guardar CV maestro</button>
   </div>
@@ -41,63 +54,76 @@
 
 <main id="view-apply" class="view">
   <div class="view-head">
-    <h1>Nueva aplicación</h1>
+    <h1 tabindex="-1">Nueva aplicación</h1>
     <p class="lede">Pegá la oferta laboral. El modelo elige, de tu CV maestro, lo que más matchea — vos revisás, ajustás y recién ahí generás el PDF.</p>
   </div>
 
   <section class="intake">
     <label for="job-description">Oferta laboral</label>
     <textarea id="job-description" rows="10" placeholder="Pegá acá el texto completo de la oferta…"></textarea>
-    <label for="ats-keywords" style="margin-top:0.9rem">Palabras clave a verificar (opcional) — simula un filtro ATS</label>
+    <label for="ats-keywords" style="margin-top:0.9rem">Palabras clave a verificar (opcional) — se suman al análisis ATS</label>
     <input type="text" id="ats-keywords" placeholder="ej: Kubernetes, Scrum, PostgreSQL (separadas por coma)">
     <div class="save-bar">
       <span id="generate-status" class="status"></span>
       <button id="generate-btn" class="btn btn-primary">Generar CV para esta oferta</button>
     </div>
+    <div class="progress-wrap" id="generate-progress" hidden>
+      <div class="progress-bar"><div class="progress-indeterminate"></div></div>
+      <span class="progress-text">Consultando al modelo local (puede tardar según tu hardware)…</span>
+    </div>
   </section>
 
   <section id="apply-result" class="apply-result" hidden>
-    <!-- Score de fit principal -->
-    <div id="fit-score-row" class="fit-score-row" hidden>
-      <div class="fit-score-bar">
-        <div id="fit-score-fill" class="fit-score-fill"></div>
+    <!-- Resumen del resultado -->
+    <div id="result-summary" class="result-summary" hidden>
+      <div class="result-score">
+        <span id="result-score-value" class="result-score-value">—</span>
+        <span class="result-score-caption">ATS Impact Score</span>
       </div>
-      <span id="fit-score-label" class="fit-score-label"></span>
+      <div class="result-stats">
+        <span id="result-stats-covered"></span>
+        <span id="result-stats-critical" class="result-stats-critical" hidden></span>
+      </div>
+      <div class="result-actions">
+        <span id="render-status-summary" class="status"></span>
+        <button id="render-btn-summary" class="btn btn-primary">Generar PDF</button>
+        <a id="download-link-summary" class="btn btn-ghost" href="/api/download-pdf" hidden>Descargar PDF</a>
+      </div>
     </div>
 
-    <!-- Keywords detectadas automáticamente -->
-    <div class="keywords-row">
-      <span class="eyebrow">keywords detectadas</span>
-      <div id="keywords-list" class="keywords-list"></div>
+    <div class="progress-wrap" id="render-progress" hidden>
+      <div class="progress-bar"><div class="progress-indeterminate"></div></div>
+      <span class="progress-text">Compilando el PDF con Typst…</span>
     </div>
 
-    <!-- Keyword report con frecuencias e impacto -->
+    <!-- Keyword report (único, incluye las keywords manuales) -->
     <div id="keyword-report" class="keyword-report"></div>
 
-    <!-- Oportunidades críticas -->
-    <div id="opportunities-panel" class="opportunities-panel" hidden>
-      <h3 class="opp-title">🎯 Oportunidades críticas</h3>
-      <p class="opp-subtitle">Estas keywords aparecen varias veces en la oferta pero no están en tu CV generado. Incluirlas aumenta fuertemente tu probabilidad de pasar el ATS.</p>
-      <div id="opportunities-list" class="opportunities-list"></div>
-    </div>
-
-    <!-- Contenido excluido por presupuesto -->
-    <div id="excluded-panel" class="excluded-panel" hidden>
-      <details>
-        <summary>📋 Contenido evaluado pero excluido por presupuesto de página</summary>
-        <p class="excluded-hint">Estas entradas y bullets fueron rankeados por relevancia pero no entraron por los límites configurados. Podés agregarlos manualmente si querés.</p>
-        <div id="excluded-content"></div>
-      </details>
-    </div>
-
-    <!-- ATS checklist manual (legacy) -->
-    <div id="ats-checklist" class="ats-checklist"></div>
+    <!-- Contenido no incluido: oportunidades críticas + excluidos por presupuesto -->
+    <details id="notincluded-panel" class="notincluded-panel" hidden>
+      <summary class="notincluded-summary">
+        <span id="notincluded-count" class="notincluded-count"></span>
+        <span class="notincluded-label">Contenido no incluido en la selección</span>
+      </summary>
+      <div class="notincluded-body">
+        <div id="opportunities-panel" class="opp-block" hidden>
+          <h3 class="opp-title">🎯 Oportunidades críticas</h3>
+          <p class="opp-subtitle">Estas keywords aparecen varias veces en la oferta pero no están en tu CV generado. Incluirlas aumenta fuertemente tu probabilidad de pasar el ATS.</p>
+          <div id="opportunities-list" class="opportunities-list"></div>
+        </div>
+        <div id="excluded-panel" class="excluded-block" hidden>
+          <h4 class="opp-title">📋 Evaluado pero excluido por presupuesto de página</h4>
+          <p class="excluded-hint">Estas entradas y bullets fueron rankeados por relevancia pero no entraron por los límites configurados. Podés agregarlos manualmente si querés.</p>
+          <div id="excluded-content"></div>
+        </div>
+      </div>
+    </details>
 
     <div id="target-header"></div>
     <div id="target-nav" class="section-nav"></div>
     <div id="target-sections"></div>
     <button id="add-section-target" class="btn btn-ghost btn-add-section">+ Agregar sección</button>
-    <div class="save-bar">
+    <div class="save-bar sticky">
       <span id="render-status" class="status"></span>
       <button id="render-btn" class="btn btn-primary">Generar PDF</button>
       <a id="download-link" class="btn btn-ghost" href="/api/download-pdf" hidden>Descargar PDF</a>
@@ -107,11 +133,11 @@
 
 <main id="view-settings" class="view">
   <div class="view-head">
-    <h1>Configuración</h1>
+    <h1 tabindex="-1">Configuración</h1>
     <p class="lede">Estos límites se aplican siempre por código, sin importar qué devuelva el modelo — así el CV entra en una página.</p>
   </div>
   <form id="settings-form" class="settings-form"></form>
-  <div class="save-bar">
+  <div class="save-bar sticky">
     <span id="settings-status" class="status"></span>
     <button id="save-settings" class="btn btn-primary">Guardar configuración</button>
   </div>

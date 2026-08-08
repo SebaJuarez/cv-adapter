@@ -1,14 +1,17 @@
 "use strict";
 
 /* =====================================================================
-   cv-adapter — frontend v2.1
-   Nuevas features:
+   cv-adapter — frontend v2.2
+   Features:
    - Relevancia por bullet (score 0-100 con mini barra)
    - Heatmap de entrada (borde colorido según score promedio)
    - JD snippet en hover (tooltip flotante con el fragmento de oferta)
    - Oportunidades críticas (keywords de alta frecuencia missing)
    - Delta de fit al agregar bullets
    - Pullback ordenado por relevancia
+   - Resumen del resultado + keyword report unificado (incluye manuales)
+   - Contenido no incluido agrupado, toasts, progreso, dirty state,
+     filtro/colapso en master, undo del último borrado
    ===================================================================== */
 
 const state = {
@@ -20,7 +23,12 @@ const state = {
   masterSectionTypes: {},
   targetSectionTypes: {},
   keywordReport: null,
+  masterFilter: "",
+  collapsedMaster: {},
+  lastUndo: null,
 };
+
+const dirty = { master: false, apply: false, settings: false };
 
 // ---------------------------------------------------------------- utils
 
@@ -73,6 +81,87 @@ function setGlobalStatus(message, kind) {
   el.hidden = !message;
 }
 
+// ---------------------------------------------------------------- toasts
+
+function toast(message, kind) {
+  const container = $("#toasts");
+  if (!container) return;
+  const el = h("div", { class: "toast" + (kind ? " toast-" + kind : "") }, message);
+  container.appendChild(el);
+  setTimeout(() => {
+    el.classList.add("toast-out");
+    setTimeout(() => el.remove(), 320);
+  }, 4000);
+}
+
+// ---------------------------------------------------------------- progreso
+
+function showProgress(id) { const el = $(id); if (el) el.hidden = false; }
+function hideProgress(id) { const el = $(id); if (el) el.hidden = true; }
+
+// -------------------------------------------------------- dirty state
+
+function markDirty(view) {
+  dirty[view] = true;
+  const el = view === "master" ? $("#master-status")
+    : view === "apply" ? $("#render-status")
+    : $("#settings-status");
+  if (el) setStatus(el, "Hay cambios sin guardar.", "dirty");
+}
+
+document.addEventListener("input", (e) => {
+  if (e.target && e.target.id === "master-filter") return;
+  const activeView = document.querySelector(".view.is-active");
+  if (!activeView) return;
+  if (activeView.id === "view-master") markDirty("master");
+  else if (activeView.id === "view-apply") markDirty("apply");
+  else if (activeView.id === "view-settings") markDirty("settings");
+}, true);
+
+// ---------------------------------------------------------------- undo
+
+function rememberUndo(label, restore) {
+  state.lastUndo = { label, restore };
+  const btn = $("#undo-btn");
+  if (btn) {
+    btn.hidden = false;
+    btn.title = "Deshacer: " + label;
+  }
+}
+
+function undoLast() {
+  if (!state.lastUndo) return;
+  const undo = state.lastUndo;
+  state.lastUndo = null;
+  const btn = $("#undo-btn");
+  if (btn) btn.hidden = true;
+  undo.restore();
+  toast("Se deshizo: " + undo.label + ".");
+}
+
+$("#undo-btn").addEventListener("click", undoLast);
+
+// ------------------------------------------------------ labels de campos
+
+const FIELD_LABELS = {
+  company: "Empresa", position: "Puesto", location: "Ubicación",
+  start_date: "Fecha inicio", end_date: "Fecha fin",
+  institution: "Institución", area: "Área", degree: "Título",
+  name: "Nombre", date: "Fecha", label: "Categoría", details: "Detalle",
+};
+
+function fieldLabel(key) {
+  return FIELD_LABELS[key] || key.replace(/_/g, " ");
+}
+
+// --------------------------------------------------- altura de la topbar
+
+function syncTopbarHeight() {
+  const tb = document.querySelector(".topbar");
+  if (tb) document.documentElement.style.setProperty("--topbar-h", tb.offsetHeight + "px");
+}
+window.addEventListener("resize", syncTopbarHeight);
+
 // -------------------------------------------------------- tooltip JD
 
 function showJDSnippet(text, el) {
@@ -90,7 +179,7 @@ function hideJDSnippet() {
   if (tooltip) tooltip.hidden = true;
 }
 
-// -------------------------------------------------------- chequeo ATS
+// -------------------------------------------------------- corpus de texto
 
 function buildDocCorpus(doc) {
   if (!doc) return "";
@@ -106,48 +195,50 @@ function buildDocCorpus(doc) {
   return parts.join(" \n ").toLowerCase();
 }
 
-function renderAtsChecklist() {
-  const container = $("#ats-checklist");
-  if (!container) return;
+// -------------------------------------------------------- keywords manuales
+
+function getManualKeywords() {
   const raw = ($("#ats-keywords") && $("#ats-keywords").value) || "";
-  const keywords = raw.split(",").map((s) => s.trim()).filter(Boolean);
-  container.innerHTML = "";
-  if (keywords.length === 0 || !state.targetDoc) return;
+  return raw.split(",").map((s) => s.trim()).filter(Boolean);
+}
 
-  const targetCorpus = buildDocCorpus(state.targetDoc);
-  const masterCorpus = buildDocCorpus(state.masterDocSnapshot);
-
-  keywords.forEach((kw) => {
-    const low = kw.toLowerCase();
-    let cls = "ats-missing", title = "no está en tu CV maestro — no se puede agregar sin inventar";
-    if (targetCorpus.includes(low)) { cls = "ats-ok"; title = "está en el CV que vas a generar"; }
-    else if (masterCorpus.includes(low)) { cls = "ats-gap"; title = "está en tu master pero no en esta selección — probá 'traer bullet del master'"; }
-    container.appendChild(h("span", { class: "ats-item " + cls, title }, kw));
+function effectiveKeywordList() {
+  const base = (state.keywordReport && state.keywordReport.all_keywords) || [];
+  const manual = getManualKeywords();
+  const out = base.slice();
+  manual.forEach((kw) => {
+    if (!out.some((k) => String(k).toLowerCase() === kw.toLowerCase())) out.push(kw);
   });
+  return out;
 }
 
 // ----------------------------------------------------- keyword report
 
-function renderFitScore() {
-  const row = $("#fit-score-row");
-  const fill = $("#fit-score-fill");
-  const label = $("#fit-score-label");
+function renderResultSummary() {
+  const panel = $("#result-summary");
+  const value = $("#result-score-value");
+  const statsCovered = $("#result-stats-covered");
+  const statsCritical = $("#result-stats-critical");
+  if (!panel || !value || !statsCovered || !statsCritical) return;
   if (!state.keywordReport) {
-    row.hidden = true;
+    panel.hidden = true;
     return;
   }
-  const all = state.keywordReport.all_keywords || [];
+  const all = effectiveKeywordList();
   if (all.length === 0) {
-    row.hidden = true;
+    panel.hidden = true;
     return;
   }
-  // Usar ats_impact_score si está disponible (ponderado por frecuencia)
   const pct = state.keywordReport.ats_impact_score || 0;
 
-  row.hidden = false;
-  fill.style.width = pct + "%";
-  fill.className = "fit-score-fill" + (pct >= 80 ? " fit-good" : pct >= 50 ? " fit-mid" : " fit-bad");
-  label.textContent = `ATS Impact Score: ${pct}%`;
+  panel.hidden = false;
+  value.textContent = pct + "%";
+  value.className = "result-score-value" + (pct >= 80 ? " good" : pct >= 50 ? " mid" : " bad");
+  const covered = Object.values(state.keywordReport.in_target || {}).filter(Boolean).length;
+  statsCovered.textContent = `${covered} de ${all.length} keywords cubiertas`;
+  const critical = state.keywordReport.critical_missing || [];
+  statsCritical.hidden = critical.length === 0;
+  statsCritical.textContent = ` · ${critical.length} faltantes críticas`;
 }
 
 function renderKeywordReport() {
@@ -156,8 +247,11 @@ function renderKeywordReport() {
   container.innerHTML = "";
 
   if (!state.keywordReport) return;
-  const { all_keywords, frequencies, in_master, in_target, missing_in_target, not_in_master } = state.keywordReport;
-  if (!all_keywords || all_keywords.length === 0) return;
+  const { frequencies, in_master, in_target } = state.keywordReport;
+  const masterCorpus = buildDocCorpus(state.masterDocSnapshot);
+  const targetCorpus = buildDocCorpus(state.targetDoc);
+  const all = effectiveKeywordList();
+  if (all.length === 0) return;
 
   const wrap = h("div", { class: "kw-report" });
 
@@ -168,22 +262,30 @@ function renderKeywordReport() {
   ]);
   wrap.appendChild(legend);
 
+  const missingInTarget = [];
+  const notInMaster = [];
+
   const list = h("div", { class: "keywords-list" });
-  all_keywords.forEach((kw) => {
+  all.forEach((kw) => {
+    const low = String(kw).toLowerCase();
     const freq = frequencies[kw] || 1;
+    const inT = in_target[kw] !== undefined ? in_target[kw] : targetCorpus.includes(low);
+    const inM = in_master[kw] !== undefined ? in_master[kw] : masterCorpus.includes(low);
     let cls = "kw-chip";
     let title = "";
     let clickable = false;
-    if (in_target[kw]) {
+    if (inT) {
       cls += " kw-chip-ok";
       title = `Presente en el CV generado (aparece ${freq}x en la oferta)`;
-    } else if (in_master[kw]) {
+    } else if (inM) {
       cls += " kw-chip-missing";
       title = `Está en tu CV maestro pero no en esta selección. Aparece ${freq}x en la oferta. Clic para traer bullets.`;
       clickable = true;
+      missingInTarget.push(kw);
     } else {
       cls += " kw-chip-notmaster";
       title = `La oferta la pide (${freq}x) pero no está en tu CV maestro — gap real`;
+      notInMaster.push(kw);
     }
     const label = freq > 1 ? `${kw} ×${freq}` : kw;
     const chip = h("span", { class: cls, title }, label);
@@ -195,13 +297,13 @@ function renderKeywordReport() {
   });
   wrap.appendChild(list);
 
-  if (missing_in_target && missing_in_target.length > 0) {
+  if (missingInTarget.length > 0) {
     wrap.appendChild(h("p", { class: "kw-summary" },
-      `Faltan en el target: ${missing_in_target.join(", ")}. Clic en una para traer bullets del master.`));
+      `Faltan en el target: ${missingInTarget.join(", ")}. Clic en una para traer bullets del master.`));
   }
-  if (not_in_master && not_in_master.length > 0) {
+  if (notInMaster.length > 0) {
     wrap.appendChild(h("p", { class: "kw-summary kw-summary-gap" },
-      `No tenés en el master: ${not_in_master.join(", ")}.`));
+      `No tenés en el master: ${notInMaster.join(", ")}.`));
   }
 
   container.appendChild(wrap);
@@ -215,12 +317,7 @@ function renderOpportunities() {
   if (!panel || !list) return;
 
   const critical = state.keywordReport?.critical_missing || [];
-  if (critical.length === 0) {
-    panel.hidden = true;
-    return;
-  }
-
-  panel.hidden = false;
+  panel.hidden = critical.length === 0;
   list.innerHTML = "";
 
   critical.forEach((kw) => {
@@ -237,6 +334,41 @@ function renderOpportunities() {
     ]);
     list.appendChild(item);
   });
+
+  updateNotIncludedPanel();
+}
+
+// ----------------------------------------------------- contenido no incluido
+
+function countExcluded() {
+  if (!state.selection) return 0;
+  return (state.selection.excluded_experience?.length || 0)
+    + (state.selection.excluded_projects?.length || 0)
+    + (state.selection.excluded_skills_indices?.length || 0)
+    + (state.selection.excluded_education_indices?.length || 0);
+}
+
+function updateNotIncludedPanel() {
+  const panel = $("#notincluded-panel");
+  if (!panel) return;
+  const critical = state.keywordReport?.critical_missing || [];
+  const excluded = countExcluded();
+  const total = critical.length + excluded;
+  if (total === 0) {
+    panel.hidden = true;
+    return;
+  }
+  panel.hidden = false;
+  const count = $("#notincluded-count");
+  if (count) count.textContent = `${total} ítems · `;
+}
+
+function refreshKeywordWidgets() {
+  recalcKeywordReport();
+  renderResultSummary();
+  renderKeywordReport();
+  renderOpportunities();
+  renderExcludedPanel();
 }
 
 // ----------------------------------------------------- bullet scores
@@ -300,6 +432,7 @@ function renderExcludedPanel() {
 
   if (!hasAny) {
     panel.hidden = true;
+    updateNotIncludedPanel();
     return;
   }
 
@@ -350,7 +483,7 @@ function renderExcludedPanel() {
         onclick: () => {
           addEntryToTarget(sec.key, idx);
           drawTargetView();
-          setGlobalStatus(`Entrada "${name}" agregada desde excluidos.`, "ok");
+          toast(`Entrada "${name}" agregada desde excluidos.`);
         },
       }, "+ Traer entrada completa"));
 
@@ -372,10 +505,11 @@ function renderExcludedPanel() {
             h("button", {
               class: "btn-icon",
               title: "Agregar este bullet",
+              "aria-label": "Agregar este bullet",
               onclick: () => {
                 addBulletToTarget(sec.key, idx, text);
                 drawTargetView();
-                setGlobalStatus("Bullet agregado desde excluidos.", "ok");
+                toast("Bullet agregado desde excluidos.");
               },
             }, "+"),
           ]);
@@ -394,7 +528,7 @@ function renderExcludedPanel() {
           onclick: () => {
             addEntryToTarget(sec.key, idx);
             drawTargetView();
-            setGlobalStatus(`Skill "${name}" agregada desde excluidos.`, "ok");
+            toast(`Skill "${name}" agregada desde excluidos.`);
           },
         }, "+ Traer skill"));
       }
@@ -410,7 +544,7 @@ function renderExcludedPanel() {
           onclick: () => {
             addEntryToTarget(sec.key, idx);
             drawTargetView();
-            setGlobalStatus(`Educación "${name}" agregada desde excluidos.`, "ok");
+            toast(`Educación "${name}" agregada desde excluidos.`);
           },
         }, "+ Traer educación"));
       }
@@ -420,6 +554,8 @@ function renderExcludedPanel() {
 
     content.appendChild(secWrap);
   });
+
+  updateNotIncludedPanel();
 }
 
 function getBulletScore(bulletId) {
@@ -519,6 +655,7 @@ async function handleMissingKeywordClick(keyword) {
         h("button", {
           class: "btn-icon",
           title: "Agregar este bullet",
+          "aria-label": "Agregar este bullet",
           onclick: () => close(m),
         }, "+"),
       ]);
@@ -569,14 +706,15 @@ async function handleMissingKeywordClick(keyword) {
 
   drawTargetView();
   const deltaMsg = delta > 0 ? ` (+${delta}% ATS)` : "";
-  setGlobalStatus(`Bullet agregado para "${keyword}"${deltaMsg}.`, "ok");
+  toast(`Bullet agregado para "${keyword}"${deltaMsg}.`);
 }
 
 function recalcKeywordReport() {
   if (!state.keywordReport || !state.targetDoc) return;
-  const jd = $("#job-description").value || "";
-  const { all_keywords, frequencies } = state.keywordReport;
+  const masterCorpus = buildDocCorpus(state.masterDocSnapshot);
   const targetCorpus = buildDocCorpus(state.targetDoc);
+  const { frequencies, in_master } = state.keywordReport;
+  const all = effectiveKeywordList();
 
   let coveredWeight = 0;
   let totalWeight = 0;
@@ -584,16 +722,17 @@ function recalcKeywordReport() {
   const newMissing = [];
   const newCritical = [];
 
-  for (const kw of all_keywords) {
-    const present = targetCorpus.includes(kw.toLowerCase());
+  for (const kw of all) {
+    const low = String(kw).toLowerCase();
+    const present = targetCorpus.includes(low);
     newInTarget[kw] = present;
     const freq = frequencies[kw] || 1;
-    const weight = freq;
-    totalWeight += weight;
-    if (present) coveredWeight += weight;
+    const inM = in_master[kw] !== undefined ? in_master[kw] : masterCorpus.includes(low);
+    totalWeight += freq;
+    if (present) coveredWeight += freq;
     else {
-      if (state.keywordReport.in_master[kw]) newMissing.push(kw);
-      if (freq >= 2 && state.keywordReport.in_master[kw]) newCritical.push(kw);
+      if (inM) newMissing.push(kw);
+      if (freq >= 2 && inM) newCritical.push(kw);
     }
   }
 
@@ -795,7 +934,7 @@ function renderSectionBlock(name, entries, ctx) {
   const block = h("div", { class: "section-block", "data-section": name });
 
   const removeBtn = h("button", {
-    class: "btn-icon danger", title: "Sacar sección",
+    class: "btn-icon danger", title: "Sacar sección", "aria-label": "Sacar sección",
     onclick: async () => {
       const isCoreMasterSection = !ctx.isTarget && ["experience", "education", "skills"].includes(name);
       const confirmed = await confirmAction({
@@ -806,7 +945,15 @@ function renderSectionBlock(name, entries, ctx) {
         confirmLabel: "Eliminar sección",
       });
       if (!confirmed) return;
-      delete ctx.doc.cv.sections[name];
+      const sections = ctx.doc.cv.sections;
+      const removed = sections[name];
+      const removedType = ctx.sectionTypes ? ctx.sectionTypes[name] : null;
+      rememberUndo("Eliminar sección " + humanizeSectionName(name), () => {
+        sections[name] = removed;
+        if (ctx.sectionTypes && removedType !== null) ctx.sectionTypes[name] = removedType;
+        ctx.onRerender();
+      });
+      delete sections[name];
       if (ctx.sectionTypes) delete ctx.sectionTypes[name];
       ctx.onRerender();
     },
@@ -815,7 +962,7 @@ function renderSectionBlock(name, entries, ctx) {
   const regeneratable = ["experience", "projects", "skills"];
   let regenBtn = null;
   if (ctx.isTarget && regeneratable.includes(name)) {
-    regenBtn = h("button", { class: "btn-icon regen", title: "Regenerar esta sección con la IA" }, "↻");
+    regenBtn = h("button", { class: "btn-icon regen", title: "Regenerar esta sección con la IA", "aria-label": "Regenerar esta sección con la IA" }, "↻");
     regenBtn.addEventListener("click", async () => {
       const jd = $("#job-description").value;
       if (!jd.trim()) {
@@ -834,7 +981,7 @@ function renderSectionBlock(name, entries, ctx) {
         state.selection = state.selection || {};
         Object.assign(state.selection, result.selection);
         ctx.onRerender();
-        setGlobalStatus(`Se regeneró "${humanizeSectionName(name)}".`, "ok");
+        toast(`Se regeneró "${humanizeSectionName(name)}".`);
       } catch (e) {
         setGlobalStatus("No se pudo regenerar la sección: " + e.message, "error");
       } finally {
@@ -844,17 +991,38 @@ function renderSectionBlock(name, entries, ctx) {
     });
   }
 
+  const sectionActions = h("div", { class: "section-actions" }, [regenBtn, removeBtn]);
+
+  if (!ctx.isTarget) {
+    const collapsed = Boolean(state.collapsedMaster && state.collapsedMaster[name]);
+    const toggleBtn = h("button", {
+      class: "btn-icon",
+      title: collapsed ? "Expandir sección" : "Contraer sección",
+      "aria-label": "Contraer o expandir sección",
+      onclick: () => {
+        state.collapsedMaster = state.collapsedMaster || {};
+        state.collapsedMaster[name] = !state.collapsedMaster[name];
+        ctx.onRerender();
+      },
+    }, collapsed ? "▸" : "▾");
+    sectionActions.insertBefore(toggleBtn, sectionActions.firstChild);
+  }
+
   block.appendChild(h("div", { class: "section-head" }, [
     h("div", { class: "titles" }, [
       h("h2", {}, humanizeSectionName(name)),
       h("span", { class: "eyebrow" }, name),
     ]),
-    h("div", { class: "section-actions" }, [regenBtn, removeBtn]),
+    sectionActions,
   ]));
 
-  if (type === "text") block.appendChild(renderTextList(name, entries, ctx));
-  else if (type === "label_details") block.appendChild(renderLabelDetailsList(name, entries, ctx));
-  else block.appendChild(renderEntriesList(name, entries, ctx));
+  const body = h("div", { class: "section-body" });
+  if (type === "text") body.appendChild(renderTextList(name, entries, ctx));
+  else if (type === "label_details") body.appendChild(renderLabelDetailsList(name, entries, ctx));
+  else body.appendChild(renderEntriesList(name, entries, ctx));
+  block.appendChild(body);
+
+  if (state.collapsedMaster && state.collapsedMaster[name]) block.classList.add("collapsed");
 
   return block;
 }
@@ -874,8 +1042,12 @@ function renderTextList(sectionName, entries, ctx) {
     ta.addEventListener("input", () => { entries[i] = ta.value; autoResize(ta); });
 
     const del = h("button", {
-      class: "btn-icon danger", title: "Sacar",
-      onclick: () => { entries.splice(i, 1); ctx.onRerender(); },
+      class: "btn-icon danger", title: "Sacar", "aria-label": "Sacar ítem",
+      onclick: () => {
+        rememberUndo("Eliminar ítem", () => { entries.splice(i, 0, value); ctx.onRerender(); });
+        entries.splice(i, 1);
+        ctx.onRerender();
+      },
     }, "×");
 
     wrap.appendChild(h("div", { class: "highlight-row" }, [
@@ -927,14 +1099,18 @@ function renderLabelDetailsList(sectionName, entries, ctx) {
     detailsInput.addEventListener("input", () => (entry.details = detailsInput.value));
 
     const del = h("button", {
-      class: "btn-icon danger", title: "Sacar",
-      onclick: () => { entries.splice(i, 1); ctx.onRerender(); },
+      class: "btn-icon danger", title: "Sacar", "aria-label": "Sacar ítem",
+      onclick: () => {
+        rememberUndo("Eliminar ítem", () => { entries.splice(i, 0, entry); ctx.onRerender(); });
+        entries.splice(i, 1);
+        ctx.onRerender();
+      },
     }, "×");
 
     const row = h("div", { class: "entry-card" }, [
       h("div", { class: "entry-fields" }, [
-        h("div", { class: "field" }, [h("label", {}, "label"), labelInput]),
-        h("div", { class: "field" }, [h("label", {}, "details"), detailsInput]),
+        h("div", { class: "field" }, [h("label", {}, fieldLabel("label")), labelInput]),
+        h("div", { class: "field" }, [h("label", {}, fieldLabel("details")), detailsInput]),
       ]),
       h("div", { class: "row-controls" }, [del]),
     ]);
@@ -993,19 +1169,19 @@ function renderEntryCard(sectionName, entries, entry, index, ctx) {
   fieldKeys.forEach((key) => {
     const input = h("input", { type: "text", value: entry[key] ?? "" });
     input.addEventListener("input", () => (entry[key] = input.value));
-    fieldsWrap.appendChild(h("div", { class: "field" }, [h("label", {}, key), input]));
+    fieldsWrap.appendChild(h("div", { class: "field" }, [h("label", {}, fieldLabel(key)), input]));
   });
 
   const moveUp = h("button", {
-    class: "btn-icon", title: "Subir", disabled: index === 0 ? "disabled" : null,
+    class: "btn-icon", title: "Subir", "aria-label": "Subir entrada", disabled: index === 0 ? "disabled" : null,
     onclick: () => { [entries[index - 1], entries[index]] = [entries[index], entries[index - 1]]; ctx.onRerender(); },
   }, "↑");
   const moveDown = h("button", {
-    class: "btn-icon", title: "Bajar", disabled: index === entries.length - 1 ? "disabled" : null,
+    class: "btn-icon", title: "Bajar", "aria-label": "Bajar entrada", disabled: index === entries.length - 1 ? "disabled" : null,
     onclick: () => { [entries[index + 1], entries[index]] = [entries[index], entries[index + 1]]; ctx.onRerender(); },
   }, "↓");
   const del = h("button", {
-    class: "btn-icon danger", title: "Sacar entrada",
+    class: "btn-icon danger", title: "Sacar entrada", "aria-label": "Sacar entrada",
     onclick: async () => {
       const confirmed = await confirmAction({
         title: "Eliminar entrada",
@@ -1013,6 +1189,7 @@ function renderEntryCard(sectionName, entries, entry, index, ctx) {
         confirmLabel: "Eliminar",
       });
       if (!confirmed) return;
+      rememberUndo("Eliminar entrada", () => { entries.splice(index, 0, entry); ctx.onRerender(); });
       entries.splice(index, 1);
       ctx.onRerender();
     },
@@ -1034,8 +1211,11 @@ function renderEntryCard(sectionName, entries, entry, index, ctx) {
       const firstBulletId = `${entry._src_section}_${entry._src_index}_bullet_0`;
       const snippet = getJDSnippet(firstBulletId);
       if (snippet) {
+        reasonEl.tabIndex = 0;
         reasonEl.addEventListener("mouseenter", () => showJDSnippet(snippet, reasonEl));
         reasonEl.addEventListener("mouseleave", hideJDSnippet);
+        reasonEl.addEventListener("focus", () => showJDSnippet(snippet, reasonEl));
+        reasonEl.addEventListener("blur", hideJDSnippet);
       }
     }
     card.appendChild(reasonEl);
@@ -1069,22 +1249,26 @@ function renderHighlights(entry, ctx, sectionName, entryIndex) {
     }
 
     const moveUp = h("button", {
-      class: "btn-icon", title: "Subir", disabled: i === 0 ? "disabled" : null,
+      class: "btn-icon", title: "Subir", "aria-label": "Subir bullet", disabled: i === 0 ? "disabled" : null,
       onclick: () => {
         [entry.highlights[i - 1], entry.highlights[i]] = [entry.highlights[i], entry.highlights[i - 1]];
         ctx.onRerender();
       },
     }, "↑");
     const moveDown = h("button", {
-      class: "btn-icon", title: "Bajar", disabled: i === entry.highlights.length - 1 ? "disabled" : null,
+      class: "btn-icon", title: "Bajar", "aria-label": "Bajar bullet", disabled: i === entry.highlights.length - 1 ? "disabled" : null,
       onclick: () => {
         [entry.highlights[i + 1], entry.highlights[i]] = [entry.highlights[i], entry.highlights[i + 1]];
         ctx.onRerender();
       },
     }, "↓");
     const del = h("button", {
-      class: "btn-icon danger", title: "Sacar bullet",
-      onclick: () => { entry.highlights.splice(i, 1); ctx.onRerender(); },
+      class: "btn-icon danger", title: "Sacar bullet", "aria-label": "Sacar bullet",
+      onclick: () => {
+        rememberUndo("Eliminar bullet", () => { entry.highlights.splice(i, 0, text); ctx.onRerender(); });
+        entry.highlights.splice(i, 1);
+        ctx.onRerender();
+      },
     }, "×");
 
     const row = h("div", { class: "highlight-row" }, [
@@ -1097,8 +1281,11 @@ function renderHighlights(entry, ctx, sectionName, entryIndex) {
       // Tooltip con JD snippet
       const snippet = getJDSnippet(`${entry._src_section}_${entry._src_index}_bullet_${i}`);
       if (snippet) {
+        scoreEl.tabIndex = 0;
         scoreEl.addEventListener("mouseenter", () => showJDSnippet(snippet, scoreEl));
         scoreEl.addEventListener("mouseleave", hideJDSnippet);
+        scoreEl.addEventListener("focus", () => showJDSnippet(snippet, scoreEl));
+        scoreEl.addEventListener("blur", hideJDSnippet);
       }
     }
     wrap.appendChild(row);
@@ -1174,7 +1361,7 @@ function renderPullback(entry, ctx) {
         scorePct ? h("span", { class: "pullback-mini-score" }, `relevancia: ${scorePct}%`) : null,
       ]),
       h("button", {
-        class: "btn-icon", title: "Agregar",
+        class: "btn-icon", title: "Agregar", "aria-label": "Agregar este bullet",
         onclick: () => { entry.highlights.push(item.text); ctx.onRerender(); },
       }, "+"),
     ]);
@@ -1211,7 +1398,7 @@ function renderHeader(container, doc, onDirty) {
       const userInput = h("input", { type: "text", value: s.username || "", placeholder: "usuario" });
       userInput.addEventListener("input", () => { s.username = userInput.value; onDirty && onDirty(); });
       const del = h("button", {
-        class: "btn-icon danger",
+        class: "btn-icon danger", title: "Eliminar red social", "aria-label": "Eliminar red social",
         onclick: async () => {
           const confirmed = await confirmAction({
             title: "Eliminar red social",
@@ -1245,16 +1432,83 @@ async function loadMasterView() {
 }
 
 function drawMasterView() {
-  renderHeader($("#master-header"), state.masterDoc, null);
+  renderHeader($("#master-header"), state.masterDoc, () => markDirty("master"));
   renderSectionNav($("#master-nav"), $("#master-sections"), state.masterDoc.cv.sections);
   const ctx = {
     doc: state.masterDoc,
     isTarget: false,
     sectionTypes: state.masterSectionTypes,
-    onRerender: drawMasterView,
+    onRerender: () => { markDirty("master"); drawMasterView(); },
   };
   renderSections($("#master-sections"), ctx);
+  applyMasterFilter();
 }
+
+function applyMasterFilter() {
+  const sections = $("#master-sections");
+  const count = $("#master-filter-count");
+  if (!sections || !count) return;
+  const q = (state.masterFilter || "").trim().toLowerCase();
+
+  const allCards = [...sections.querySelectorAll(".entry-card")];
+  const allTextRows = [...sections.querySelectorAll(".highlight-row")]
+    .filter((r) => !r.closest(".entry-card"));
+
+  let visible = 0;
+  const total = allCards.length + allTextRows.length;
+
+  allTextRows.forEach((row) => {
+    const v = !q || row.textContent.toLowerCase().includes(q);
+    row.classList.toggle("filtered-out", !v);
+    if (v) visible++;
+  });
+
+  allCards.forEach((card) => {
+    const bullets = [...card.querySelectorAll(".highlight-row")];
+    let anyBullet = false;
+    bullets.forEach((b) => {
+      const bv = !q || b.textContent.toLowerCase().includes(q);
+      b.classList.toggle("filtered-out", !bv);
+      if (bv) anyBullet = true;
+    });
+    const fieldsText = (card.querySelector(".entry-fields")?.textContent || "").toLowerCase();
+    const cardVisible = !q || fieldsText.includes(q) || anyBullet;
+    card.classList.toggle("filtered-out", !cardVisible);
+    if (cardVisible) visible++;
+  });
+
+  sections.querySelectorAll(".section-block").forEach((block) => {
+    const children = [...block.querySelectorAll(".entry-card, .highlight-row")];
+    const blockVisible = children.some((el) => !el.classList.contains("filtered-out"));
+    block.classList.toggle("filtered-out", q !== "" && !blockVisible);
+  });
+
+  if (q === "") {
+    count.hidden = true;
+    count.textContent = "";
+    count.classList.remove("no-results");
+    return;
+  }
+  count.hidden = false;
+  count.textContent = visible === 0 ? "sin resultados" : `${visible} de ${total} visibles`;
+  count.classList.toggle("no-results", visible === 0);
+}
+
+$("#master-filter").addEventListener("input", (e) => {
+  state.masterFilter = e.target.value;
+  applyMasterFilter();
+});
+
+$("#collapse-all-master").addEventListener("click", () => {
+  state.collapsedMaster = {};
+  Object.keys(state.masterDoc.cv.sections || {}).forEach((n) => { state.collapsedMaster[n] = true; });
+  drawMasterView();
+});
+
+$("#expand-all-master").addEventListener("click", () => {
+  state.collapsedMaster = {};
+  drawMasterView();
+});
 
 $("#add-section-master").addEventListener("click", async () => {
   const result = await promptAddSection();
@@ -1265,6 +1519,7 @@ $("#add-section-master").addEventListener("click", async () => {
   }
   state.masterDoc.cv.sections[result.name] = result.type === "entries" ? [blankEntryFor(result.name, "entries")] : [];
   state.masterSectionTypes[result.name] = result.type;
+  markDirty("master");
   drawMasterView();
 });
 
@@ -1275,8 +1530,9 @@ $("#save-master").addEventListener("click", async () => {
   btn.disabled = true;
   try {
     await api("/api/master-cv", { method: "POST", body: JSON.stringify(state.masterDoc) });
+    dirty.master = false;
     setStatus(statusEl, "Guardado.", "ok");
-    setGlobalStatus("CV maestro guardado.", "ok");
+    toast("CV maestro guardado.");
   } catch (e) {
     setStatus(statusEl, e.message, "error");
     setGlobalStatus("No se pudo guardar el CV maestro: " + e.message, "error");
@@ -1304,6 +1560,7 @@ $("#generate-btn").addEventListener("click", async () => {
 
   const btn = $("#generate-btn");
   btn.disabled = true;
+  showProgress("#generate-progress");
   setGlobalStatus("");
   setStatus(statusEl, "Consultando al modelo local (puede tardar según tu hardware)…");
   try {
@@ -1316,34 +1573,27 @@ $("#generate-btn").addEventListener("click", async () => {
     state.selection = result.selection;
     state.masterDocSnapshot = result.master_cv;
     state.keywordReport = result.keyword_report;
+    dirty.apply = false;
     setStatus(statusEl, "Listo. Revisá la selección abajo.", "ok");
-    setGlobalStatus("CV generado. Revisá las secciones y luego exportá PDF.", "ok");
     $("#apply-result").hidden = false;
     $("#download-link").hidden = true;
+    $("#download-link-summary").hidden = true;
     drawTargetView();
+    $("#apply-result").scrollIntoView({ behavior: "smooth", block: "start" });
+    toast("CV generado. Revisá la selección.");
   } catch (e) {
     setStatus(statusEl, e.message, "error");
     setGlobalStatus("No se pudo generar el CV: " + e.message, "error");
   } finally {
     btn.disabled = false;
+    hideProgress("#generate-progress");
   }
 });
 
 function drawTargetView() {
-  renderHeader($("#target-header"), state.targetDoc, null);
+  renderHeader($("#target-header"), state.targetDoc, () => markDirty("apply"));
 
-  const kwSection = state.targetDoc.cv.sections.keywords;
-  const kwList = $("#keywords-list");
-  kwList.innerHTML = "";
-  if (kwSection && kwSection[0]) {
-    const kws = kwSection[0].replace(/^Palabras clave:\s*/, "").split(",").map((s) => s.trim()).filter(Boolean);
-    kws.forEach((kw) => kwList.appendChild(h("span", { class: "kw-chip" }, kw)));
-  }
-
-  renderFitScore();
-  renderKeywordReport();
-  renderOpportunities();
-  renderExcludedPanel();
+  refreshKeywordWidgets();
 
   const ctx = {
     doc: state.targetDoc,
@@ -1351,14 +1601,15 @@ function drawTargetView() {
     sectionTypes: state.targetSectionTypes,
     masterDoc: state.masterDocSnapshot,
     selection: state.selection,
-    onRerender: drawTargetView,
+    onRerender: () => { markDirty("apply"); drawTargetView(); },
   };
   renderSectionNav($("#target-nav"), $("#target-sections"), state.targetDoc.cv.sections);
   renderSections($("#target-sections"), ctx);
-  renderAtsChecklist();
 }
 
-$("#ats-keywords").addEventListener("input", renderAtsChecklist);
+$("#ats-keywords").addEventListener("input", () => {
+  if (state.targetDoc && state.keywordReport) refreshKeywordWidgets();
+});
 
 $("#add-section-target").addEventListener("click", async () => {
   const result = await promptAddSection();
@@ -1369,28 +1620,43 @@ $("#add-section-target").addEventListener("click", async () => {
   }
   state.targetDoc.cv.sections[result.name] = result.type === "entries" ? [blankEntryFor(result.name, "entries")] : [];
   state.targetSectionTypes[result.name] = result.type;
+  markDirty("apply");
   drawTargetView();
 });
 
-$("#render-btn").addEventListener("click", async () => {
+async function triggerRender() {
   const statusEl = $("#render-status");
-  setStatus(statusEl, "Compilando PDF…");
-  $("#download-link").hidden = true;
+  const statusSummary = $("#render-status-summary");
   const btn = $("#render-btn");
+  const btnSummary = $("#render-btn-summary");
+  const links = [$("#download-link"), $("#download-link-summary")];
+
+  showProgress("#render-progress");
+  setStatus(statusEl, "Compilando PDF…");
+  setStatus(statusSummary, "Compilando PDF…");
+  links.forEach((l) => { if (l) l.hidden = true; });
   btn.disabled = true;
+  if (btnSummary) btnSummary.disabled = true;
   try {
     await api("/api/render", { method: "POST", body: JSON.stringify(state.targetDoc) });
+    const url = "/api/download-pdf?t=" + Date.now();
     setStatus(statusEl, "PDF listo.", "ok");
-    $("#download-link").hidden = false;
-    $("#download-link").href = "/api/download-pdf?t=" + Date.now();
-    setGlobalStatus("PDF listo para descargar.", "ok");
+    setStatus(statusSummary, "PDF listo.", "ok");
+    links.forEach((l) => { if (l) { l.href = url; l.hidden = false; } });
+    toast("PDF listo para descargar.");
   } catch (e) {
     setStatus(statusEl, e.message, "error");
+    setStatus(statusSummary, e.message, "error");
     setGlobalStatus("Error al generar PDF: " + e.message, "error");
   } finally {
     btn.disabled = false;
+    if (btnSummary) btnSummary.disabled = false;
+    hideProgress("#render-progress");
   }
-});
+}
+
+$("#render-btn").addEventListener("click", triggerRender);
+$("#render-btn-summary").addEventListener("click", triggerRender);
 
 // ------------------------------------------------------- vista: settings
 
@@ -1485,8 +1751,9 @@ $("#save-settings").addEventListener("click", async () => {
   try {
     const payload = validateConfig(state.config);
     state.config = await api("/api/config", { method: "POST", body: JSON.stringify(payload) });
+    dirty.settings = false;
     setStatus(statusEl, "Guardado.", "ok");
-    setGlobalStatus("Configuración guardada.", "ok");
+    toast("Configuración guardada.");
   } catch (e) {
     setStatus(statusEl, e.message, "error");
     setGlobalStatus("No se pudo guardar la configuración: " + e.message, "error");
@@ -1497,14 +1764,53 @@ $("#save-settings").addEventListener("click", async () => {
 
 // ------------------------------------------------------------- tabs/init
 
+function viewNameFor(id) {
+  return id === "view-master" ? "master" : id === "view-apply" ? "apply" : "settings";
+}
+
+async function switchView(btn) {
+  const currentView = document.querySelector(".view.is-active");
+  const viewName = viewNameFor(currentView.id);
+  if (dirty[viewName] && !btn.classList.contains("is-active")) {
+    const ok = await confirmAction({
+      title: "Cambios sin guardar",
+      message: "Tenés cambios sin guardar en esta vista. ¿Salir igual?",
+      confirmLabel: "Salir igual",
+      cancelLabel: "Quedarme",
+    });
+    if (!ok) return;
+  }
+  document.querySelectorAll(".tab").forEach((t) => {
+    const active = t === btn;
+    t.classList.toggle("is-active", active);
+    t.setAttribute("aria-selected", String(active));
+  });
+  document.querySelectorAll(".view").forEach((v) => {
+    v.classList.toggle("is-active", v.id === "view-" + btn.dataset.view);
+  });
+  const heading = document.querySelector(".view.is-active .view-head h1");
+  if (heading) heading.focus({ preventScroll: true });
+}
+
 $("#tabs").addEventListener("click", (e) => {
   const btn = e.target.closest(".tab");
   if (!btn) return;
-  document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("is-active", t === btn));
-  document.querySelectorAll(".view").forEach((v) => v.classList.toggle("is-active", v.id === "view-" + btn.dataset.view));
+  switchView(btn);
+});
+
+$("#tabs").addEventListener("keydown", (e) => {
+  if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+  const tabs = [...document.querySelectorAll(".tab")];
+  const idx = tabs.indexOf(document.activeElement);
+  if (idx === -1) return;
+  const dir = e.key === "ArrowRight" ? 1 : -1;
+  const next = tabs[(idx + dir + tabs.length) % tabs.length];
+  next.focus();
+  switchView(next);
 });
 
 (async function init() {
+  syncTopbarHeight();
   const [master, settings] = await Promise.allSettled([loadMasterView(), loadSettingsView()]);
   const failures = [master, settings].filter((x) => x.status === "rejected");
   if (failures.length > 0) {
