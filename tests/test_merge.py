@@ -4,6 +4,7 @@ import yaml
 
 from src.merge import (
     _build_verified_keywords,
+    _reorder_skill_details,
     build_target_cv,
     strip_internal_keys,
     validate_master_cv_structure,
@@ -38,6 +39,39 @@ def test_verified_keywords_respetan_max_keywords(master_cv, config):
     jd = "Buscamos python y docker."
     verificadas = _build_verified_keywords(master_cv, jd, ["python", "docker"], 1)
     assert len(verificadas) == 1
+
+
+def test_verified_keywords_no_matchean_por_substring(master_cv, config):
+    # Regresión del bug del chip amarillo: "js" NO debe verificarse porque
+    # "jsp" esté en el master — se matchea con límites de palabra.
+    master = {
+        "cv": {
+            "sections": {
+                "skills": [{"label": "Lenguajes", "details": ["Java", "JSP"]}],
+            }
+        }
+    }
+    verificadas = _build_verified_keywords(master, "Buscamos dev con js.", ["js"], 10)
+    assert verificadas == []
+
+
+def test_verified_keywords_aceptan_sinonimo_con_limites(master_cv, config):
+    # "js" sí se verifica cuando el master tiene el término "JavaScript".
+    master = {
+        "cv": {
+            "sections": {
+                "skills": [{"label": "Lenguajes", "details": ["Java", "JavaScript"]}],
+            }
+        }
+    }
+    verificadas = _build_verified_keywords(master, "Buscamos dev con js.", ["js"], 10)
+    assert verificadas == ["js"]
+
+
+def test_reorder_skill_details_no_matchea_por_substring():
+    skill = {"label": "Lenguajes", "details": "JSP, JavaScript"}
+    reordenada = _reorder_skill_details(skill, ["js"])
+    assert reordenada["details"] == "JavaScript, JSP"
 
 
 # ---------------------------------------------------------------------------

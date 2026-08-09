@@ -4,6 +4,8 @@ Usa rank-bm25 (Python puro) con expansión de sinónimos técnicos.
 Cada sección tiene su propio índice BM25 independiente.
 """
 
+import re
+
 import numpy as np
 from rank_bm25 import BM25Okapi
 
@@ -61,6 +63,23 @@ def get_synonym_variants(keyword: str) -> set[str]:
     misma). Si no está en la tabla, devuelve un singleton con ella misma."""
     kw_low = keyword.lower().strip()
     return _SYNONYM_GROUPS.get(kw_low, {kw_low})
+
+
+def keyword_in_text(keyword: str, text: str) -> bool:
+    """¿Aparece la keyword (o alguna variante sinónima) como término completo
+    en el texto?
+
+    Matching case-insensitive con límites de palabra, para evitar los falsos
+    positivos del substring simple: "js" NO matchea dentro de "jsp" ni "json",
+    pero SÍ matchea "node.js" y "ci/cd" (un separador no-alfanumérico es un
+    límite válido). Única fuente de verdad de sinónimos: SYNONYMS.
+    """
+    text_low = text.lower()
+    for variant in get_synonym_variants(keyword):
+        pattern = re.compile(r"(^|[^a-z0-9])" + re.escape(variant) + r"([^a-z0-9]|$)")
+        if pattern.search(text_low):
+            return True
+    return False
 
 
 def tokenize_with_synonyms(text: str) -> list[str]:

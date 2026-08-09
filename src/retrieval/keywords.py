@@ -13,6 +13,8 @@ Nuevas features:
 import re
 from typing import Any, Dict, List, Set, Tuple
 
+from .sparse import get_synonym_variants, keyword_in_text
+
 # Diccionario curado de términos técnicos para detectar en JDs.
 TECH_KEYWORDS = {
     # Cloud & Infra
@@ -241,6 +243,57 @@ def _corpus_text(doc: Dict[str, Any]) -> str:
     return " ".join(parts).lower()
 
 
+def _collect_master_texts(doc: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Itera las piezas de texto del master con su ubicación exacta.
+
+    Cada pieza lleva {section, entry_idx, field, text, bullet_idx}. Los
+    strings directos (summary) usan field=None; los highlights de una entrada
+    usan field="highlights" y su índice en bullet_idx. Es el mismo barrido
+    que _corpus_text, pero preservando dónde vive cada texto.
+    """
+    texts: List[Dict[str, Any]] = []
+    sections = doc.get("cv", {}).get("sections", {})
+    for section_name, entries in sections.items():
+        if not isinstance(entries, list):
+            continue
+        for entry_idx, entry in enumerate(entries):
+            if isinstance(entry, str):
+                texts.append(
+                    {
+                        "section": section_name,
+                        "entry_idx": entry_idx,
+                        "field": None,
+                        "text": entry,
+                        "bullet_idx": None,
+                    }
+                )
+            elif isinstance(entry, dict):
+                for key, value in entry.items():
+                    if isinstance(value, str):
+                        texts.append(
+                            {
+                                "section": section_name,
+                                "entry_idx": entry_idx,
+                                "field": key,
+                                "text": value,
+                                "bullet_idx": None,
+                            }
+                        )
+                    elif isinstance(value, list):
+                        for bullet_idx, item in enumerate(value):
+                            if isinstance(item, str):
+                                texts.append(
+                                    {
+                                        "section": section_name,
+                                        "entry_idx": entry_idx,
+                                        "field": key,
+                                        "text": item,
+                                        "bullet_idx": bullet_idx,
+                                    }
+                                )
+    return texts
+
+
 def build_keyword_report(
     master_cv: Dict[str, Any],
     target_cv: Dict[str, Any],
@@ -258,13 +311,29 @@ def build_keyword_report(
             "not_in_master": ["terraform"],
             "ats_impact_score": 72,  # 0-100, ponderado por frecuencia
             "critical_missing": ["kubernetes"],  # frecuencia >= 2 y missing
+            "keyword_variants": {"js": ["js", "javascript"], ...},  # lowercase
+            "locations": {"js": [{"section", "entry_idx", "field", "text",
+                                   "bullet_idx"}], ...},  # dónde aparece en master
         }
+
+    El matching usa keyword_in_text (variantes sinónimas + límites de
+    palabra), el mismo criterio que la verificación ATS de merge.py: así el
+    chip amarillo del frontend solo aparece cuando la keyword realmente está
+    en el master, y `locations` le dice al click EXACTAMENTE dónde.
     """
     keywords, frequencies = extract_keywords(job_description)
-    master_corpus = _corpus_text(master_cv)
+    master_pieces = _collect_master_texts(master_cv)
     target_corpus = _corpus_text(target_cv)
 
-    in_master = {}
+    keyword_variants: Dict[str, List[str]] = {}
+    locations: Dict[str, List[Dict[str, Any]]] = {}
+    for kw in keywords:
+        keyword_variants[kw] = sorted(get_synonym_variants(kw))
+        locations[kw] = [
+            piece for piece in master_pieces if keyword_in_text(kw, piece["text"])
+        ]
+
+    in_master = {kw: bool(locs) for kw, locs in locations.items()}
     in_target = {}
     missing_in_target = []
     not_in_master = []
@@ -274,11 +343,9 @@ def build_keyword_report(
     covered_weight = 0
 
     for kw in keywords:
-        kw_low = kw.lower()
-        present_master = kw_low in master_corpus
-        present_target = kw_low in target_corpus
-        in_master[kw] = present_master
+        present_target = keyword_in_text(kw, target_corpus)
         in_target[kw] = present_target
+        present_master = in_master[kw]
         freq = frequencies.get(kw, 1)
         weight = freq  # peso = frecuencia en el JD
         total_weight += weight
@@ -302,4 +369,6 @@ def build_keyword_report(
         "not_in_master": not_in_master,
         "ats_impact_score": ats_impact_score,
         "critical_missing": critical_missing,
+        "keyword_variants": keyword_variants,
+        "locations": locations,
     }

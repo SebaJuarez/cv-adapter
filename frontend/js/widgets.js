@@ -22,6 +22,17 @@ function buildDocCorpus(doc) {
   return parts.join(" \n ").toLowerCase();
 }
 
+// Matching con límites de palabra + variantes sinónimas, espejo del
+// keyword_in_text del backend: "js" NO matchea "jsp", pero sí "node.js".
+// Las variantes vienen del keyword_report (fuente única: SYNONYMS en Python).
+function keywordPresentIn(corpus, kw, variants) {
+  const list = (variants && variants[kw]) || [String(kw).toLowerCase()];
+  return list.some((v) => {
+    const esc = v.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return new RegExp(`(^|[^a-z0-9])${esc}([^a-z0-9]|$)`).test(corpus);
+  });
+}
+
 // -------------------------------------------------------- keywords manuales
 
 function getManualKeywords() {
@@ -94,10 +105,9 @@ function renderKeywordReport() {
 
   const list = h("div", { class: "keywords-list" });
   all.forEach((kw) => {
-    const low = String(kw).toLowerCase();
     const freq = frequencies[kw] || 1;
-    const inT = in_target[kw] !== undefined ? in_target[kw] : targetCorpus.includes(low);
-    const inM = in_master[kw] !== undefined ? in_master[kw] : masterCorpus.includes(low);
+    const inT = in_target[kw] !== undefined ? in_target[kw] : keywordPresentIn(targetCorpus, kw, state.keywordReport.keyword_variants);
+    const inM = in_master[kw] !== undefined ? in_master[kw] : keywordPresentIn(masterCorpus, kw, state.keywordReport.keyword_variants);
     let cls = "kw-chip";
     let title = "";
     let clickable = false;
@@ -436,63 +446,97 @@ function renderEntryHeatBorder(section, entryIdx) {
 
 async function handleMissingKeywordClick(keyword) {
   if (!state.masterDocSnapshot || !state.targetDoc) return;
-  const kwLow = keyword.toLowerCase();
+  const report = state.keywordReport || {};
+  const locs = (report.locations && report.locations[keyword]) || [];
 
-  // Buscar bullets en el master que contengan la keyword, con scores
-  const matches = [];
-  const sections = state.masterDocSnapshot.cv?.sections || {};
-  for (const [sectionName, entries] of Object.entries(sections)) {
-    if (!Array.isArray(entries)) continue;
-    for (let entryIdx = 0; entryIdx < entries.length; entryIdx++) {
-      const entry = entries[entryIdx];
-      if (!entry || typeof entry !== "object") continue;
-      const highlights = entry.highlights || [];
-      for (let bulletIdx = 0; bulletIdx < highlights.length; bulletIdx++) {
-        const text = highlights[bulletIdx];
-        if (typeof text === "string" && text.toLowerCase().includes(kwLow)) {
-          const bulletId = `${sectionName}_${entryIdx}_bullet_${bulletIdx}`;
-          const score = getBulletScore(bulletId) || 0;
-          matches.push({ sectionName, entryIdx, bulletIdx, text, entry, score });
-        }
-      }
-    }
-  }
-
-  if (matches.length === 0) {
-    await showMessageModal("Sin coincidencias", `No se encontró ningún bullet en el CV maestro que contenga "${keyword}".`);
+  if (locs.length === 0) {
+    // El chip dijo que está en el master, pero no hay ubicación: el snapshot
+    // quedó viejo (master editado después de generar). Mensaje honesto en
+    // vez de un falso "no existe".
+    await showMessageModal(
+      "Sin coincidencias",
+      `No se encontró "${keyword}" en el CV maestro actual. Si editaste el master después de generar, regenerá la selección para actualizar.`
+    );
     return;
   }
 
+  const masterSections = state.masterDocSnapshot.cv?.sections || {};
+  const bulletMatches = [];
+  const nonBullet = [];
+
+  locs.forEach((loc) => {
+    if (loc.bullet_idx !== null && loc.bullet_idx !== undefined && loc.field === "highlights") {
+      const bulletId = `${loc.section}_${loc.entry_idx}_bullet_${loc.bullet_idx}`;
+      const score = getBulletScore(bulletId) || 0;
+      const entry = masterSections[loc.section]?.[loc.entry_idx] || null;
+      bulletMatches.push({
+        sectionName: loc.section,
+        entryIdx: loc.entry_idx,
+        bulletIdx: loc.bullet_idx,
+        text: loc.text,
+        entry,
+        score,
+      });
+    } else {
+      nonBullet.push(loc);
+    }
+  });
+
   // Ordenar por relevancia (score descendente)
-  matches.sort((a, b) => b.score - a.score);
+  bulletMatches.sort((a, b) => b.score - a.score);
 
   const chosen = await openModal((close) => {
-    const list = h("div", { class: "pullback-list" });
-    matches.forEach((m) => {
-      const label = m.entry.company || m.entry.name || m.entry.institution || `Entrada ${m.entryIdx}`;
-      const scorePct = m.score > 0 ? Math.round(m.score * 100) : "—";
-      const row = h("div", { class: "pullback-item" }, [
-        h("div", { class: "pullback-info" }, [
-          h("div", { class: "pullback-header" }, [
-            h("strong", {}, label),
-            h("span", { class: "pullback-score" }, `relevancia: ${scorePct}%`),
+    const hasBullets = bulletMatches.length > 0;
+    const body = [];
+
+    if (hasBullets) {
+      const list = h("div", { class: "pullback-list" });
+      bulletMatches.forEach((m) => {
+        const label = m.entry
+          ? (m.entry.company || m.entry.name || m.entry.institution || `Entrada ${m.entryIdx}`)
+          : `Entrada ${m.entryIdx}`;
+        const scorePct = m.score > 0 ? Math.round(m.score * 100) : "—";
+        const row = h("div", { class: "pullback-item" }, [
+          h("div", { class: "pullback-info" }, [
+            h("div", { class: "pullback-header" }, [
+              h("strong", {}, label),
+              h("span", { class: "pullback-score" }, `relevancia: ${scorePct}%`),
+            ]),
+            h("p", { class: "pullback-text" }, m.text),
           ]),
-          h("p", { class: "pullback-text" }, m.text),
-        ]),
-        h("button", {
-          class: "btn-icon",
-          title: "Agregar este bullet",
-          "aria-label": "Agregar este bullet",
-          onclick: () => close(m),
-        }, "+"),
-      ]);
-      list.appendChild(row);
-    });
+          h("button", {
+            class: "btn-icon",
+            title: "Agregar este bullet",
+            "aria-label": "Agregar este bullet",
+            onclick: () => close(m),
+          }, "+"),
+        ]);
+        list.appendChild(row);
+      });
+      body.push(list);
+    }
+
+    if (nonBullet.length > 0) {
+      if (hasBullets) body.push(h("h4", {}, "También aparece (sin bullets)"));
+      const refs = h("div", { class: "pullback-list" });
+      nonBullet.forEach((loc) => {
+        const where = loc.field ? `${loc.section} → ${loc.field}` : loc.section;
+        refs.appendChild(h("div", { class: "pullback-item" }, [
+          h("div", { class: "pullback-info" }, [
+            h("div", { class: "pullback-header" }, [h("strong", {}, where)]),
+            h("p", { class: "pullback-text" }, loc.text),
+          ]),
+        ]));
+      });
+      body.push(refs);
+    }
 
     return h("div", {}, [
-      h("h3", {}, `Bullets con "${keyword}"`),
-      h("p", { class: "hint" }, "Ordenados por relevancia para esta oferta:"),
-      list,
+      h("h3", {}, hasBullets ? `Bullets con "${keyword}"` : `Dónde aparece "${keyword}"`),
+      h("p", { class: "hint" }, hasBullets
+        ? "Ordenados por relevancia para esta oferta:"
+        : "Está en tu CV maestro, pero fuera de los bullets: no hay nada que traer desde acá."),
+      ...body,
       h("div", { class: "modal-actions" }, [
         h("button", { class: "btn btn-ghost", onclick: () => close(null) }, "Cancelar"),
       ]),
@@ -550,11 +594,10 @@ function recalcKeywordReport() {
   const newCritical = [];
 
   for (const kw of all) {
-    const low = String(kw).toLowerCase();
-    const present = targetCorpus.includes(low);
+    const present = keywordPresentIn(targetCorpus, kw, state.keywordReport.keyword_variants);
     newInTarget[kw] = present;
     const freq = frequencies[kw] || 1;
-    const inM = in_master[kw] !== undefined ? in_master[kw] : masterCorpus.includes(low);
+    const inM = in_master[kw] !== undefined ? in_master[kw] : keywordPresentIn(masterCorpus, kw, state.keywordReport.keyword_variants);
     totalWeight += freq;
     if (present) coveredWeight += freq;
     else {

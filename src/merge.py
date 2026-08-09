@@ -11,10 +11,10 @@ siempre, sin importar cuánto contenido pida devolver el LLM.
 """
 
 from copy import deepcopy
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional
 
 from .config import load_config
-from .retrieval.sparse import get_synonym_variants as _get_synonym_variants
+from .retrieval.sparse import keyword_in_text as _keyword_in_text
 
 
 
@@ -39,14 +39,9 @@ def _reorder_skill_details(
     if not items:
         return skill_entry
 
-    # Construir set de variantes sinónimas de todas las keywords prioritarias
-    priority_variants: Set[str] = set()
-    for kw in priority_keywords:
-        priority_variants.update(_get_synonym_variants(kw.lower().strip()))
-
     def _matches(item: str) -> bool:
         item_low = item.lower()
-        return any(v in item_low for v in priority_variants)
+        return any(_keyword_in_text(kw, item_low) for kw in priority_keywords)
 
     matched = [item for item in items if _matches(item)]
     unmatched = [item for item in items if not _matches(item)]
@@ -199,8 +194,9 @@ def _build_verified_keywords(
     (o alguna de sus variantes sinónimas) en AMBOS lados: master_cv
     (respaldo real) y job_description (relevancia real).
 
-    Reutiliza la tabla SYNONYMS de src/retrieval/sparse.py para que
-    "postgres" y "postgresql" se consideren el mismo término, evitando
+    Reutiliza la tabla SYNONYMS de src/retrieval/sparse.py (vía keyword_in_text)
+    para que "postgres" y "postgresql" se consideren el mismo término, y matchea
+    con límites de palabra para que "js" no verifique contra "jsp". Evita
     inconsistencias entre retrieval y verificación ATS.
     """
     master_corpus = _master_cv_corpus(master_cv)
@@ -211,11 +207,9 @@ def _build_verified_keywords(
         if not isinstance(kw, str) or not kw.strip():
             continue
         kw_clean = kw.strip()
-        kw_low = kw_clean.lower()
-        variants = _get_synonym_variants(kw_low)
         if (
-            any(v in master_corpus for v in variants)
-            and any(v in jd_corpus for v in variants)
+            _keyword_in_text(kw_clean, master_corpus)
+            and _keyword_in_text(kw_clean, jd_corpus)
             and kw_clean not in verified
         ):
             verified.append(kw_clean)
@@ -306,10 +300,8 @@ def build_target_cv(
         kw_clean = (kw or "").strip()
         if not kw_clean:
             continue
-        kw_low = kw_clean.lower()
-        variants = _get_synonym_variants(kw_low)
         if (
-            any(v in master_corpus for v in variants)
+            _keyword_in_text(kw_clean, master_corpus)
             and kw_clean not in verified_keywords
         ):
             verified_keywords.append(kw_clean)

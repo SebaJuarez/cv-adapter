@@ -3,8 +3,8 @@ separadores (C2) y delimitadores de sección del JD (M1)."""
 import pytest
 
 from src.retrieval.jd_processor import extract_requirements_section
-from src.retrieval.keywords import build_keyword_ranking, extract_keywords
-from src.retrieval.sparse import get_synonym_variants, tokenize_with_synonyms
+from src.retrieval.keywords import build_keyword_ranking, build_keyword_report, extract_keywords
+from src.retrieval.sparse import get_synonym_variants, keyword_in_text, tokenize_with_synonyms
 
 
 # ---------------------------------------------------------------------------
@@ -34,6 +34,93 @@ def test_get_synonym_variants_devuelve_grupo_completo():
 
 def test_get_synonym_variants_keyword_desconocida():
     assert get_synonym_variants("rust") == {"rust"}
+
+
+# ---------------------------------------------------------------------------
+# keyword_in_text: matching con límites de palabra + sinónimos. Evita el
+# falso positivo del substring ("js" dentro de "jsp") que ponía chips
+# amarillos sin bullets para traer.
+# ---------------------------------------------------------------------------
+def test_keyword_in_text_no_matchea_substring():
+    assert not keyword_in_text("js", "trabajo con jsp y json")
+
+
+def test_keyword_in_text_matchea_sinonimo():
+    assert keyword_in_text("js", "desarrollo con JavaScript")
+
+
+def test_keyword_in_text_matchea_termino_exacto():
+    assert keyword_in_text("docker", "uso Docker en producción")
+
+
+def test_keyword_in_text_respeta_separadores_como_limite():
+    # "js" al final de "node.js" matchea: el "." es un límite válido.
+    assert keyword_in_text("js", "armé dashboards con node.js")
+    assert keyword_in_text("ci/cd", "pipelines de CI/CD en GCP")
+
+
+def test_keyword_in_text_multi_palabra():
+    assert keyword_in_text("github actions", "mantenía GitHub Actions")
+
+
+# ---------------------------------------------------------------------------
+# build_keyword_report: el reporte ubica dónde vive cada keyword en el
+# master (bullets y texto sin bullets) y no alucina por substring.
+# ---------------------------------------------------------------------------
+def test_keyword_report_js_no_matchea_jsp():
+    master = {
+        "cv": {
+            "sections": {
+                "skills": [
+                    {"label": "Lenguajes", "details": ["Java", "JSP"]},
+                ]
+            }
+        }
+    }
+    report = build_keyword_report(master, master, "Buscamos dev con js")
+    assert report["in_master"]["js"] is False
+
+
+def test_keyword_report_locations_distingue_bullet_de_no_bullet():
+    master = {
+        "cv": {
+            "sections": {
+                "summary": ["Desarrollador con experiencia en JavaScript."],
+                "experience": [
+                    {
+                        "company": "Empresa",
+                        "highlights": [
+                            "Mantuve una app en JavaScript.",
+                            "Administré servidores.",
+                        ],
+                    }
+                ],
+            }
+        }
+    }
+    report = build_keyword_report(master, {}, "Buscamos js")
+    locs = report["locations"]["js"]
+    assert report["in_master"]["js"] is True
+    bullets = [l for l in locs if l["field"] == "highlights"]
+    no_bullets = [l for l in locs if l["field"] != "highlights"]
+    assert len(bullets) == 1
+    assert bullets[0]["bullet_idx"] == 0
+    assert bullets[0]["text"] == "Mantuve una app en JavaScript."
+    assert len(no_bullets) == 1
+    assert no_bullets[0]["section"] == "summary"
+    assert no_bullets[0]["field"] is None
+
+
+def test_keyword_report_keyword_variants_expone_sinonimos():
+    master = {
+        "cv": {
+            "sections": {
+                "skills": [{"label": "Lenguajes", "details": ["Java"]}],
+            }
+        }
+    }
+    report = build_keyword_report(master, {}, "Buscamos js")
+    assert set(report["keyword_variants"]["js"]) == {"js", "javascript"}
 
 
 # ---------------------------------------------------------------------------
