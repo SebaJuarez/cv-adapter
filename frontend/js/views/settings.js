@@ -3,7 +3,7 @@
 import { api } from "../api.js";
 import { $, h } from "../dom.js";
 import { setGlobalStatus, setStatus, toast } from "../notify.js";
-import { dirty, state } from "../state.js";
+import { snapshotView, state } from "../state.js";
 
 // ------------------------------------------------------- vista: settings
 
@@ -81,6 +81,7 @@ function validateConfig(config) {
 
 async function loadSettingsView() {
   state.config = await api("/api/config");
+  snapshotView("settings");
   drawSettingsView();
 }
 
@@ -149,7 +150,7 @@ $("#save-settings").addEventListener("click", async () => {
   try {
     const payload = validateConfig(state.config);
     state.config = await api("/api/config", { method: "POST", body: JSON.stringify(payload) });
-    dirty.settings = false;
+    snapshotView("settings");
     setStatus(statusEl, "Guardado.", "ok");
     toast("Configuración guardada.");
   } catch (e) {

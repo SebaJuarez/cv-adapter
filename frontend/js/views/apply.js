@@ -6,7 +6,7 @@ import { $ } from "../dom.js";
 import { blankEntryFor, deriveSectionTypes } from "../labels.js";
 import { confirmAction, promptAddSection } from "../modals.js";
 import { hideProgress, setGlobalStatus, setStatus, showProgress, toast } from "../notify.js";
-import { dirty, markDirty, state } from "../state.js";
+import { markDirty, snapshotView, state } from "../state.js";
 import { refreshKeywordWidgets } from "../widgets.js";
 
 // ---------------------------------------------------------- vista: apply
@@ -42,7 +42,7 @@ $("#generate-btn").addEventListener("click", async () => {
     state.masterDocSnapshot = result.master_cv;
     state.keywordReport = result.keyword_report;
     state.currentRunId = result.run_id;
-    dirty.apply = false;
+    snapshotView("apply");
     setStatus(statusEl, "Listo. Revisá la selección abajo.", "ok");
     setRenderButton("generate");
     $("#apply-result").hidden = false;

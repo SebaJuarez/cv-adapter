@@ -6,7 +6,7 @@ import { confirmAction } from "./modals.js";
 import { setGlobalStatus } from "./notify.js";
 import { loadSettingsView } from "./views/settings.js";
 import { loadHistoryView } from "./views/history.js";
-import { dirty, state } from "./state.js";
+import { dirty, hasUnsavedChanges, state } from "./state.js";
 
 "use strict";
 
@@ -44,7 +44,7 @@ function viewNameFor(id) {
 async function switchView(btn) {
   const currentView = document.querySelector(".view.is-active");
   const viewName = viewNameFor(currentView.id);
-  if (dirty[viewName] && !btn.classList.contains("is-active")) {
+  if (hasUnsavedChanges(viewName) && !btn.classList.contains("is-active")) {
     const ok = await confirmAction({
       title: "Cambios sin guardar",
       message: "Tenés cambios sin guardar en esta vista. ¿Salir igual?",
@@ -52,6 +52,9 @@ async function switchView(btn) {
       cancelLabel: "Quedarme",
     });
     if (!ok) return;
+  } else {
+    // Sin cambios reales: limpiar el flag por si quedó sucio (p.ej. undo).
+    dirty[viewName] = false;
   }
   document.querySelectorAll(".tab").forEach((t) => {
     const active = t === btn;

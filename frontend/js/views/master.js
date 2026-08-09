@@ -6,13 +6,14 @@ import { $ } from "../dom.js";
 import { blankEntryFor, deriveSectionTypes } from "../labels.js";
 import { promptAddSection } from "../modals.js";
 import { setGlobalStatus, setStatus, toast } from "../notify.js";
-import { dirty, markDirty, state } from "../state.js";
+import { markDirty, snapshotView, state } from "../state.js";
 
 // --------------------------------------------------------- vista: master
 
 async function loadMasterView() {
   state.masterDoc = await api("/api/master-cv");
   state.masterSectionTypes = deriveSectionTypes(state.masterDoc);
+  snapshotView("master");
   drawMasterView();
 }
 
@@ -115,7 +116,7 @@ $("#save-master").addEventListener("click", async () => {
   btn.disabled = true;
   try {
     await api("/api/master-cv", { method: "POST", body: JSON.stringify(state.masterDoc) });
-    dirty.master = false;
+    snapshotView("master");
     setStatus(statusEl, "Guardado.", "ok");
     toast("CV maestro guardado.");
   } catch (e) {

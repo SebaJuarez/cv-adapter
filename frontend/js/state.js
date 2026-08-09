@@ -20,9 +20,55 @@ const state = {
 
 const dirty = { master: false, apply: false, settings: false };
 
+// Snapshot por vista: fingerprint del documento en su último estado
+// cargado/guardado. La fuente de verdad del "cambios sin guardar" es la
+// comparación contra este snapshot, no los eventos de input.
+const snapshots = { master: null, apply: null, settings: null };
+
+function docFor(view) {
+  return view === "master" ? state.masterDoc
+    : view === "apply" ? state.targetDoc
+    : state.config;
+}
+
+// Serialización con claves ordenadas: inmune al orden de inserción de
+// propiedades (p.ej. agregar una sección no reordena el resto).
+function fingerprint(obj) {
+  const sortKeys = (v) => {
+    if (Array.isArray(v)) return v.map(sortKeys);
+    if (v && typeof v === "object") {
+      const out = {};
+      Object.keys(v).sort().forEach((k) => { out[k] = sortKeys(v[k]); });
+      return out;
+    }
+    return v;
+  };
+  return JSON.stringify(sortKeys(obj));
+}
+
+// Guarda el estado "persistido" de la vista (carga o guardado exitoso).
+function snapshotView(view) {
+  const doc = docFor(view);
+  snapshots[view] = doc ? fingerprint(doc) : null;
+  dirty[view] = false;
+}
+
+function hasUnsavedChanges(view) {
+  const doc = docFor(view);
+  if (!doc) return false;
+  const snap = snapshots[view];
+  if (snap === null) return true; // doc cargado sin snapshot conocido: avisar
+  return fingerprint(doc) !== snap;
+}
+
 // -------------------------------------------------------- dirty state
 
 function markDirty(view) {
+  // No marcar si el documento en realidad no cambió (collapse de secciones,
+  // escribir en un modal y cancelar, escribir y borrar, autofill idéntico…).
+  const doc = docFor(view);
+  if (!doc) return;
+  if (snapshots[view] !== null && fingerprint(doc) === snapshots[view]) return;
   dirty[view] = true;
   const el = view === "master" ? $("#master-status")
     : view === "apply" ? $("#render-status")
@@ -64,4 +110,4 @@ function undoLast() {
 $("#undo-btn").addEventListener("click", undoLast);
 
 
-export { dirty, markDirty, rememberUndo, state, undoLast };
+export { dirty, hasUnsavedChanges, markDirty, rememberUndo, snapshotView, state, undoLast };
