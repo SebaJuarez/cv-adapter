@@ -15,7 +15,9 @@ def extract_requirements_section(jd: str) -> str:
     El resultado se usa como query fija para el cross-encoder.
     """
     patterns = [
-        r"(?:Requisitos|Requirements|Qualifications|What you need|Must have|Responsabilidades|Responsibilities)[\s:]*(.+?)(?=\n(?:Ofrecemos|Benefits|What we offer|Nice to have|Deseable|About us|About the company|Quiénes somos|Sobre nosotros|Apply now|Postulate|$))",
+        # Secciones que SÍ son requisitos (empiezan acá el contenido)
+        r"(?:Requisitos|Requirements|Qualifications|What you need|Must have|Responsabilidades|Responsibilities|Perfil buscado|Lo que buscamos|Buscamos)[\s:]*(.+?)(?=\n(?:Ofrecemos|Ofreceremos|Beneficios|Qué ofrecemos|Que ofrecemos|What we offer|Nice to have|Deseable|About us|About the company|Quiénes somos|Sobre nosotros|Apply now|Postulate|Postúlate|Postulate ya|Aplicá|Aplica|Cómo postularme|Como postularme|Cómo aplicar|Salario|Remuneración|Remuneracion|Compensación|Compensacion|$))",
+        # Secciones que NO son requisitos (cortan el contenido)
         r"(?:Nice to have|Deseable|Plus|Preferred)[\s:]*(.+?)(?=\n|$)",
     ]
     for pattern in patterns:

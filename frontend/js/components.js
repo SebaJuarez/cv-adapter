@@ -449,11 +449,16 @@ function renderPullback(entry, ctx) {
   const original = masterList ? masterList[entry._src_index] : null;
   if (!original) return null;
 
-  const missing = (original.highlights || []).filter((h) => !entry.highlights.includes(h));
+  // Conservar el índice ORIGINAL del bullet en el master: el bulletId se
+  // arma con él (el índice dentro de "missing" NO sirve — los scores y
+  // snippets del backend están indexados por el índice original).
+  const missing = (original.highlights || [])
+    .map((text, idx) => ({ text, idx }))
+    .filter(({ text }) => !entry.highlights.includes(text));
   if (missing.length === 0) return null;
 
   // Ordenar missing por relevancia (score del bullet)
-  const scoredMissing = missing.map((text, idx) => {
+  const scoredMissing = missing.map(({ text, idx }) => {
     const bulletId = `${entry._src_section}_${entry._src_index}_bullet_${idx}`;
     const score = getBulletScore(bulletId) || 0;
     return { text, score, idx };

@@ -38,7 +38,9 @@ def generate(payload: JobDescriptionIn) -> Dict[str, Any]:
             manual_keywords=payload.manual_keywords,
             config=config,
         )
-    except RuntimeError as e:
+    except Exception as e:
+        # Exception (no solo RuntimeError): fallos de descarga de modelos,
+        # errores de torch, etc. deben llegar al usuario como 502 legible.
         raise HTTPException(status_code=502, detail=str(e))
 
     return {
@@ -61,7 +63,7 @@ def regenerate_section_route(payload: RegenerateSectionIn) -> Dict[str, Any]:
         entries, section_selection = regenerate_section(
             master_cv, payload.job_description, payload.section_name, config
         )
-    except RuntimeError as e:
+    except Exception as e:
         raise HTTPException(status_code=502, detail=str(e))
 
     return {"entries": entries, "selection": section_selection}

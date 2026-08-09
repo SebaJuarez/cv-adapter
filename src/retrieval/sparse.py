@@ -4,8 +4,6 @@ Usa rank-bm25 (Python puro) con expansión de sinónimos técnicos.
 Cada sección tiene su propio índice BM25 independiente.
 """
 
-import re
-
 import numpy as np
 from rank_bm25 import BM25Okapi
 
@@ -68,20 +66,18 @@ def get_synonym_variants(keyword: str) -> set[str]:
 def tokenize_with_synonyms(text: str) -> list[str]:
     """Tokeniza un texto en palabras y expande con sinónimos conocidos.
 
-    Captura términos compuestos (bigramas) y términos con slash.
+    Captura términos compuestos (bigramas) y términos con slash ("ci/cd").
+    Para los términos con slash NO se reemplaza el separador antes de
+    tokenizar: si se hiciera ("ci/cd" -> "ci / cd"), el token original se
+    rompe en partes y el lookup en SYNONYMS nunca matchea (bug C3).
     """
-    text = text.lower()
-    # Normalizar separadores: reemplazar guiones por espacios para bigramas
-    text = text.replace("-", " ").replace("/", " / ")
-
-    tokens = re.findall(r"\b\w+(?:\s+/\s+\w+)?\b", text)
-    # También capturar bigramas comunes manualmente
+    text = text.lower().replace("-", " ")
     words = text.split()
 
     expanded = []
     i = 0
     while i < len(words):
-        # Intentar bigrama primero
+        # Intentar bigrama primero ("gh actions" -> github actions)
         if i + 1 < len(words):
             bigram = words[i] + " " + words[i + 1]
             if bigram in SYNONYMS:
@@ -90,7 +86,7 @@ def tokenize_with_synonyms(text: str) -> list[str]:
                     expanded.extend(syn.split())
                 i += 2
                 continue
-        # Unigrama
+        # Unigrama (incluye términos con slash como "ci/cd" o "gh")
         token = words[i]
         expanded.append(token)
         if token in SYNONYMS:

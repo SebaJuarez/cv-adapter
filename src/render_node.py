@@ -61,7 +61,11 @@ def run_rendercv(target_path: str, output_dir: Path) -> Tuple[bool, str, Optiona
             check=True,
             env=env,
         )
-        return True, result.stdout, str(output_dir)
+        # RenderCV ya escribió el PDF cuando termina; devolvemos la ruta real
+        # del archivo (no del directorio) para que el CLI/web la usen directo.
+        generated_pdf = _pdf_was_generated()
+        pdf_path = str(generated_pdf) if generated_pdf else str(output_dir)
+        return True, result.stdout, pdf_path
 
     except subprocess.CalledProcessError as e:
         generated_pdf = _pdf_was_generated()
