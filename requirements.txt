@@ -12,6 +12,11 @@ uvicorn>=0.32.0
 # Descarga: https://ollama.com/download
 ollama>=0.4.4
 
+# --- Cliente LLM remoto (API compatible con OpenAI) ---
+# Se usa cuando config["llm_provider"] = "openai" (OpenAI, OpenRouter, Groq…).
+# No requiere servidor local; necesita una API key en config.json.
+openai>=1.40.0
+
 # --- YAML ---
 PyYAML>=6.0.2
 

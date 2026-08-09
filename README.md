@@ -56,6 +56,28 @@ source .venv/bin/activate    # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
+> **¿Sin Ollama? Usá una API remota compatible con OpenAI** (OpenAI,
+> OpenRouter, Groq, LM Studio…). No hace falta instalar nada local: configurá
+> en la pestaña Configuración (o en `config.json`):
+>
+> ```json
+> {
+>   "llm_provider": "openai",
+>   "openai_api_key": "sk-...",
+>   "openai_model": "gpt-4o-mini",
+>   "openai_base_url": ""
+> }
+> ```
+>
+> - `openai_base_url` es opcional: vacío usa el endpoint oficial de OpenAI;
+>   para OpenRouter/Groq poné su URL base (`https://openrouter.ai/api/v1`,
+>   `https://api.groq.com/openai/v1`).
+> - La API key se guarda en `config.json` **en texto plano** (está
+>   gitignored, pero no la compartas). Cualquier API compatible con OpenAI
+>   sirve, siempre que devuelva JSON estructurado.
+> - Si la llamada remota falla, el pipeline degrada con gracia y usa solo la
+>   selección IR local (el CV igual se genera, sin razones de match).
+
 > **Nota sobre Structured Outputs:** el nodo LLM usa el parámetro `format`
 > del cliente `ollama` con un JSON Schema (no el modo básico `format="json"`).
 > Esto requiere **Ollama >= 0.5**. Verificá con `ollama --version`; si tenés
@@ -86,8 +108,9 @@ Abrí `http://127.0.0.1:8000` en el navegador. Tres pestañas:
   eligió, y tenés un desplegable "traer bullet del master" para recuperar
   contenido que el modelo dejó afuera pero vos querés incluir igual.
   "Generar PDF" compila y te deja descargarlo.
-- **Configuración** — los límites de una página y el modelo de Ollama, ya
-  no hardcodeados: se guardan en `config.json`.
+- **Configuración** — los límites de una página, el proveedor del LLM
+  (Ollama local o API remota) y su modelo, ya no hardcodeados: se guardan en
+  `config.json`.
 
 La UI y el CLI comparten exactamente la misma lógica (`src/`), así que las
 garantías anti-alucinación son las mismas uses lo que uses.
@@ -105,7 +128,8 @@ python main.py --master data/master_cv.yaml --job data/job_description.txt
 ```
 
 4. El script va a:
-   - Llamar a Ollama local y generar `target_cv.yaml`.
+   - Llamar al LLM (Ollama local o API remota según `config.json`) y generar
+     `target_cv.yaml`.
    - **Pausar** y pedirte: `¿Deseás generar el PDF con RenderCV? (y/n)`
    - Revisá `target_cv.yaml` a mano en ese momento (fechas, empresas, puestos).
    - Si respondés `y`, compila el PDF final en `output/`.
@@ -143,7 +167,7 @@ cv-adapter/
 │   ├── state.py              # TypedDict del estado del grafo (CLI)
 │   ├── storage.py            # persistencia YAML (master/target)
 │   ├── prompts.py            # system prompt + JSON Schema, dinámicos según config
-│   ├── llm_node.py           # llamada a Ollama (función pelada + nodo del grafo)
+│   ├── llm_node.py           # llamada al LLM: Ollama local o API remota (función pelada + nodo del grafo)
 │   ├── merge.py              # fusión determinística + presupuesto de una página
 │   ├── render_node.py        # guardar YAML + render PDF (función pelada + nodos)
 │   └── services/
@@ -157,6 +181,11 @@ cv-adapter/
 - **"Error llamando a Ollama"** → confirmá que `ollama serve` está corriendo
   y que el modelo (pestaña Configuración, o `ollama_model` en `config.json`)
   fue descargado con `ollama pull`.
+- **"No hay API key configurada"** → tenés `llm_provider: "openai"` pero la
+  `openai_api_key` está vacía. Completala en Configuración, o volvé a
+  `llm_provider: "ollama"`.
+- **Error de la API remota (401/403/404)** → verificá la key, el modelo y la
+  `openai_base_url` (para OpenRouter/Groq, esa URL es obligatoria).
 - **"El LLM no devolvió JSON válido"** → normalmente pasa con modelos muy
   chicos sin soporte real de structured outputs. Probá con `llama3.1:8b`.
 - **"RenderCV falló al compilar el YAML"** → revisá `target_cv.yaml` a mano;

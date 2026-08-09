@@ -30,7 +30,7 @@ $("#generate-btn").addEventListener("click", async () => {
   btn.disabled = true;
   showProgress("#generate-progress");
   setGlobalStatus("");
-  setStatus(statusEl, "Consultando al modelo local (puede tardar según tu hardware)…");
+  setStatus(statusEl, "Consultando al modelo de IA (local o remoto)…");
   try {
     const result = await api("/api/generate", {
       method: "POST",

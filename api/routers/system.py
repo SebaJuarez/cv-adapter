@@ -12,10 +12,11 @@ router = APIRouter(tags=["system"])
 
 @router.get("/api/health")
 def health_check() -> Dict[str, Any]:
-    import ollama
+    config = load_config()
+    provider = config.get("llm_provider", "ollama")
 
     status = {
-        "ollama": {"ok": False, "model": None, "error": None},
+        "llm": {"ok": False, "provider": provider, "model": None, "error": None},
         "embeddings": {
             "ok": False,
             "dense_model": None,
@@ -24,17 +25,10 @@ def health_check() -> Dict[str, Any]:
         },
     }
 
-    try:
-        config = load_config()
-        model = config["ollama_model"]
-        models = ollama.list()
-        available = any(m["model"] == model for m in models.get("models", []))
-        status["ollama"]["ok"] = available
-        status["ollama"]["model"] = model
-        if not available:
-            status["ollama"]["error"] = f"Modelo '{model}' no descargado. Ejecutá: ollama pull {model}"
-    except Exception as e:
-        status["ollama"]["error"] = str(e)
+    if provider == "openai":
+        _check_openai_health(status["llm"], config)
+    else:
+        _check_ollama_health(status["llm"], config)
 
     try:
         from sentence_transformers import SentenceTransformer
@@ -46,8 +40,44 @@ def health_check() -> Dict[str, Any]:
     except ImportError as e:
         status["embeddings"]["error"] = f"Librerías de embeddings no instaladas: {e}"
 
-    all_ok = status["ollama"]["ok"] and status["embeddings"]["ok"]
+    all_ok = status["llm"]["ok"] and status["embeddings"]["ok"]
     return {"ok": all_ok, **status}
+
+
+def _check_ollama_health(llm_status: Dict[str, Any], config: Dict[str, Any]) -> None:
+    import ollama
+
+    model = config["ollama_model"]
+    llm_status["model"] = model
+    try:
+        models = ollama.list()
+        available = any(m["model"] == model for m in models.get("models", []))
+        llm_status["ok"] = available
+        if not available:
+            llm_status["error"] = f"Modelo '{model}' no descargado. Ejecutá: ollama pull {model}"
+    except Exception as e:
+        llm_status["error"] = str(e)
+
+
+def _check_openai_health(llm_status: Dict[str, Any], config: Dict[str, Any]) -> None:
+    model = config["openai_model"]
+    llm_status["model"] = model
+    api_key = config.get("openai_api_key", "")
+    if not api_key:
+        llm_status["error"] = (
+            "No hay API key configurada. Andá a Configuración y completá 'API key de OpenAI', "
+            "o volvé a llm_provider=ollama para el modelo local."
+        )
+        return
+    try:
+        from openai import OpenAI
+
+        base_url = config.get("openai_base_url", "") or None
+        client = OpenAI(api_key=api_key, base_url=base_url)
+        client.models.list()
+        llm_status["ok"] = True
+    except Exception as e:
+        llm_status["error"] = str(e)
 
 
 @router.post("/api/clear-index")
