@@ -150,6 +150,11 @@ class TestUpdateRun:
         add_run(jd, keyword_report, path=history_path)
         assert update_run("no-existe", {"offer_title": "X"}, path=history_path) is None
 
+    def test_actualiza_pdf_path(self, history_path, jd, keyword_report):
+        run = add_run(jd, keyword_report, path=history_path)
+        updated = update_run(run["run_id"], {"pdf_path": "output/CV.pdf"}, path=history_path)
+        assert updated["pdf_path"] == "output/CV.pdf"
+
 
 class TestDeleteRun:
     def test_borra_y_devuelve_true(self, history_path, jd, keyword_report):

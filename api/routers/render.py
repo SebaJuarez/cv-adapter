@@ -6,10 +6,11 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 
 from src.config import load_config
+from src.history import update_run
 from src.merge import validate_master_cv_structure
 from src.render_node import run_rendercv, save_yaml
 
-from ..deps import OUTPUT_DIR, TARGET_CV_PATH
+from ..deps import OUTPUT_DIR, RUNS_PATH, TARGET_CV_PATH
 from ..schemas import CVDocumentIn
 
 router = APIRouter(tags=["render"])
@@ -29,6 +30,11 @@ def render(payload: CVDocumentIn) -> Dict[str, Any]:
     ok, message, pdf_path = run_rendercv(str(TARGET_CV_PATH), OUTPUT_DIR)
     if not ok:
         raise HTTPException(status_code=500, detail=message)
+
+    # Asocia el PDF al run del historial (si el frontend envió el run_id).
+    if payload.run_id:
+        update_run(payload.run_id, {"pdf_path": pdf_path}, path=RUNS_PATH)
+
     return {
         "ok": True,
         "message": message,

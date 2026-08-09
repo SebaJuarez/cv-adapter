@@ -27,7 +27,9 @@ MAX_OFFER_TITLE_LEN = 80
 FALLBACK_OFFER_TITLE = "Oferta sin título"
 
 # Claves editables del run (las demás son datos de la corrida, inmutables).
-_EDITABLE_RUN_FIELDS = ("offer_title", "offer_link")
+# `pdf_path` lo actualiza el sistema al renderizar, pero también es editable
+# manualmente por si el usuario movió el PDF.
+_EDITABLE_RUN_FIELDS = ("offer_title", "offer_link", "pdf_path")
 _EDITABLE_APPLICATION_FIELDS = ("status", "applied_at", "notes")
 
 

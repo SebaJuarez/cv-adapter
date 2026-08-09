@@ -5,10 +5,11 @@ from typing import Any, Dict
 from fastapi import APIRouter, HTTPException
 
 from src.config import load_config
+from src.history import add_run
 from src.services.generation import generate_cv, regenerate_section
 from src.storage import load_master_cv
 
-from ..deps import MASTER_CV_PATH
+from ..deps import MASTER_CV_PATH, RUNS_PATH
 from ..schemas import JobDescriptionIn, RegenerateSectionIn
 
 router = APIRouter(tags=["generate"])
@@ -43,11 +44,21 @@ def generate(payload: JobDescriptionIn) -> Dict[str, Any]:
         # errores de torch, etc. deben llegar al usuario como 502 legible.
         raise HTTPException(status_code=502, detail=str(e))
 
+    # Registro automático de la corrida en el historial (sin PDF todavía).
+    run = add_run(
+        payload.job_description,
+        keyword_report,
+        selection=selection,
+        manual_keywords=payload.manual_keywords,
+        path=RUNS_PATH,
+    )
+
     return {
         "target_cv": target_cv,
         "selection": selection,
         "master_cv": master_cv,
         "keyword_report": keyword_report,
+        "run_id": run["run_id"],
     }
 
 

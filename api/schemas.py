@@ -20,9 +20,16 @@ class RegenerateSectionIn(BaseModel):
 class CVDocumentIn(BaseModel):
     cv: Dict[str, Any]
     design: Optional[Dict[str, Any]] = None
+    run_id: Optional[str] = None
 
     def as_dict(self) -> Dict[str, Any]:
         data = {"cv": self.cv}
         if self.design is not None:
             data["design"] = self.design
         return strip_internal_keys(data)
+
+
+class RunUpdateIn(BaseModel):
+    offer_title: Optional[str] = None
+    offer_link: Optional[str] = None
+    application: Optional[Dict[str, Any]] = None
