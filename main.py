@@ -14,6 +14,7 @@ from pathlib import Path
 import yaml
 from langgraph.graph import END, StateGraph
 
+from src.history import build_report_and_add_run
 from src.llm_node import generate_selection_node
 from src.merge import build_target_cv, validate_master_cv_structure
 from src.render_node import (
@@ -122,6 +123,19 @@ def main():
     if final_state.get("error"):
         print(f"\n❌ El pipeline terminó con un error: {final_state['error']}")
         return
+
+    # Registro de la corrida en el historial (metadata determinística, sin LLM).
+    # Se registra aunque se cancele el PDF en la revisión humana; el PDF queda
+    # asociado si se renderizó. Si el pipeline falló, no se registra nada.
+    if final_state.get("target_cv_dict") and final_state.get("job_description"):
+        run = build_report_and_add_run(
+            final_state["master_cv_raw"],
+            final_state["target_cv_dict"],
+            final_state["job_description"],
+            selection=final_state.get("llm_selection"),
+            pdf_path=final_state.get("output_pdf_path"),
+        )
+        print(f"\n🗂️  Corrida registrada en el historial ({run['run_id']}).")
 
     if final_state.get("output_pdf_path"):
         print(f"\n🎉 PDF generado correctamente en: {final_state['output_pdf_path']}")
