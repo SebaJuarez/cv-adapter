@@ -20,15 +20,20 @@ const state = {
 
 const dirty = { master: false, apply: false, settings: false };
 
+// Solo estas vistas tienen estado editable (y por lo tanto dirty state).
+// Cualquier otra (historial, futuras) devuelve false siempre.
+const EDITABLE_VIEWS = ["master", "apply", "settings"];
+
 // Snapshot por vista: fingerprint del documento en su último estado
 // cargado/guardado. La fuente de verdad del "cambios sin guardar" es la
 // comparación contra este snapshot, no los eventos de input.
 const snapshots = { master: null, apply: null, settings: null };
 
 function docFor(view) {
-  return view === "master" ? state.masterDoc
-    : view === "apply" ? state.targetDoc
-    : state.config;
+  if (view === "master") return state.masterDoc;
+  if (view === "apply") return state.targetDoc;
+  if (view === "settings") return state.config;
+  return undefined;
 }
 
 // Serialización con claves ordenadas: inmune al orden de inserción de
@@ -54,6 +59,7 @@ function snapshotView(view) {
 }
 
 function hasUnsavedChanges(view) {
+  if (!EDITABLE_VIEWS.includes(view)) return false;
   const doc = docFor(view);
   if (!doc) return false;
   const snap = snapshots[view];
@@ -64,6 +70,7 @@ function hasUnsavedChanges(view) {
 // -------------------------------------------------------- dirty state
 
 function markDirty(view) {
+  if (!EDITABLE_VIEWS.includes(view)) return;
   // No marcar si el documento en realidad no cambió (collapse de secciones,
   // escribir en un modal y cancelar, escribir y borrar, autofill idéntico…).
   const doc = docFor(view);
