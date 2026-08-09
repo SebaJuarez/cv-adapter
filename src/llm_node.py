@@ -1,4 +1,4 @@
-"""Llamada a Ollama (modelo local) con salida estructurada.
+"""Llamada al LLM (Ollama local o API remota compatible con OpenAI) con salida estructurada.
 
 Ahora el pipeline tiene DOS fases:
 1. Fase IR (Information Retrieval): SelectionEngine selecciona bullets/experiencias
@@ -9,11 +9,12 @@ Ahora el pipeline tiene DOS fases:
 
 Clave anti-alucinación: el LLM NUNCA genera el YAML final. Solo devuelve
 índices que apuntan a contenido que YA existe en master_cv.yaml.
+
+El proveedor se elige con config["llm_provider"]: "ollama" (modelo local) u
+"openai" (cualquier API compatible con OpenAI: OpenAI, OpenRouter, Groq, etc.).
 """
 import json
 from typing import Any, Dict, Optional
-
-import ollama
 
 from .config import load_config
 from .prompts import (
@@ -57,6 +58,8 @@ def _verify_match_reason(llm_reason: str, bullet_text: str, jd_text: str) -> boo
 
 
 def _call_ollama(system_prompt: str, user_prompt: str, schema: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
+    import ollama
+
     raw_content = ""
     try:
         response = ollama.chat(
@@ -74,6 +77,76 @@ def _call_ollama(system_prompt: str, user_prompt: str, schema: Dict[str, Any], c
         raise RuntimeError(f"El LLM no devolvió JSON válido: {e}\nContenido crudo:\n{raw_content}") from e
     except Exception as e:
         raise RuntimeError(f"Error llamando a Ollama ({config['ollama_model']}): {e}") from e
+
+
+def _call_openai(system_prompt: str, user_prompt: str, schema: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
+    """Llama a una API remota compatible con OpenAI.
+
+    Usa structured outputs (response_format json_schema) si el proveedor los
+    soporta; si los rechaza (400), reintenta con chat simple y parsea el JSON
+    del contenido — el mismo contrato que Ollama. La API key se pasa como
+    parámetro del cliente, sin tocar variables de entorno.
+    """
+    api_key = config.get("openai_api_key", "")
+    if not api_key:
+        raise RuntimeError(
+            "No hay API key configurada. Andá a Configuración y completá 'API key de OpenAI' "
+            "(o usá llm_provider=ollama para el modelo local)."
+        )
+
+    from openai import OpenAI
+
+    base_url = config.get("openai_base_url", "") or None
+    client = OpenAI(api_key=api_key, base_url=base_url)
+    model = config["openai_model"]
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt},
+    ]
+
+    def _parse(content: str) -> Dict[str, Any]:
+        return json.loads(content)
+
+    raw_content = ""
+    try:
+        response = client.chat.completions.create(
+            model=model,
+            messages=messages,
+            temperature=0,
+            response_format={
+                "type": "json_schema",
+                "json_schema": {"name": "selection", "schema": schema, "strict": False},
+            },
+        )
+        raw_content = response.choices[0].message.content
+        return _parse(raw_content)
+    except json.JSONDecodeError as e:
+        raise RuntimeError(f"El LLM no devolvió JSON válido: {e}\nContenido crudo:\n{raw_content}") from e
+    except Exception as e:
+        # Algunos proveedores compatibles rechazan response_format (400);
+        # reintento con chat simple y parseo el JSON como hace Ollama.
+        try:
+            response = client.chat.completions.create(
+                model=model,
+                messages=messages,
+                temperature=0,
+            )
+            raw_content = response.choices[0].message.content
+            return _parse(raw_content)
+        except json.JSONDecodeError as e2:
+            raise RuntimeError(
+                f"El LLM no devolvió JSON válido: {e2}\nContenido crudo:\n{raw_content}"
+            ) from e2
+        except Exception as e2:
+            raise RuntimeError(f"Error llamando a la API remota ({model}): {e2}") from e2
+
+
+def _call_llm(system_prompt: str, user_prompt: str, schema: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
+    """Despacha la llamada al LLM según config['llm_provider']."""
+    provider = config.get("llm_provider", "ollama")
+    if provider == "openai":
+        return _call_openai(system_prompt, user_prompt, schema, config)
+    return _call_ollama(system_prompt, user_prompt, schema, config)
 
 
 def _build_strategic_prompt(
@@ -162,7 +235,7 @@ def generate_selection(
     user_prompt = _build_strategic_prompt(master_cv, job_description, ir_selection, config)
 
     try:
-        llm_output = _call_ollama(system_prompt, user_prompt, schema, config)
+        llm_output = _call_llm(system_prompt, user_prompt, schema, config)
     except RuntimeError:
         # Si el LLM falla, usamos solo la selección IR (graceful degradation)
         llm_output = {}

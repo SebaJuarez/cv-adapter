@@ -3,8 +3,9 @@
 Uso:
     python main.py --master data/master_cv.yaml --job data/job_description.txt
 
-Requiere Ollama corriendo en local (`ollama serve`) con el modelo
-descargado (`ollama pull llama3:8b`).
+Requiere un proveedor de LLM: Ollama corriendo en local (`ollama serve`) con
+el modelo descargado (`ollama pull llama3:8b`), o una API remota compatible
+con OpenAI (config.json: `llm_provider: "openai"` + API key).
 """
 import argparse
 from pathlib import Path
@@ -92,7 +93,7 @@ def build_graph():
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Adaptador de CV local: LangGraph + Ollama + RenderCV (costo $0, 100% local)."
+        description="Adaptador de CV: LangGraph + Ollama (local) o API remota + RenderCV.",
     )
     parser.add_argument("--master", default="data/master_cv.yaml", help="Path al CV maestro (YAML)")
     parser.add_argument("--job", default="data/job_description.txt", help="Path a la descripción del puesto")

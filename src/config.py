@@ -12,7 +12,12 @@ from typing import Any, Dict
 CONFIG_PATH = Path(__file__).resolve().parent.parent / "config.json"
 
 DEFAULTS: Dict[str, Any] = {
+    # --- proveedor del LLM: "ollama" (local) u "openai" (API remota compatible) ---
+    "llm_provider": "ollama",
     "ollama_model": "llama3:8b",
+    "openai_api_key": "",
+    "openai_model": "gpt-4o-mini",
+    "openai_base_url": "",
     "rendercv_theme": "engineeringresumes",
     "max_experience_entries": 2,
     "max_project_entries": 3,

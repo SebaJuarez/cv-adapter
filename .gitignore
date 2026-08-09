@@ -15,3 +15,5 @@ config.json
 __pycache__
 
 /data/retrieval_index
+
+/.opencode
