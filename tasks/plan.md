@@ -1,120 +1,72 @@
-# Plan de implementación: Historial de aplicaciones + keywords faltantes recurrentes
+# Plan de implementación: mejora UX/UI del historial + preview + gestión de CVs
 
 ## Resumen
 
-Cada corrida del pipeline (web o CLI) queda registrada en `data/run_history.json`:
-fecha, oferta (título autoextraído y editable, link), ATS score, keywords detectadas,
-faltantes del master y del target, manuales, path del PDF, y seguimiento de la
-aplicación (estado, fecha, notas). Una vista de estadísticas agrega las keywords
-que faltan en el master recurrentemente (cuántas ofertas, primera/última vez,
-ofertas donde apareció) para decidir qué agregar al master manualmente. La UI es
-una pestaña nueva "Historial" en el frontend.
+Rediseñar la vista de historial para que escale con muchas corridas (filtros,
+búsqueda, carga incremental), aclarar la info que se muestra (título de oferta,
+score ATS, chips de faltantes), permitir previsualizar la oferta y el CV sin
+descargar (modal con pestañas: Oferta / CV / Análisis), guardar el YAML del CV
+generado por corrida y poder borrarlo junto con el PDF de forma opt-in.
 
 ## Decisiones de arquitectura
 
-- **Persistencia**: JSON en `data/run_history.json` (gitignored). Sin dependencias nuevas.
-- **Módulo núcleo `src/history.py`**: funciones peladas compartidas por web y CLI
-  (invariante AGENTS.md: no duplicar lógica entre `app.py` y `main.py`). Determinístico,
-  el LLM no participa.
-- **Registro automático**: `/api/generate` crea el run (sin `pdf_path`) y devuelve
-  `run_id`; `/api/render` recibe `run_id` opcional y actualiza `pdf_path`. En el CLI,
-  hook post-`invoke` en `main()` con los datos del `final_state` (sin tocar el grafo).
-  Si el pipeline falla, no se registra.
-- **`run_id`**: `{epoch_ms}-{sha1(jd)[:8]}`.
-- **No tocar invarianzas**: el historial es solo metadata (JSON), nunca YAML del CV;
-  no se agrega nada al master automáticamente.
+- El JD completo se guarda dentro de `run_history.json` (campo `job_description`).
+  Simple y atómico con el run; ~KB por corrida. Límite futuro: SQLite si hay miles.
+- El YAML del CV generado se guarda por corrida en `data/run_cvs/{run_id}.yaml`
+  reusando `save_yaml` de `render_node.py` (ya hace `strip_internal_keys`, respeta
+  el gotcha de RenderCV). Hooks: `/api/render` (web) y `main.py` (CLI).
+- `extract_offer_title` mejora con heurística determinística (sin LLM): prefijos de
+  reclutamiento + selección de segmento más "de título" entre separadores comunes.
+- API aditiva: `GET /api/history/runs` gana `q`/`status`/`limit`/`offset` y devuelve
+  `total`; nuevos `GET /api/history/runs/{id}`, `GET /api/history/runs/{id}/cv`;
+  `GET /api/download-pdf?inline=1`; `DELETE /api/history/runs/{id}?delete_files=1`.
+- Borrado de archivos es opt-in (checkbox en el diálogo), default = solo metadata.
 
-## Estructura de datos (`data/run_history.json`)
+## Lista de tareas
 
-```json
-{
-  "runs": [
-    {
-      "run_id": "1754600000000-a1b2c3d4",
-      "created_at": "2026-08-09T14:30:00Z",
-      "offer_title": "Backend Engineer (Java)",
-      "offer_link": null,
-      "jd_hash": "a1b2c3d4",
-      "ats_score": 72,
-      "keywords_detected": ["java", "docker"],
-      "missing_in_target": ["kubernetes"],
-      "not_in_master": ["terraform", "aws"],
-      "not_in_master_frequencies": {"terraform": 3},
-      "critical_missing": ["kubernetes"],
-      "manual_keywords": ["scrum"],
-      "pdf_path": null,
-      "application": {
-        "status": "pendiente",
-        "applied_at": null,
-        "notes": ""
-      }
-    }
-  ]
-}
-```
+### Fase 1: Datos (src/history.py)
+- [x] Task 1: campo `job_description` en `add_run`
+- [x] Task 2: `extract_offer_title` mejorado
+- [x] Task 3: helpers de guardado/lectura de CV por run (`data/run_cvs/`)
+- [x] Task 4: `delete_run(run_id, delete_files=False)`
 
-## API nueva
+### Checkpoint: Fase 1
+- [x] Tests de `src/history.py` pasan
 
-| Ruta | Método | Qué hace |
-|---|---|---|
-| `/api/history/runs` | GET | Lista de corridas (últimas primero) |
-| `/api/history/runs/{run_id}` | PATCH | Editar `offer_title`, `offer_link`, `application` (status validado, `applied_at`, `notes`) |
-| `/api/history/runs/{run_id}` | DELETE | Borrar corrida |
-| `/api/history/stats/keywords` | GET | Agregación de keywords faltantes del master |
+### Fase 2: API
+- [x] Task 5: filtros + paginación en `GET /api/history/runs`
+- [x] Task 6: `GET /api/history/runs/{id}` (detalle con JD)
+- [x] Task 7: `GET /api/history/runs/{id}/cv` (texto del YAML)
+- [x] Task 8: `inline=1` en `GET /api/download-pdf`
+- [x] Task 9: `delete_files` en `DELETE /api/history/runs/{id}`
 
-## Tareas
+### Fase 3: Hooks de guardado del CV por corrida
+- [x] Task 10: `/api/render` guarda el YAML del CV
+- [x] Task 11: `main.py` (CLI) guarda el YAML del CV
 
-### Tarea 1: Núcleo `src/history.py` + tests
-- `load_runs`/`save_runs` (archivo ausente → `[]`; corrupto → backup `.bak` y `[]`),
-  `add_run`, `update_run` (valida estados), `delete_run`, `aggregate_missing_keywords`,
-  `extract_offer_title` (primera línea no vacía, truncada a 80 chars).
-- Verify: `tests/test_history.py` nuevo; `pytest tests/test_history.py`.
-- Archivos: `src/history.py`, `tests/test_history.py`.
+### Checkpoint: Fases 2-3
+- [x] `pytest` completo pasa
 
-### Tarea 2: API + hooks web
-- `RunUpdateIn` en `api/schemas.py`, `api/routers/history.py`, registro en `api/main.py`,
-  `RUNS_PATH` en `api/deps.py`, `add_run` en `/api/generate`, update de `pdf_path` en
-  `/api/render`.
-- Verify: `pytest` + curl de los endpoints.
-- Archivos: `api/schemas.py`, `api/routers/history.py`, `api/main.py`, `api/deps.py`,
-  `api/routers/generate.py`, `api/routers/render.py`.
+### Fase 4: Frontend
+- [x] Task 12: toolbar con buscador, chips de estado con conteo, total
+- [x] Task 13: "Cargar más" (paginación incremental)
+- [x] Task 14: modal de detalle con pestañas Oferta / CV / Análisis
+- [x] Task 15: tooltips de ATS y chips de faltantes
+- [x] Task 16: borrado con checkbox de archivos
+- [x] Task 17: casos esquina (PDF roto, corridas viejas, sin resultados, error con reintento)
 
-### Checkpoint 1
-- `pytest` verde, endpoints probados con curl, flujo generate → render actualiza `pdf_path`.
+### Checkpoint: Fase 4
+- [x] Verificación manual en navegador (web + `/api/health`)
 
-### Tarea 3: Hook CLI
-- En `main.py`, post-`invoke`: sin error → `add_run(...)` con `final_state`.
-- Verify: corrida manual del CLI + inspección del JSON.
-- Archivos: `main.py`.
-
-### Tarea 4a: Frontend pestaña "Historial"
-- Tab en `index.html` + `js/views/history.js` (tabla, edición, borrado, descarga PDF),
-  registro en `js/main.js`.
-- Archivos: `frontend/index.html`, `frontend/js/main.js`, `frontend/js/views/history.js` (nuevo),
-  `frontend/js/api.js`, `frontend/style.css`.
-
-### Tarea 4b: Estadísticas + wiring `run_id`
-- Sección de estadísticas de keywords faltantes + `run_id` en `state.js` y `views/apply.js`.
-- Archivos: `frontend/js/views/history.js`, `frontend/js/state.js`, `frontend/js/views/apply.js`.
-
-### Tarea 5: README + verificación final
-- Documentar la feature; `pytest` completo + `/api/health`.
-- Archivos: `README.md`.
-
-## Riesgos
+## Riesgos y mitigaciones
 
 | Riesgo | Impacto | Mitigación |
-|---|---|---|
-| JSON corrupto rompe la app | Med | `load_runs` tolerante: backup `.bak` y continúa |
-| `run_id` perdido entre generate y render | Bajo | Opcional en `/api/render`; sin él no rompe |
-| Títulos autoextraídos feos | Bajo | Editables desde la UI |
-| Crecimiento del JSON | Bajo | Uso personal; `delete_run` disponible |
+|--------|---------|------------|
+| `run_history.json` crece con JDs largos | Med | Aceptable para uso personal; anotado como futuro SQLite |
+| Corridas viejas sin `job_description`/CV | Bajo | Estados "No disponible" en el modal |
+| PDF movido/borrado en disco | Bajo | Botón PDF deshabilitado + mensaje claro |
+| Romper shape de `/api/history/runs` | Alto | Cambio aditivo (`total` extra), tests actualizados |
 
-## Orden de commits (conventional, en español)
+## Dudas abiertas
 
-1. `feat(history): registro de corridas y agregación de keywords faltantes`
-2. `feat(api): endpoints de historial y hooks en generate/render`
-3. `feat(cli): registrar corrida al final del pipeline`
-4. `feat(ui): pestaña de historial con seguimiento de aplicaciones`
-5. `feat(ui): estadísticas de keywords faltantes recurrentes`
-6. `docs: historial de aplicaciones en README`
+- Ninguna (JD dentro del JSON aprobado; paginación "Cargar más" aprobada).
