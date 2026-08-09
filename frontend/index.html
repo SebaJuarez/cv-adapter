@@ -129,7 +129,7 @@
 <main id="view-history" class="view">
   <div class="view-head">
     <h1 tabindex="-1">Historial</h1>
-    <p class="lede">Cada CV generado queda registrado acá con su análisis ATS y el estado de la aplicación. Las keywords que piden las ofertas y no están en tu CV maestro se agrupan para que veas cuáles conviene agregar.</p>
+    <p class="lede">Cada CV generado queda registrado acá con su análisis ATS y el estado de la aplicación. Podés previsualizar la oferta y el CV sin descargarlo. Las keywords que piden las ofertas y no están en tu CV maestro se agrupan para que veas cuáles conviene agregar.</p>
   </div>
   <section class="history-block">
     <h2 class="history-h2">Keywords que faltan en el CV maestro</h2>
@@ -138,9 +138,17 @@
   </section>
   <section class="history-block">
     <h2 class="history-h2">Corridas</h2>
+    <div class="history-toolbar">
+      <div class="filter-bar">
+        <input type="search" id="history-search" placeholder="Buscar por oferta…" aria-label="Buscar corridas por oferta">
+        <span id="history-total" class="filter-count" hidden></span>
+      </div>
+      <div id="history-status-chips" class="status-chips" role="group" aria-label="Filtrar por estado de la aplicación"></div>
+    </div>
     <div class="table-scroll">
       <div id="history-list" aria-live="polite"></div>
     </div>
+    <button id="history-load-more" class="btn btn-ghost history-load-more" hidden>Cargar más corridas</button>
   </section>
 </main>
 

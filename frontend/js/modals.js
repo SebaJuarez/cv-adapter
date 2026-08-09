@@ -4,11 +4,12 @@ import { $, h } from "./dom.js";
 
 // -------------------------------------------------------------- modal
 
-function openModal(builder) {
+function openModal(builder, opts = {}) {
   return new Promise((resolve) => {
     const overlay = $("#modal-overlay");
     const box = $("#modal-box");
     const previousFocus = document.activeElement;
+    if (opts.boxClass) box.classList.add(opts.boxClass);
     box.innerHTML = "";
     let settled = false;
     const close = (value) => {
@@ -17,6 +18,7 @@ function openModal(builder) {
       overlay.hidden = true;
       overlay.onclick = null;
       overlay.onkeydown = null;
+      if (opts.boxClass) box.classList.remove(opts.boxClass);
       if (previousFocus && typeof previousFocus.focus === "function") previousFocus.focus();
       resolve(value);
     };
