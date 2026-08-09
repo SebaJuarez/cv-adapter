@@ -5,6 +5,7 @@ import { loadMasterView } from "./views/master.js";
 import { confirmAction } from "./modals.js";
 import { setGlobalStatus } from "./notify.js";
 import { loadSettingsView } from "./views/settings.js";
+import { loadHistoryView } from "./views/history.js";
 import { dirty, state } from "./state.js";
 
 "use strict";
@@ -34,7 +35,10 @@ window.addEventListener("resize", syncTopbarHeight);
 // ------------------------------------------------------------- tabs/init
 
 function viewNameFor(id) {
-  return id === "view-master" ? "master" : id === "view-apply" ? "apply" : "settings";
+  return id === "view-master" ? "master"
+    : id === "view-apply" ? "apply"
+    : id === "view-history" ? "history"
+    : "settings";
 }
 
 async function switchView(btn) {
@@ -80,8 +84,10 @@ $("#tabs").addEventListener("keydown", (e) => {
 
 (async function init() {
   syncTopbarHeight();
-  const [master, settings] = await Promise.allSettled([loadMasterView(), loadSettingsView()]);
-  const failures = [master, settings].filter((x) => x.status === "rejected");
+  const [master, settings, history] = await Promise.allSettled([
+    loadMasterView(), loadSettingsView(), loadHistoryView(),
+  ]);
+  const failures = [master, settings, history].filter((x) => x.status === "rejected");
   if (failures.length > 0) {
     const detail = failures.map((f) => f.reason && f.reason.message ? f.reason.message : String(f.reason)).join(" | ");
     setGlobalStatus("No se pudo cargar toda la app: " + detail, "error");

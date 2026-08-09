@@ -12,6 +12,7 @@ const state = {
   masterSectionTypes: {},
   targetSectionTypes: {},
   keywordReport: null,
+  currentRunId: null,
   masterFilter: "",
   collapsedMaster: {},
   lastUndo: null,
@@ -27,6 +28,7 @@ function markDirty(view) {
     : view === "apply" ? $("#render-status")
     : $("#settings-status");
   if (el) setStatus(el, "Hay cambios sin guardar.", "dirty");
+  if (view === "apply") document.dispatchEvent(new CustomEvent("cv:apply-dirty"));
 }
 
 document.addEventListener("input", (e) => {

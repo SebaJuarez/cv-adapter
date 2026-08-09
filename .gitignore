@@ -8,6 +8,8 @@
 
 /data/job_description.txt
 
+/data/run_history.json
+
 target_cv.yaml
 
 config.json

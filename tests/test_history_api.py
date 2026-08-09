@@ -159,3 +159,31 @@ class TestRenderHook:
         payload = {"cv": {"name": "X", "sections": {}}}
         res = client.post("/api/render", json=payload)
         assert res.status_code == 200
+
+
+class TestDownloadPdf:
+    @pytest.fixture
+    def output_dir(self, tmp_path, monkeypatch):
+        out = tmp_path / "output"
+        out.mkdir()
+        monkeypatch.setattr("api.deps.OUTPUT_DIR", out)
+        monkeypatch.setattr("api.routers.render.OUTPUT_DIR", out)
+        return out
+
+    def test_path_fuera_de_output_400(self, client, output_dir, tmp_path):
+        pdf = tmp_path / "fuera.pdf"
+        pdf.write_text("x", encoding="utf-8")
+        res = client.get("/api/download-pdf", params={"path": str(pdf)})
+        assert res.status_code == 400
+
+    def test_pdf_inexistente_404(self, client, output_dir):
+        pdf = output_dir / "no_existe.pdf"
+        res = client.get("/api/download-pdf", params={"path": str(pdf)})
+        assert res.status_code == 404
+
+    def test_pdf_valido_200(self, client, output_dir):
+        pdf = output_dir / "CV.pdf"
+        pdf.write_text("x", encoding="utf-8")
+        res = client.get("/api/download-pdf", params={"path": str(pdf)})
+        assert res.status_code == 200
+        assert res.content == b"x"

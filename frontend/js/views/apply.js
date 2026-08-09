@@ -41,11 +41,11 @@ $("#generate-btn").addEventListener("click", async () => {
     state.selection = result.selection;
     state.masterDocSnapshot = result.master_cv;
     state.keywordReport = result.keyword_report;
+    state.currentRunId = result.run_id;
     dirty.apply = false;
     setStatus(statusEl, "Listo. Revisá la selección abajo.", "ok");
+    setRenderButton("generate");
     $("#apply-result").hidden = false;
-    $("#download-link").hidden = true;
-    $("#download-link-summary").hidden = true;
     drawTargetView();
     $("#apply-result").scrollIntoView({ behavior: "smooth", block: "start" });
     toast("CV generado. Revisá la selección.");
@@ -92,39 +92,49 @@ $("#add-section-target").addEventListener("click", async () => {
   drawTargetView();
 });
 
+let renderBtnMode = "generate";
+let downloadUrl = "";
+
+function setRenderButton(mode) {
+  renderBtnMode = mode;
+  const btn = $("#render-btn");
+  if (btn) btn.textContent = mode === "download" ? "Descargar PDF" : "Generar PDF";
+}
+
 async function triggerRender() {
   const statusEl = $("#render-status");
-  const statusSummary = $("#render-status-summary");
   const btn = $("#render-btn");
-  const btnSummary = $("#render-btn-summary");
-  const links = [$("#download-link"), $("#download-link-summary")];
 
   showProgress("#render-progress");
   setStatus(statusEl, "Compilando PDF…");
-  setStatus(statusSummary, "Compilando PDF…");
-  links.forEach((l) => { if (l) l.hidden = true; });
   btn.disabled = true;
-  if (btnSummary) btnSummary.disabled = true;
   try {
-    await api("/api/render", { method: "POST", body: JSON.stringify(state.targetDoc) });
-    const url = "/api/download-pdf?t=" + Date.now();
+    await api("/api/render", {
+      method: "POST",
+      body: JSON.stringify({ ...state.targetDoc, run_id: state.currentRunId }),
+    });
+    downloadUrl = "/api/download-pdf?t=" + Date.now();
     setStatus(statusEl, "PDF listo.", "ok");
-    setStatus(statusSummary, "PDF listo.", "ok");
-    links.forEach((l) => { if (l) { l.href = url; l.hidden = false; } });
+    setRenderButton("download");
     toast("PDF listo para descargar.");
   } catch (e) {
     setStatus(statusEl, e.message, "error");
-    setStatus(statusSummary, e.message, "error");
     setGlobalStatus("Error al generar PDF: " + e.message, "error");
   } finally {
     btn.disabled = false;
-    if (btnSummary) btnSummary.disabled = false;
     hideProgress("#render-progress");
   }
 }
 
-$("#render-btn").addEventListener("click", triggerRender);
-$("#render-btn-summary").addEventListener("click", triggerRender);
+$("#render-btn").addEventListener("click", () => {
+  if (renderBtnMode === "download") {
+    window.location.href = downloadUrl;
+    return;
+  }
+  triggerRender();
+});
+
+document.addEventListener("cv:apply-dirty", () => setRenderButton("generate"));
 
 
 export { drawTargetView, triggerRender };

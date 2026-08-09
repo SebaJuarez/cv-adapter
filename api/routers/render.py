@@ -1,6 +1,6 @@
 """Router de render: compilar el PDF con RenderCV y descargarlo."""
 
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
@@ -44,7 +44,16 @@ def render(payload: CVDocumentIn) -> Dict[str, Any]:
 
 
 @router.get("/api/download-pdf")
-def download_pdf() -> FileResponse:
+def download_pdf(path: Optional[str] = None) -> FileResponse:
+    # Descarga del PDF de un run puntual (ruta guardada en el historial).
+    if path:
+        target = (OUTPUT_DIR / path).resolve()
+        if not str(target).startswith(str(OUTPUT_DIR.resolve())):
+            raise HTTPException(status_code=400, detail="Ruta inválida.")
+        if not target.is_file():
+            raise HTTPException(status_code=404, detail="PDF no encontrado.")
+        return FileResponse(target, media_type="application/pdf", filename=target.name)
+
     pdfs = list(OUTPUT_DIR.rglob("*.pdf"))
     if not pdfs:
         raise HTTPException(status_code=404, detail="Todavía no se generó ningún PDF.")

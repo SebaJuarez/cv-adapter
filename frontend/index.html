@@ -14,6 +14,7 @@
   <nav class="tabs" id="tabs" role="tablist" aria-label="Vistas principales">
     <button class="tab is-active" role="tab" aria-selected="true" aria-controls="view-master" data-view="master">CV maestro</button>
     <button class="tab" role="tab" aria-selected="false" aria-controls="view-apply" data-view="apply">Nueva aplicación</button>
+    <button class="tab" role="tab" aria-selected="false" aria-controls="view-history" data-view="history">Historial</button>
     <button class="tab" role="tab" aria-selected="false" aria-controls="view-settings" data-view="settings">Configuración</button>
   </nav>
   <button id="undo-btn" class="btn btn-sm btn-ghost btn-undo" hidden>↩ Deshacer</button>
@@ -84,11 +85,6 @@
         <span id="result-stats-covered"></span>
         <span id="result-stats-critical" class="result-stats-critical" hidden></span>
       </div>
-      <div class="result-actions">
-        <span id="render-status-summary" class="status"></span>
-        <button id="render-btn-summary" class="btn btn-primary">Generar PDF</button>
-        <a id="download-link-summary" class="btn btn-ghost" href="/api/download-pdf" hidden>Descargar PDF</a>
-      </div>
     </div>
 
     <div class="progress-wrap" id="render-progress" hidden>
@@ -126,7 +122,24 @@
     <div class="save-bar sticky">
       <span id="render-status" class="status"></span>
       <button id="render-btn" class="btn btn-primary">Generar PDF</button>
-      <a id="download-link" class="btn btn-ghost" href="/api/download-pdf" hidden>Descargar PDF</a>
+    </div>
+  </section>
+</main>
+
+<main id="view-history" class="view">
+  <div class="view-head">
+    <h1 tabindex="-1">Historial</h1>
+    <p class="lede">Cada CV generado queda registrado acá con su análisis ATS y el estado de la aplicación. Las keywords que piden las ofertas y no están en tu CV maestro se agrupan para que veas cuáles conviene agregar.</p>
+  </div>
+  <section class="history-block">
+    <h2 class="history-h2">Keywords que faltan en el CV maestro</h2>
+    <p class="history-hint">Aparecieron en ofertas pero nunca las incluiste en tu CV maestro. Copialas y agregalas manualmente donde corresponda.</p>
+    <div id="history-stats" aria-live="polite"></div>
+  </section>
+  <section class="history-block">
+    <h2 class="history-h2">Corridas</h2>
+    <div class="table-scroll">
+      <div id="history-list" aria-live="polite"></div>
     </div>
   </section>
 </main>
