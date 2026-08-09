@@ -18,6 +18,7 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr("api.routers.history.RUNS_PATH", runs_path)
     monkeypatch.setattr("api.routers.generate.RUNS_PATH", runs_path)
     monkeypatch.setattr("api.routers.render.RUNS_PATH", runs_path)
+    monkeypatch.setattr("src.history.RUN_CVS_DIR", tmp_path / "run_cvs")
     return TestClient(app)
 
 
@@ -41,7 +42,10 @@ class TestHistoryRuns:
     def test_lista_vacia(self, client):
         res = client.get("/api/history/runs")
         assert res.status_code == 200
-        assert res.json() == {"runs": []}
+        body = res.json()
+        assert body["runs"] == []
+        assert body["total"] == 0
+        assert body["status_counts"] == {}
 
     def test_patch_run_inexistente_404(self, client):
         res = client.patch("/api/history/runs/no-existe", json={"offer_title": "X"})
@@ -49,6 +53,10 @@ class TestHistoryRuns:
 
     def test_delete_run_inexistente_404(self, client):
         res = client.delete("/api/history/runs/no-existe")
+        assert res.status_code == 404
+
+    def test_get_run_inexistente_404(self, client):
+        res = client.get("/api/history/runs/no-existe")
         assert res.status_code == 404
 
     def test_stats_sin_corridas(self, client):
@@ -97,7 +105,149 @@ class TestHistoryRuns:
 
         res = client.delete(f"/api/history/runs/{run['run_id']}")
         assert res.status_code == 200
-        assert client.get("/api/history/runs").json() == {"runs": []}
+        body = client.get("/api/history/runs").json()
+        assert body["runs"] == []
+        assert body["total"] == 0
+
+
+class TestListRunsFilters:
+    def _add_run(self, title_line, path, status="pendiente"):
+        report = {
+            "all_keywords": [],
+            "frequencies": {},
+            "missing_in_target": [],
+            "not_in_master": [],
+            "ats_impact_score": 100,
+            "critical_missing": [],
+        }
+        run = history_mod.add_run(title_line, report, path=path)
+        if status != "pendiente":
+            history_mod.update_run(
+                run["run_id"], {"application": {"status": status}}, path=path
+            )
+        return run
+
+    def test_filtro_por_texto(self, client, tmp_path):
+        path = tmp_path / "run_history.json"
+        self._add_run("Backend Engineer (Python)", path=path)
+        self._add_run("Data Analyst (SQL)", path=path)
+
+        res = client.get("/api/history/runs", params={"q": "backend"})
+        body = res.json()
+        assert body["total"] == 1
+        assert body["runs"][0]["offer_title"] == "Backend Engineer (Python)"
+
+    def test_filtro_por_estado_y_status_counts(self, client, tmp_path):
+        path = tmp_path / "run_history.json"
+        self._add_run("Backend Engineer", status="aplicado", path=path)
+        self._add_run("Data Analyst", status="entrevista", path=path)
+        self._add_run("QA Engineer", status="aplicado", path=path)
+
+        res = client.get("/api/history/runs")
+        assert res.json()["status_counts"] == {"aplicado": 2, "entrevista": 1}
+
+        res = client.get("/api/history/runs", params={"status": "aplicado"})
+        body = res.json()
+        assert body["total"] == 2
+        assert all(r["application"]["status"] == "aplicado" for r in body["runs"])
+
+    def test_paginacion(self, client, tmp_path):
+        path = tmp_path / "run_history.json"
+        for i in range(3):
+            self._add_run(f"Oferta {i}", path=path)
+
+        res = client.get("/api/history/runs", params={"limit": 2, "offset": 0})
+        body = res.json()
+        assert body["total"] == 3
+        assert len(body["runs"]) == 2
+
+        res = client.get("/api/history/runs", params={"limit": 2, "offset": 2})
+        assert len(res.json()["runs"]) == 1
+
+
+class TestRunDetail:
+    def test_detalle_incluye_el_job_description(self, client, tmp_path):
+        jd = "Buscamos un Backend Engineer\nRequisitos: python, docker."
+        report = {
+            "all_keywords": ["python"],
+            "frequencies": {},
+            "missing_in_target": [],
+            "not_in_master": [],
+            "ats_impact_score": 100,
+            "critical_missing": [],
+        }
+        run = history_mod.add_run(jd, report, path=tmp_path / "run_history.json")
+
+        # La lista no manda el JD (payload liviano), el detalle sí.
+        listed = client.get("/api/history/runs").json()["runs"][0]
+        assert "job_description" not in listed
+
+        res = client.get(f"/api/history/runs/{run['run_id']}")
+        assert res.status_code == 200
+        assert res.json()["run"]["job_description"] == jd
+
+    def test_cv_guardado_y_ausente(self, client, tmp_path):
+        run = history_mod.add_run(
+            "Oferta X",
+            {
+                "all_keywords": [],
+                "frequencies": {},
+                "missing_in_target": [],
+                "not_in_master": [],
+                "ats_impact_score": 100,
+                "critical_missing": [],
+            },
+            path=tmp_path / "run_history.json",
+        )
+
+        res = client.get(f"/api/history/runs/{run['run_id']}/cv")
+        assert res.status_code == 404
+
+        history_mod.save_run_cv(run["run_id"], "name: X\nsections: {}\n")
+        res = client.get(f"/api/history/runs/{run['run_id']}/cv")
+        assert res.status_code == 200
+        assert res.text == "name: X\nsections: {}\n"
+
+    def test_cv_de_run_inexistente_404(self, client):
+        res = client.get("/api/history/runs/no-existe/cv")
+        assert res.status_code == 404
+
+
+class TestDeleteWithFiles:
+    def test_delete_files_1_llama_al_modulo_con_flag(self, client, tmp_path, monkeypatch):
+        from src import history as history_mod
+
+        run = history_mod.add_run(
+            "Oferta X",
+            {
+                "all_keywords": [],
+                "frequencies": {},
+                "missing_in_target": [],
+                "not_in_master": [],
+                "ats_impact_score": 100,
+                "critical_missing": [],
+            },
+            path=tmp_path / "run_history.json",
+        )
+        calls = []
+        original = history_mod.delete_run
+
+        def spy(run_id, path=None, delete_files=False, cvs_dir=None, output_dir=None):
+            calls.append(delete_files)
+            return original(run_id, path=path)
+
+        monkeypatch.setattr(history_mod, "delete_run", spy)
+
+        res = client.delete(
+            f"/api/history/runs/{run['run_id']}", params={"delete_files": "1"}
+        )
+        assert res.status_code == 200
+        assert calls == [True]
+
+        res = client.delete(
+            f"/api/history/runs/{run['run_id']}", params={"delete_files": "1"}
+        )
+        assert res.status_code == 404
 
 
 class TestGenerateHook:
@@ -187,3 +337,24 @@ class TestDownloadPdf:
         res = client.get("/api/download-pdf", params={"path": str(pdf)})
         assert res.status_code == 200
         assert res.content == b"x"
+
+    def test_inline_usa_content_disposition_inline(self, client, output_dir):
+        pdf = output_dir / "CV.pdf"
+        pdf.write_text("x", encoding="utf-8")
+        res = client.get("/api/download-pdf", params={"path": str(pdf), "inline": "1"})
+        assert res.status_code == 200
+        assert "inline" in res.headers.get("content-disposition", "")
+
+        res = client.get("/api/download-pdf", params={"path": str(pdf)})
+        assert "attachment" in res.headers.get("content-disposition", "")
+
+    def test_head_pdf_200(self, client, output_dir):
+        # El frontend usa HEAD para saber si el PDF sigue existiendo sin
+        # descargarlo (botón PDF y preview).
+        pdf = output_dir / "CV.pdf"
+        pdf.write_text("x", encoding="utf-8")
+        res = client.head("/api/download-pdf", params={"path": str(pdf)})
+        assert res.status_code == 200
+
+        res = client.head("/api/download-pdf", params={"path": str(output_dir / "no.pdf")})
+        assert res.status_code == 404

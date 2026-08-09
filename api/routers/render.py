@@ -6,9 +6,9 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 
 from src.config import load_config
-from src.history import update_run
+from src.history import save_run_cv, update_run
 from src.merge import validate_master_cv_structure
-from src.render_node import run_rendercv, save_yaml
+from src.render_node import dump_yaml, run_rendercv, save_yaml
 
 from ..deps import OUTPUT_DIR, RUNS_PATH, TARGET_CV_PATH
 from ..schemas import CVDocumentIn
@@ -31,9 +31,12 @@ def render(payload: CVDocumentIn) -> Dict[str, Any]:
     if not ok:
         raise HTTPException(status_code=500, detail=message)
 
-    # Asocia el PDF al run del historial (si el frontend envió el run_id).
+    # Asocia el PDF y guarda el CV del run en el historial (si el frontend
+    # envió el run_id). El CV se guarda para poder previsualizarlo y borrarlo
+    # después; la asociación del PDF se actualiza en cada render.
     if payload.run_id:
         update_run(payload.run_id, {"pdf_path": pdf_path}, path=RUNS_PATH)
+        save_run_cv(payload.run_id, dump_yaml(data))
 
     return {
         "ok": True,
@@ -43,19 +46,33 @@ def render(payload: CVDocumentIn) -> Dict[str, Any]:
     }
 
 
-@router.get("/api/download-pdf")
-def download_pdf(path: Optional[str] = None) -> FileResponse:
+@router.api_route("/api/download-pdf", methods=["GET", "HEAD"])
+def download_pdf(path: Optional[str] = None, inline: bool = False) -> FileResponse:
     # Descarga del PDF de un run puntual (ruta guardada en el historial).
+    # Con `inline=1` se sirve embebido (Content-Disposition: inline) para
+    # previsualizarlo en el navegador sin descargarlo. El método HEAD se usa
+    # para verificar si el archivo sigue existiendo sin descargarlo.
+    disposition = "inline" if inline else "attachment"
     if path:
         target = (OUTPUT_DIR / path).resolve()
         if not str(target).startswith(str(OUTPUT_DIR.resolve())):
             raise HTTPException(status_code=400, detail="Ruta inválida.")
         if not target.is_file():
             raise HTTPException(status_code=404, detail="PDF no encontrado.")
-        return FileResponse(target, media_type="application/pdf", filename=target.name)
+        return FileResponse(
+            target,
+            media_type="application/pdf",
+            filename=target.name,
+            content_disposition_type=disposition,
+        )
 
     pdfs = list(OUTPUT_DIR.rglob("*.pdf"))
     if not pdfs:
         raise HTTPException(status_code=404, detail="Todavía no se generó ningún PDF.")
     latest = max(pdfs, key=lambda p: p.stat().st_mtime)
-    return FileResponse(latest, media_type="application/pdf", filename=latest.name)
+    return FileResponse(
+        latest,
+        media_type="application/pdf",
+        filename=latest.name,
+        content_disposition_type=disposition,
+    )

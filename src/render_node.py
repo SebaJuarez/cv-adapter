@@ -16,16 +16,23 @@ from .merge import strip_internal_keys
 from .state import CVState
 
 
-def save_yaml(data: dict, path: Path) -> None:
-    """Escribe un dict como YAML de forma segura (comillas donde hacen
-    falta, sin las cuales ': ' dentro de un bullet rompe el parseo — ver
+def dump_yaml(data: dict) -> str:
+    """Serializa un dict a YAML seguro (comillas donde hacen falta, sin las
+    cuales ': ' dentro de un bullet rompe el parseo — ver
     validate_master_cv_structure en merge.py). Saca cualquier metadata
-    interna ('_src_section', etc.) antes de guardar, porque RenderCV
-    rechaza claves que no reconoce."""
-    path.parent.mkdir(parents=True, exist_ok=True)
+    interna ('_src_section', etc.), porque RenderCV rechaza claves que no
+    reconoce."""
     clean_data = strip_internal_keys(data)
+    return yaml.safe_dump(
+        clean_data, allow_unicode=True, sort_keys=False, default_flow_style=False
+    )
+
+
+def save_yaml(data: dict, path: Path) -> None:
+    """Escribe un dict como YAML de forma segura (ver dump_yaml)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
-        yaml.safe_dump(clean_data, f, allow_unicode=True, sort_keys=False, default_flow_style=False)
+        f.write(dump_yaml(data))
 
 
 def run_rendercv(target_path: str, output_dir: Path) -> Tuple[bool, str, Optional[str]]:

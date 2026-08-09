@@ -14,10 +14,11 @@ from pathlib import Path
 import yaml
 from langgraph.graph import END, StateGraph
 
-from src.history import build_report_and_add_run
+from src.history import build_report_and_add_run, save_run_cv
 from src.llm_node import generate_selection_node
 from src.merge import build_target_cv, validate_master_cv_structure
 from src.render_node import (
+    dump_yaml,
     human_review_node,
     render_pdf_node,
     route_after_review,
@@ -135,6 +136,8 @@ def main():
             selection=final_state.get("llm_selection"),
             pdf_path=final_state.get("output_pdf_path"),
         )
+        # Copia del CV generado por corrida (para previsualizar/borrar luego).
+        save_run_cv(run["run_id"], dump_yaml(final_state["target_cv_dict"]))
         print(f"\n🗂️  Corrida registrada en el historial ({run['run_id']}).")
 
     if final_state.get("output_pdf_path"):
