@@ -356,6 +356,19 @@ def build_target_cv(
     if master_sections.get("languages"):
         new_sections["languages"] = deepcopy(master_sections["languages"])
 
+    # --- Secciones no manejadas por el pipeline: se preservan tal cual ---
+    # El pipeline selecciona summary/experience/projects/education/skills y
+    # mantiene languages. Cualquier OTRA sección del master (certifications,
+    # interests, publications, awards…) se copia íntegra al target: son
+    # contenido que el usuario agregó a mano y no debe perderse al adaptar.
+    _HANDLED_SECTIONS = {
+        "summary", "keywords", "experience", "projects",
+        "education", "skills", "languages",
+    }
+    for name, entries in master_sections.items():
+        if name not in _HANDLED_SECTIONS and name not in new_sections:
+            new_sections[name] = deepcopy(entries)
+
     target = deepcopy(master_cv)
     target["cv"]["sections"] = new_sections
     target.setdefault("design", {})["theme"] = config.get(

@@ -3,9 +3,11 @@
 Ahora el pipeline tiene DOS fases:
 1. Fase IR (Information Retrieval): SelectionEngine selecciona bullets/experiencias
    usando BM25 + embeddings + cross-encoder. Es rápido, determinístico, y corre local.
-2. Fase LLM Estratégica: el LLM solo recibe el JD + bullets ya seleccionados +
-   summaries disponibles. Decide summary_index, keywords implícitas, y mejora
-   match_reasons. El contexto se reduce de ~15K tokens a ~2K tokens.
+   También resuelve el summary_index y las keywords ATS candidatas.
+2. Fase LLM Estratégica: el LLM solo recibe el JD + bullets ya seleccionados.
+   Su única tarea es mejorar los match_reasons (redacción en lenguaje natural),
+   siempre verificados contra bullet + JD (ver _verify_match_reason). El
+   contexto se reduce de ~15K tokens a ~2K tokens.
 
 Clave anti-alucinación: el LLM NUNCA genera el YAML final. Solo devuelve
 índices que apuntan a contenido que YA existe en master_cv.yaml.
@@ -17,13 +19,8 @@ import json
 from typing import Any, Dict, Optional
 
 from .config import load_config
-from .prompts import (
-    build_section_schema,
-    build_section_system_prompt,
-    build_selection_schema,
-    build_system_prompt,
-)
-from .retrieval.keywords import _count_keyword_occurrences, _normalize_text, extract_keywords
+from .prompts import build_selection_schema, build_system_prompt
+from .retrieval.keywords import _count_keyword_occurrences, extract_keywords
 from .retrieval.sparse import get_synonym_variants
 from .selection import get_selection_engine
 from .state import CVState
@@ -49,7 +46,9 @@ def _verify_match_reason(llm_reason: str, bullet_text: str, jd_text: str) -> boo
     if not mentioned_keywords:
         return True  # No menciona ninguna tecnología puntual, no hay nada que verificar
 
-    context = _normalize_text(bullet_text) + " " + _normalize_text(jd_text)
+    # Texto crudo: _count_keyword_occurrences normaliza por dentro, pero los
+    # términos con separadores (c++, next.js) necesitan el texto original.
+    context = bullet_text + " " + jd_text
     for kw in mentioned_keywords:
         variants = get_synonym_variants(kw)
         if not any(_count_keyword_occurrences(context, v) > 0 for v in variants):
@@ -58,10 +57,13 @@ def _verify_match_reason(llm_reason: str, bullet_text: str, jd_text: str) -> boo
 
 
 def _call_ollama(system_prompt: str, user_prompt: str, schema: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
-    import ollama
-
     raw_content = ""
     try:
+        # Import dentro del try: si el paquete no está instalado, el
+        # ImportError se convierte en RuntimeError y el pipeline degrada
+        # con gracia a la selección IR pura (ver generate_selection).
+        import ollama
+
         response = ollama.chat(
             model=config["ollama_model"],
             messages=[
@@ -94,7 +96,14 @@ def _call_openai(system_prompt: str, user_prompt: str, schema: Dict[str, Any], c
             "(o usá llm_provider=ollama para el modelo local)."
         )
 
-    from openai import OpenAI
+    # Import dentro del try: si el paquete no está instalado, el ImportError
+    # se convierte en RuntimeError y el pipeline degrada con gracia.
+    try:
+        from openai import OpenAI
+    except ImportError as e:
+        raise RuntimeError(
+            "El paquete 'openai' no está instalado. Corré: pip install openai"
+        ) from e
 
     base_url = config.get("openai_base_url", "") or None
     client = OpenAI(api_key=api_key, base_url=base_url)
@@ -160,14 +169,9 @@ def _build_strategic_prompt(
     El LLM ya no recibe TODO el CV. Solo recibe:
     - El JD completo.
     - Los bullets ya seleccionados por IR (resumen).
-    - Las variantes de summary disponibles.
     """
     # Extraer bullets seleccionados para mostrar al LLM
     sections = master_cv.get("cv", {}).get("sections", {})
-    selected_summary = ""
-    summaries = sections.get("summary", [])
-    if summaries:
-        selected_summary = "\n".join(f"  [{i}] {s}" for i, s in enumerate(summaries))
 
     selected_experience = []
     for item in ir_selection.get("selected_experience", []):
@@ -200,8 +204,6 @@ def _build_strategic_prompt(
     return (
         "### job_description ###\n"
         f"{job_description}\n\n"
-        "### summary variants disponibles ###\n"
-        f"{selected_summary}\n\n"
         "### experiencias seleccionadas por el motor de búsqueda ###\n"
         f"{'\n'.join(selected_experience)}\n\n"
         "### proyectos seleccionados por el motor de búsqueda ###\n"
@@ -219,9 +221,10 @@ def generate_selection(
 ) -> Dict[str, Any]:
     """Pipeline completo: IR + LLM estratégico.
 
-    1. SelectionEngine hace retrieval híbrido (rápido, determinístico).
-    2. LLM estratégico ajusta summary, keywords implícitas, match_reasons.
-    3. Merge de ambas salidas.
+    1. SelectionEngine hace retrieval híbrido (rápido, determinístico) y
+       resuelve summary_index + keywords ATS candidatas.
+    2. LLM estratégico mejora los match_reasons (verificado anti-alucinación).
+    3. Merge de ambas salidas: los índices de IR son inmutables.
     """
     config = config or load_config()
 
@@ -241,27 +244,10 @@ def generate_selection(
         llm_output = {}
 
     # --- Merge: IR + LLM ---
-    # El LLM puede ajustar: summary_index, keywords_detected, match_reasons
-    # Pero NUNCA puede sobreescribir los índices de experiencia/proyectos/skills
-    # (eso lo determinó IR y es inmutable).
+    # El LLM SOLO puede mejorar los match_reasons; NUNCA puede sobreescribir
+    # summary_index, keywords_detected ni los índices de
+    # experiencia/proyectos/skills (todo eso lo determinó IR y es inmutable).
     final_selection = dict(ir_selection)
-
-    if "summary_index" in llm_output and llm_output["summary_index"] is not None:
-        summaries = master_cv.get("cv", {}).get("sections", {}).get("summary", [])
-        idx = llm_output["summary_index"]
-        if isinstance(idx, int) and 0 <= idx < len(summaries):
-            final_selection["summary_index"] = idx
-
-    if "keywords_detected" in llm_output:
-        # Mergear keywords del IR + del LLM, sin duplicados
-        existing = set(k.lower() for k in final_selection.get("keywords_detected", []))
-        new_keywords = []
-        for kw in llm_output["keywords_detected"]:
-            if isinstance(kw, str) and kw.strip() and kw.strip().lower() not in existing:
-                new_keywords.append(kw.strip())
-        final_selection["keywords_detected"] = (
-            final_selection.get("keywords_detected", []) + new_keywords
-        )[: config["max_keywords"]]
 
     # Match reasons: el LLM puede mejorar los que ya tiene IR, pero solo si
     # pasan el guardarail anti-alucinación (ver _verify_match_reason). Si
@@ -316,7 +302,11 @@ def generate_selection_node(state: CVState) -> CVState:
             state["master_cv_raw"], state["job_description"]
         )
         state["error"] = None
-    except RuntimeError as e:
+    except Exception as e:
+        # Exception (no solo RuntimeError): un error de descarga de modelos
+        # HF, torch, etc. no debe producir un traceback — se registra el
+        # error y los nodos siguientes (merge/save/review) se cortan solos
+        # por el check de state["error"].
         state["error"] = str(e)
         state["llm_selection"] = {}
     return state

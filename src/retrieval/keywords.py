@@ -87,10 +87,30 @@ def _normalize_text(text: str) -> str:
     return text
 
 
+def _separator_keyword_pattern(kw: str) -> str | None:
+    """Devuelve un patrón regex para keywords con separadores (+ # - . /),
+    o None si la keyword no tiene separadores.
+
+    Estas keywords NO se pueden matchear sobre el texto normalizado (el
+    normalizado destruye los separadores: "c++" -> "c"), así que se matchean
+    sobre el texto crudo con bordes de palabra. El borde derecho se omite
+    cuando la keyword termina en un no-alfanumérico ("c++" matchea también
+    "c++17"; "next.js" termina en letra y NO matchea "next.jsx").
+    """
+    if not any(ch in kw for ch in "+#.-/"):
+        return None
+    left = r"(?<!\w)" if kw[0].isalnum() else ""
+    right = r"(?!\w)" if kw[-1].isalnum() else ""
+    return left + re.escape(kw) + right
+
+
 def _count_keyword_occurrences(text: str, keyword: str) -> int:
     """Cuenta cuántas veces aparece una keyword en el texto (como palabra completa)."""
-    text = _normalize_text(text)
     kw = keyword.lower()
+    sep_pattern = _separator_keyword_pattern(kw)
+    if sep_pattern is not None:
+        return len(re.findall(sep_pattern, text.lower()))
+    text = _normalize_text(text)
     # Para bigramas
     if " " in kw:
         return text.count(kw)
@@ -106,7 +126,12 @@ def extract_keywords(job_description: str) -> Tuple[List[str], Dict[str, int]]:
         (keywords_list, frequencies_dict)
     """
     normalized = _normalize_text(job_description)
-    words = normalized.split()
+    raw = (job_description or "").lower()
+    # La normalización no saca la puntuación: "docker." no es "docker", y
+    # un keyword seguido de punto/coma/paréntesis es el caso NORMAL en un
+    # JD ("Requisitos: docker, python."). Se recortan los bordes no-alfanuméricos
+    # de cada token antes de comparar contra el diccionario.
+    words = [w.strip(".,;:!?()[]{}<>\"'¡¿…") for w in normalized.split()]
     found: Set[str] = set()
     frequencies: Dict[str, int] = {}
 
@@ -126,6 +151,17 @@ def extract_keywords(job_description: str) -> Tuple[List[str], Dict[str, int]]:
             found.add(token)
             frequencies[token] = _count_keyword_occurrences(job_description, token)
         i += 1
+
+    # Términos con separadores (+ # - . /): el tokenizado normalizado los
+    # destruye ("c++" -> "c", "next.js" -> "next js"), así que se matchean
+    # sobre el texto crudo (ver _separator_keyword_pattern).
+    for kw in TECH_KEYWORDS:
+        if kw in found:
+            continue
+        pattern = _separator_keyword_pattern(kw)
+        if pattern is not None and re.search(pattern, raw):
+            found.add(kw)
+            frequencies[kw] = _count_keyword_occurrences(job_description, kw)
 
     # Ordenar por frecuencia descendente, luego alfabéticamente
     sorted_keywords = sorted(found, key=lambda k: (-frequencies.get(k, 0), k))
@@ -168,11 +204,14 @@ def build_keyword_ranking(
 
     scored: List[tuple[str, float]] = []
     for b in bullets:
-        text_norm = _normalize_text(b.get("text", ""))
+        # Se pasa el texto crudo: _count_keyword_occurrences normaliza por
+        # dentro, pero los términos con separadores (c++, next.js) requieren
+        # el texto original para poder matchear.
+        raw_text = b.get("text", "")
         weight = 0.0
         for kw in jd_keywords:
             variants = keyword_variants[kw]
-            if any(_count_keyword_occurrences(text_norm, v) > 0 for v in variants):
+            if any(_count_keyword_occurrences(raw_text, v) > 0 for v in variants):
                 weight += frequencies.get(kw, 1)
         if weight > 0:
             scored.append((b["id"], weight))

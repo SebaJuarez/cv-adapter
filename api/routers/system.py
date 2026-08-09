@@ -45,7 +45,13 @@ def health_check() -> Dict[str, Any]:
 
 
 def _check_ollama_health(llm_status: Dict[str, Any], config: Dict[str, Any]) -> None:
-    import ollama
+    try:
+        import ollama
+    except ImportError:
+        llm_status["error"] = (
+            "El paquete 'ollama' no está instalado. Corré: pip install ollama"
+        )
+        return
 
     model = config["ollama_model"]
     llm_status["model"] = model

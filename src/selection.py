@@ -32,7 +32,7 @@ from .retrieval import (
     extract_requirements_section,
     reciprocal_rank_fusion,
 )
-from .retrieval.keywords import _count_keyword_occurrences, _normalize_text
+from .retrieval.keywords import _count_keyword_occurrences
 from .retrieval.sparse import get_synonym_variants
 
 _RETRIEVAL_SECTIONS = ["experience", "projects", "skills", "education"]
@@ -307,14 +307,18 @@ def _select_highlights_with_coverage(
     limitación conocida y aceptable para esta primera versión.
     """
     top = _mmr_select(bullets_sorted, max_highlights, diversity_lambda)
-    top_ids = {id(b) for b in top}
-    rest = [b for b in bullets_sorted if id(b) not in top_ids]
+    # Identidad por la clave "id" del bullet (no por id() de Python: frágil
+    # y difícil de razonar si alguna vez se copian los dicts).
+    top_ids = {b["id"] for b in top}
+    rest = [b for b in bullets_sorted if b["id"] not in top_ids]
 
     if not rest or not critical_keyword_variants:
         return [b["bullet_index"] for b in top]
 
     def _covers(bullet: dict, variants: set[str]) -> bool:
-        text = _normalize_text(bullet["text"])
+        # Texto crudo: _count_keyword_occurrences normaliza por dentro, pero
+        # los términos con separadores (c++, next.js) necesitan el original.
+        text = bullet["text"]
         return any(_count_keyword_occurrences(text, v) > 0 for v in variants)
 
     covered = {
@@ -429,10 +433,6 @@ class SelectionEngine:
         riesgo de falla) para una decisión que el cross-encoder/BM25 ya
         cargados en memoria resuelven igual de bien y sin red.
 
-        El LLM todavía puede sugerir un índice distinto después (ver
-        llm_node.py), pero ya no hace falta que lo haga: si Ollama no
-        está disponible, el summary_index deja de quedar en None.
-
         Returns:
             (índice elegido o None si no hay variantes, modo usado).
         """
@@ -494,6 +494,13 @@ class SelectionEngine:
             if _jd_freqs.get(kw, 0) >= 2
         }
 
+        # Keywords ATS candidatas: las del JD (ordenadas por frecuencia).
+        # merge.py las filtra contra el master (solo sobreviven las que
+        # existen en ambos lados) — acá no se descarta nada, la verificación
+        # es responsabilidad exclusiva de _build_verified_keywords.
+        max_keywords = self.config.get("max_keywords", 10)
+        keywords_detected = _jd_kws[:max_keywords]
+
         summary_index, summary_index_mode = self._resolve_summary_index(master_cv, query_text)
 
         selection: dict[str, Any] = {
@@ -503,7 +510,7 @@ class SelectionEngine:
             "selected_education_indices": [],
             "summary_index": summary_index,
             "summary_index_mode": summary_index_mode,  # NUEVO: transparencia de cómo se eligió
-            "keywords_detected": [],
+            "keywords_detected": keywords_detected,
             "bullet_scores": {},       # NUEVO: bullet_id -> score (0-1)
             "jd_snippets": {},         # NUEVO: bullet_id -> snippet del JD
             "section_scores": {},      # NUEVO: section -> {entry_idx: score}
@@ -839,6 +846,7 @@ def get_selection_engine(config: dict[str, Any] | None = None) -> SelectionEngin
             "max_experience_entries", "max_project_entries",
             "max_highlights_per_entry", "max_skill_categories",
             "max_education_extra", "max_keywords",
+            "diversity_lambda", "keyword_boost_weight",
         )},
         sort_keys=True,
     )

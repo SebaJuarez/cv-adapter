@@ -26,10 +26,15 @@ def render(payload: CVDocumentIn) -> Dict[str, Any]:
         raise HTTPException(status_code=400, detail=errors)
 
     save_yaml(data, TARGET_CV_PATH)
-    ok, message, pdf_dir = run_rendercv(str(TARGET_CV_PATH), OUTPUT_DIR)
+    ok, message, pdf_path = run_rendercv(str(TARGET_CV_PATH), OUTPUT_DIR)
     if not ok:
         raise HTTPException(status_code=500, detail=message)
-    return {"ok": True, "message": message, "output_dir": pdf_dir}
+    return {
+        "ok": True,
+        "message": message,
+        "pdf_path": pdf_path,
+        "output_dir": str(OUTPUT_DIR),
+    }
 
 
 @router.get("/api/download-pdf")

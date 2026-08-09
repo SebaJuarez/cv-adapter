@@ -33,65 +33,6 @@ Nota: los índices en tu respuesta DEBEN coincidir exactamente con los que te
 paso en el prompt. No agregues ni saques índices."""
 
 
-_SECTION_LABELS = {
-    "experience": ("experiencias laborales", "selected_experience"),
-    "projects": ("proyectos", "selected_projects"),
-    "skills": ("categorías de skills", "selected_skills_indices"),
-}
-
-
-def build_section_system_prompt(config: Dict[str, Any], section_name: str) -> str:
-    """Versión acotada para regenerar una sola sección."""
-    label, key = _SECTION_LABELS[section_name]
-
-    return f"""Sos un asistente de currículums. El motor de búsqueda ya regeneró
-la sección de {label} para esta oferta. Tu trabajo es redactar justificaciones
-breves (match_reasons) para cada entrada seleccionada.
-
-REGLAS:
-1. NUNCA inventes hechos, tecnologías ni métricas nuevas.
-2. NUNCA cambies los índices seleccionados (son inmutables).
-3. Solo mencioná conceptos presentes en el bullet o en la oferta.
-4. Texto conciso: 1 oración corta, máximo 2.
-
-Devolvé SOLO este JSON (sin texto conversacional, sin Markdown):
-{{"{key}": [{{"index": <int>, "match_reason": "<string>"}}]}}"""
-
-
-def build_section_schema(config: Dict[str, Any], section_name: str) -> Dict[str, Any]:
-    if section_name == "skills":
-        return {
-            "type": "object",
-            "properties": {
-                "selected_skills_indices": {
-                    "type": "array",
-                    "maxItems": config["max_skill_categories"],
-                    "items": {"type": "integer"},
-                }
-            },
-            "required": ["selected_skills_indices"],
-        }
-
-    _, key = _SECTION_LABELS[section_name]
-    return {
-        "type": "object",
-        "properties": {
-            key: {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "index": {"type": "integer"},
-                        "match_reason": {"type": "string"},
-                    },
-                    "required": ["index"],
-                },
-            }
-        },
-        "required": [key],
-    }
-
-
 def build_selection_schema(config: Dict[str, Any]) -> Dict[str, Any]:
     """Schema simplificado: solo match_reasons, nada más."""
     return {

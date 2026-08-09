@@ -8,6 +8,7 @@ el modelo descargado (`ollama pull llama3:8b`), o una API remota compatible
 con OpenAI (config.json: `llm_provider: "openai"` + API key).
 """
 import argparse
+import sys
 from pathlib import Path
 
 import yaml
@@ -22,6 +23,14 @@ from src.render_node import (
     save_target_cv_node,
 )
 from src.state import CVState
+
+
+# Windows: una consola en cp1252 crashea con UnicodeEncodeError al imprimir
+# emojis/acentos (el mismo gotcha que run_rendercv resuelve para RenderCV,
+# acá aplicado al proceso CLI completo: ✅, ⚠️, tildes, etc.).
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        _stream.reconfigure(encoding="utf-8")
 
 
 def load_inputs_node(state: CVState) -> CVState:

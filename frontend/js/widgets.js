@@ -323,7 +323,7 @@ function renderExcludedPanel() {
           if (!text) return;
           const bulletId = `${sec.key}_${idx}_bullet_${bIdx}`;
           const bScore = state.selection.bullet_scores?.[bulletId];
-          const bScoreLabel = bScore !== null ? `${Math.round(bScore * 100)}%` : "";
+          const bScoreLabel = bScore != null ? `${Math.round(bScore * 100)}%` : "";
 
           const row = h("div", { class: "excluded-bullet" }, [
             h("span", { class: "bullet-mark" }, "—"),
