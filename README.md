@@ -99,7 +99,7 @@ pip install -r requirements.txt
 uvicorn app:app --reload
 ```
 
-Abrí `http://127.0.0.1:8000` en el navegador. Tres pestañas:
+Abrí `http://127.0.0.1:8000` en el navegador. Cuatro pestañas:
 
 - **CV maestro** — editá tu CV completo con un formulario (no YAML a mano):
   agregar/sacar secciones enteras, entradas y bullets; reordenar con ↑/↓.
@@ -108,6 +108,12 @@ Abrí `http://127.0.0.1:8000` en el navegador. Tres pestañas:
   eligió, y tenés un desplegable "traer bullet del master" para recuperar
   contenido que el modelo dejó afuera pero vos querés incluir igual.
   "Generar PDF" compila y te deja descargarlo.
+- **Historial** — cada corrida queda registrada automáticamente (web y CLI)
+  con su análisis ATS, el PDF asociado y el seguimiento de la aplicación
+  (estado, fecha, notas, link a la oferta). Además agrupa las keywords que
+  las ofertas piden y no están en tu CV maestro, para ver cuáles se repiten
+  en general y decidir agregarlas manualmente (nunca se toca el master solo).
+  El historial vive en `data/run_history.json` (gitignored).
 - **Configuración** — los límites de una página, el proveedor del LLM
   (Ollama local o API remota) y su modelo, ya no hardcodeados: se guardan en
   `config.json`.
@@ -134,6 +140,8 @@ python main.py --master data/master_cv.yaml --job data/job_description.txt
    - Revisá `target_cv.yaml` a mano en ese momento (fechas, empresas, puestos).
    - Si respondés `y`, compila el PDF final en `output/`.
    - Si respondés `n`, corta ahí sin generar nada.
+   - Al terminar (con o sin PDF) registra la corrida en `data/run_history.json`,
+     igual que la web — podés seguirla y editarla desde la pestaña **Historial**.
 
 ## 4. Estructura del proyecto
 
@@ -148,7 +156,7 @@ cv-adapter/
 │   ├── main.py               # arma la app (routers + mount del frontend)
 │   ├── schemas.py            # modelos pydantic de request/response
 │   ├── deps.py               # rutas del filesystem compartidas
-│   └── routers/              # un router por recurso (master_cv, config, generate, render, system)
+│   └── routers/              # un router por recurso (master_cv, config, generate, render, history, system)
 ├── frontend/
 │   ├── index.html
 │   ├── style.css
@@ -158,10 +166,11 @@ cv-adapter/
 │       ├── dom.js / api.js / state.js / labels.js / notify.js / modals.js
 │       ├── widgets.js        # keyword report, oportunidades, excluidos
 │       ├── components.js     # renderers compartidos master/target (ctx)
-│       └── views/            # master.js, apply.js, settings.js
+│       └── views/            # master.js, apply.js, history.js, settings.js
 ├── data/
 │   ├── master_cv.yaml        # tu CV completo (reemplazar por el real)
-│   └── job_description.txt   # oferta laboral (solo la usa el CLI)
+│   ├── job_description.txt   # oferta laboral (solo la usa el CLI)
+│   └── run_history.json      # historial de corridas y seguimiento (se crea solo)
 ├── src/
 │   ├── config.py             # carga/guarda config.json
 │   ├── state.py              # TypedDict del estado del grafo (CLI)
@@ -169,6 +178,7 @@ cv-adapter/
 │   ├── prompts.py            # system prompt + JSON Schema, dinámicos según config
 │   ├── llm_node.py           # llamada al LLM: Ollama local o API remota (función pelada + nodo del grafo)
 │   ├── merge.py              # fusión determinística + presupuesto de una página
+│   ├── history.py            # historial de corridas + agregación de keywords faltantes
 │   ├── render_node.py        # guardar YAML + render PDF (función pelada + nodos)
 │   └── services/
 │       └── generation.py     # orquestación del pipeline (compartida web/CLI)
