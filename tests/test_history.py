@@ -17,8 +17,11 @@ from src.history import (
     aggregate_missing_keywords,
     build_report_and_add_run,
     delete_run,
+    delete_run_cv,
     extract_offer_title,
+    load_run_cv,
     load_runs,
+    save_run_cv,
     save_runs,
     update_run,
 )
@@ -61,6 +64,30 @@ class TestExtractOfferTitle:
         assert extract_offer_title("   \n\t\n") == FALLBACK_OFFER_TITLE
         assert extract_offer_title("") == FALLBACK_OFFER_TITLE
 
+    def test_saca_prefijos_de_reclutamiento(self):
+        assert extract_offer_title("Buscamos Backend Engineer") == "Backend Engineer"
+        assert extract_offer_title("Estamos buscando un Data Analyst") == "Data Analyst"
+        assert extract_offer_title("Job title: Frontend Developer") == "Frontend Developer"
+        assert extract_offer_title("We are looking for a DevOps Engineer") == "DevOps Engineer"
+        assert extract_offer_title("Hiring: QA Automation") == "QA Automation"
+
+    def test_elige_segmento_de_titulo_entre_separadores(self):
+        assert extract_offer_title("Backend Engineer | Acme Corp") == "Backend Engineer"
+        assert extract_offer_title("Acme - Backend Engineer") == "Backend Engineer"
+        assert extract_offer_title("Senior QA Engineer – Acme Inc.") == "Senior QA Engineer"
+        assert extract_offer_title("Data Engineer · Acme Group") == "Data Engineer"
+
+    def test_descarta_ubicacion_y_modalidad(self):
+        assert extract_offer_title("Buenos Aires - Backend Engineer") == "Backend Engineer"
+        assert extract_offer_title("Remote - Full Stack Developer") == "Full Stack Developer"
+
+    def test_todo_junk_devuelve_la_linea_completa(self):
+        line = "Buenos Aires - Remote"
+        assert extract_offer_title(line) == line
+
+    def test_colapsa_espacios_multiple(self):
+        assert extract_offer_title("   Backend   Engineer   ") == "Backend Engineer"
+
 
 class TestLoadSaveRuns:
     def test_archivo_ausente_devuelve_vacio(self, history_path):
@@ -94,6 +121,7 @@ class TestAddRun:
         assert run["manual_keywords"] == ["scrum"]
         assert run["pdf_path"] is None
         assert run["jd_hash"] == run["run_id"].split("-")[1]
+        assert run["job_description"] == jd
         assert run["application"] == {"status": "pendiente", "applied_at": None, "notes": ""}
 
     def test_run_id_unico_por_corrida(self, history_path, jd, keyword_report):
@@ -165,6 +193,56 @@ class TestDeleteRun:
     def test_inexistente_devuelve_false(self, history_path):
         assert delete_run("no-existe", path=history_path) is False
 
+    def test_delete_files_borra_cv_y_pdf(self, history_path, jd, keyword_report, tmp_path):
+        run = add_run(jd, keyword_report, pdf_path=str(tmp_path / "output" / "CV.pdf"), path=history_path)
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+        (output_dir / "CV.pdf").write_text("x", encoding="utf-8")
+        cvs_dir = tmp_path / "cvs"
+        save_run_cv(run["run_id"], "cv: yaml", cvs_dir=cvs_dir)
+
+        assert delete_run(
+            run["run_id"], path=history_path, delete_files=True,
+            cvs_dir=cvs_dir, output_dir=output_dir,
+        ) is True
+        assert load_run_cv(run["run_id"], cvs_dir=cvs_dir) is None
+        assert not (output_dir / "CV.pdf").exists()
+
+    def test_delete_files_no_toca_pdf_fuera_de_output(self, history_path, jd, keyword_report, tmp_path):
+        run = add_run(jd, keyword_report, pdf_path=str(tmp_path / "afuera.pdf"), path=history_path)
+        pdf = tmp_path / "afuera.pdf"
+        pdf.write_text("x", encoding="utf-8")
+
+        delete_run(
+            run["run_id"], path=history_path, delete_files=True,
+            cvs_dir=tmp_path / "cvs", output_dir=tmp_path / "output",
+        )
+        assert pdf.exists()
+
+    def test_sin_delete_files_conserva_archivos(self, history_path, jd, keyword_report, tmp_path):
+        run = add_run(jd, keyword_report, pdf_path=str(tmp_path / "CV.pdf"), path=history_path)
+        cvs_dir = tmp_path / "cvs"
+        save_run_cv(run["run_id"], "cv: yaml", cvs_dir=cvs_dir)
+
+        delete_run(run["run_id"], path=history_path, cvs_dir=cvs_dir, output_dir=tmp_path)
+        assert load_run_cv(run["run_id"], cvs_dir=cvs_dir) is not None
+
+
+class TestRunCv:
+    def test_roundtrip(self, tmp_path):
+        cvs_dir = tmp_path / "cvs"
+        save_run_cv("run-1", "name: X\nsections: {}\n", cvs_dir=cvs_dir)
+        assert load_run_cv("run-1", cvs_dir=cvs_dir) == "name: X\nsections: {}\n"
+
+    def test_inexistente_devuelve_none(self, tmp_path):
+        assert load_run_cv("no-existe", cvs_dir=tmp_path / "cvs") is None
+
+    def test_delete(self, tmp_path):
+        cvs_dir = tmp_path / "cvs"
+        save_run_cv("run-1", "name: X\n", cvs_dir=cvs_dir)
+        assert delete_run_cv("run-1", cvs_dir=cvs_dir) is True
+        assert delete_run_cv("run-1", cvs_dir=cvs_dir) is False
+
 
 class TestAggregateMissingKeywords:
     def _run(self, run_id, not_in_master, freqs, critical=(), created_at="", title="Oferta"):
@@ -214,7 +292,7 @@ class TestBuildReportAndAddRun:
             path=history_path,
         )
         assert run["ats_score"] == 100
-        assert run["offer_title"] == job_description.splitlines()[0][:MAX_OFFER_TITLE_LEN]
+        assert run["offer_title"].startswith("backend developer con experiencia")
         assert len(load_runs(history_path)) == 1
 
 

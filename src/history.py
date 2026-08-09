@@ -9,6 +9,7 @@ propone agregar nada al master automáticamente.
 
 import hashlib
 import json
+import re
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -18,6 +19,9 @@ from .retrieval.keywords import build_keyword_report
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 RUNS_PATH = BASE_DIR / "data" / "run_history.json"
+# CV generado por corrida: un YAML por run, para previsualizar/borrar después.
+RUN_CVS_DIR = BASE_DIR / "data" / "run_cvs"
+OUTPUT_DIR = BASE_DIR / "output"
 
 # Estados posibles del seguimiento de la aplicación.
 VALID_STATUSES = ("pendiente", "aplicado", "entrevista", "oferta", "rechazado")
@@ -32,17 +36,136 @@ FALLBACK_OFFER_TITLE = "Oferta sin título"
 _EDITABLE_RUN_FIELDS = ("offer_title", "offer_link", "pdf_path")
 _EDITABLE_APPLICATION_FIELDS = ("status", "applied_at", "notes")
 
+# Prefijos típicos de reclutamiento que se descartan del título (sin LLM).
+_TITLE_PREFIXES = sorted(
+    (
+        "estamos buscando",
+        "estamos reclutando",
+        "we are looking for",
+        "we're looking for",
+        "we are hiring",
+        "we're hiring",
+        "se busca",
+        "se necesita",
+        "buscamos",
+        "necesitamos",
+        "reclutamos",
+        "contratamos",
+        "looking for",
+        "empresa líder busca",
+        "job title",
+        "vacante",
+        "posicion",
+        "posición",
+        "puesto",
+        "hiring",
+    ),
+    key=len,
+    reverse=True,
+)
+
+# Separadores típicos entre título y empresa ("Backend | Acme", "Acme - Backend").
+_TITLE_SPLIT_RE = re.compile(r"\s+(?:\||·|–|—|-)\s+")
+
+# Artículos que pueden seguir a un prefijo ("Estamos buscando un Data Analyst").
+_LEADING_ARTICLES = ("un", "una", "unos", "unas", "el", "la", "los", "las", "a", "an", "the", "al", "del")
+
+# Última palabra que delata una razón social (no parte del título).
+_COMPANY_LAST_WORDS = {
+    "inc", "llc", "ltd", "company", "corporation", "corp", "group",
+    "consulting", "solutions", "technologies", "technology", "sa", "srl",
+    "gmbh", "ag", "plc", "co", "labs", "studio", "studios", "digital",
+}
+
+# Palabras/expresiones que no son parte del título (ubicación, modalidad, etc.).
+_JUNK_TITLE_WORDS = {
+    "remoto", "remota", "remote", "hibrido", "hibrida", "hybrid",
+    "presencial", "onsite", "on-site", "full time", "full-time",
+    "part time", "part-time", "buenos aires", "montevideo", "caba",
+    "argentina", "uruguay", "mexico", "ciudad de mexico", "cdmx",
+    "madrid", "barcelona", "santiago", "lima", "colombia", "chile",
+    "peru", "españa", "usa", "united states", "europe", "latam",
+    "latin america", "spanish", "ingles", "english",
+}
+
+
+def _strip_recruiter_prefix(line: str) -> str:
+    """Saca prefijos tipo 'Buscamos ', 'Job title:', 'Hiring: '... y artículos
+    que los sigan ('Estamos buscando un Data Analyst' -> 'Data Analyst')."""
+    lower = line.lower()
+    for prefix in _TITLE_PREFIXES:
+        if not lower.startswith(prefix):
+            continue
+        rest = line[len(prefix):].strip(" :,;|–—-")
+        words = rest.split()
+        while words and words[0].lower() in _LEADING_ARTICLES:
+            words = words[1:]
+        return " ".join(words)
+    return line
+
+
+def _looks_like_company(segment: str) -> bool:
+    lower = segment.strip(" .,").lower()
+    words = lower.split()
+    if not words:
+        return False
+    if len(words) >= 3 and words[-2:] == ["de", "cv"]:
+        return True
+    return words[-1] in _COMPANY_LAST_WORDS
+
+
+def _looks_like_junk(segment: str) -> bool:
+    lower = segment.strip(" .,").lower()
+    return any(
+        lower == junk or lower.endswith(" " + junk) or lower.endswith(", " + junk)
+        for junk in _JUNK_TITLE_WORDS
+    )
+
+
+def _segment_score(segment: str) -> int:
+    """Mayor = más probable que sea el título (heurística determinística)."""
+    if _looks_like_company(segment) or _looks_like_junk(segment):
+        return -1
+    words = segment.split()
+    score = len(words)
+    if any(ch.isdigit() for ch in segment):
+        score += 2
+    score += sum(1 for w in words if w and w[0].isupper())
+    return score
+
+
+def _pick_title_segment(line: str) -> str:
+    """Entre segmentos separados por ' | ', ' - ', etc., elige el más 'de título'.
+
+    Si todos parecen empresa/ubicación, devuelve la línea original para no
+    perder información.
+    """
+    parts = [p.strip() for p in _TITLE_SPLIT_RE.split(line) if p.strip()]
+    if len(parts) <= 1:
+        return line
+    best = max(parts, key=_segment_score)
+    return best if _segment_score(best) >= 0 else line
+
 
 def extract_offer_title(job_description: str) -> str:
-    """Título tentativo de la oferta: primera línea no vacía, recortada.
+    """Título tentativo de la oferta: primera línea no vacía, limpiada.
 
-    Heurística determinística (sin LLM). Si no hay nada aprovechable,
+    Heurística determinística (sin LLM): descarta prefijos de reclutamiento
+    ('Buscamos…', 'Job title:…') y elige el segmento más 'de título' entre
+    separadores comunes (|, -, –, ·, —). Si no hay nada aprovechable,
     devuelve un título de fallback.
     """
     for raw_line in job_description.splitlines():
-        line = raw_line.strip()
-        if line:
-            return line[:MAX_OFFER_TITLE_LEN]
+        line = re.sub(r"\s+", " ", raw_line).strip()
+        if not line:
+            continue
+        line = _strip_recruiter_prefix(line)
+        if not line:
+            continue
+        line = _pick_title_segment(line)
+        if not line:
+            continue
+        return line[:MAX_OFFER_TITLE_LEN]
     return FALLBACK_OFFER_TITLE
 
 
@@ -104,6 +227,7 @@ def add_run(
         "offer_title": extract_offer_title(job_description),
         "offer_link": None,
         "jd_hash": jd_hash,
+        "job_description": job_description,
         "ats_score": keyword_report.get("ats_impact_score", 0),
         "keywords_detected": (
             (selection or {}).get("keywords_detected")
@@ -164,14 +288,81 @@ def update_run(
     return None
 
 
-def delete_run(run_id: str, path: Optional[Path] = None) -> bool:
-    """Borra un run del historial. Devuelve True si existía."""
+def delete_run(
+    run_id: str,
+    path: Optional[Path] = None,
+    delete_files: bool = False,
+    cvs_dir: Optional[Path] = None,
+    output_dir: Optional[Path] = None,
+) -> bool:
+    """Borra un run del historial. Devuelve True si existía.
+
+    Con `delete_files=True` borra también el CV guardado (`data/run_cvs/`) y
+    el PDF asociado (solo si está dentro del directorio de output, por
+    seguridad). Por defecto solo se borra la metadata, nunca archivos.
+    """
     runs = load_runs(path)
     remaining = [r for r in runs if r["run_id"] != run_id]
     if len(remaining) == len(runs):
         return False
+    if delete_files:
+        for run in runs:
+            if run["run_id"] == run_id:
+                _delete_run_files(run, cvs_dir=cvs_dir, output_dir=output_dir)
+                break
     save_runs(remaining, path)
     return True
+
+
+def _delete_run_files(
+    run: Dict[str, Any],
+    cvs_dir: Optional[Path] = None,
+    output_dir: Optional[Path] = None,
+) -> None:
+    """Borra los artefactos de un run: CV guardado y PDF (si es nuestro)."""
+    delete_run_cv(run["run_id"], cvs_dir=cvs_dir)
+    pdf_path = run.get("pdf_path")
+    if not pdf_path:
+        return
+    try:
+        target = Path(pdf_path).resolve()
+        out = (output_dir or OUTPUT_DIR).resolve()
+        if str(target).startswith(str(out)) and target.is_file():
+            target.unlink()
+    except OSError:
+        pass
+
+
+def save_run_cv(run_id: str, cv_yaml: str, cvs_dir: Optional[Path] = None) -> Path:
+    """Persiste el YAML del CV generado para un run (para previsualizarlo)."""
+    directory = cvs_dir or RUN_CVS_DIR
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / f"{run_id}.yaml"
+    path.write_text(cv_yaml, encoding="utf-8")
+    return path
+
+
+def load_run_cv(run_id: str, cvs_dir: Optional[Path] = None) -> Optional[str]:
+    """Devuelve el texto del CV guardado de un run, o None si no existe."""
+    path = (cvs_dir or RUN_CVS_DIR) / f"{run_id}.yaml"
+    if not path.is_file():
+        return None
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+
+
+def delete_run_cv(run_id: str, cvs_dir: Optional[Path] = None) -> bool:
+    """Borra el CV guardado de un run. Devuelve True si existía."""
+    path = (cvs_dir or RUN_CVS_DIR) / f"{run_id}.yaml"
+    if not path.is_file():
+        return False
+    try:
+        path.unlink()
+        return True
+    except OSError:
+        return False
 
 
 def aggregate_missing_keywords(runs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
