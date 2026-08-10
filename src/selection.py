@@ -34,7 +34,11 @@ from .retrieval import (
     reciprocal_rank_fusion,
 )
 from .retrieval.dense import prefixed_texts
-from .retrieval.keywords import _corpus_text, _count_keyword_occurrences
+from .retrieval.keywords import (
+    _corpus_text,
+    _count_keyword_occurrences,
+    _normalize_custom_keywords,
+)
 from .retrieval.selection_cache import (
     SELECTION_CACHE_DIR,
     get_cache_key,
@@ -756,19 +760,22 @@ class SelectionEngine:
         # dentro de _group_bullets_into_entries: si una de estas quedó afuera
         # del top-N de una entrada por poco margen de score, se prioriza su
         # inclusión sobre el bullet de menor score, sin agregar contenido nuevo.
-        _jd_kws, _jd_freqs = extract_keywords(job_description)
+        custom_keywords = self.config.get("custom_keywords")
+        _jd_kws, _jd_freqs = extract_keywords(job_description, custom_keywords)
         critical_keyword_variants = {
             kw: get_synonym_variants(kw)
             for kw in _jd_kws
             if _jd_freqs.get(kw, 0) >= 2
         }
 
-        # Keywords ATS candidatas: las del JD (ordenadas por frecuencia).
+        # Keywords ATS candidatas: las manuales del usuario (P1.3) van
+        # PRIMERO (son mandatorias) y después las del JD por frecuencia.
         # merge.py las filtra contra el master (solo sobreviven las que
         # existen en ambos lados) — acá no se descarta nada, la verificación
         # es responsabilidad exclusiva de _build_verified_keywords.
         max_keywords = self.config.get("max_keywords", 10)
-        keywords_detected = _jd_kws[:max_keywords]
+        custom_normalized = _normalize_custom_keywords(custom_keywords)
+        keywords_detected = list(dict.fromkeys(custom_normalized + _jd_kws))[:max_keywords]
 
         summary_index, summary_index_mode = self._resolve_summary_index(master_cv, query_text)
 
@@ -806,7 +813,9 @@ class SelectionEngine:
             sparse_ranking = sparse_idx.query(query_text, top_k=50)
             dense_ranking, chunk_map = dense_idx.query(chunk_embeddings, top_k=50)
             keyword_ranking = build_keyword_ranking(
-                [{"id": b.id, "text": b.text} for b in bullets], job_description
+                [{"id": b.id, "text": b.text} for b in bullets],
+                job_description,
+                custom_keywords,
             )
             hybrid_ranking = reciprocal_rank_fusion(
                 sparse_ranking,
@@ -1008,7 +1017,8 @@ class SelectionEngine:
 
         bullets = _extract_bullets_from_section(master_cv, section_name)
 
-        _jd_kws, _jd_freqs = extract_keywords(job_description)
+        custom_keywords = self.config.get("custom_keywords")
+        _jd_kws, _jd_freqs = extract_keywords(job_description, custom_keywords)
         critical_keyword_variants = {
             kw: get_synonym_variants(kw)
             for kw in _jd_kws
@@ -1042,7 +1052,9 @@ class SelectionEngine:
         sparse_ranking = sparse_idx.query(query_text, top_k=50)
         dense_ranking, chunk_map = dense_idx.query(chunk_embeddings, top_k=50)
         keyword_ranking = build_keyword_ranking(
-            [{"id": b.id, "text": b.text} for b in bullets], job_description
+            [{"id": b.id, "text": b.text} for b in bullets],
+            job_description,
+            custom_keywords,
         )
         hybrid_ranking = reciprocal_rank_fusion(
             sparse_ranking,

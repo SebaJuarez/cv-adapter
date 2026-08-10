@@ -389,6 +389,70 @@ def test_requirements_section_sin_marcadores_devuelve_jd_completo():
 
 
 # ---------------------------------------------------------------------------
+# P1.3: keywords manuales del usuario (custom_keywords) entran SIEMPRE a la
+# detección aunque no estén en el JD, sin duplicar el diccionario, y con
+# frecuencia mínima 1 para que pesen en el ranking por keywords.
+# ---------------------------------------------------------------------------
+def test_extract_keywords_incluye_custom_fuera_del_jd():
+    # "zurbark" no está en el JD ni en TECH_KEYWORDS: entra igual, con
+    # frecuencia mínima 1 (si no, el canal de keywords lo ignoraría).
+    keywords, frequencies = extract_keywords(
+        "Buscamos python", custom_keywords=["zurbark", "  ZURBARK "]
+    )
+    assert "zurbark" in keywords
+    assert frequencies["zurbark"] == 1
+    # La lista se normaliza (minúsculas, sin duplicados, sin bordes).
+    assert keywords.count("zurbark") == 1
+
+
+def test_extract_keywords_custom_no_duplica_diccionario():
+    # "python" ya está en el JD y en TECH_KEYWORDS: la custom no lo duplica
+    # y respeta la frecuencia real (1), no la mínima.
+    keywords, frequencies = extract_keywords(
+        "Buscamos python", custom_keywords=["python"]
+    )
+    assert keywords.count("python") == 1
+    assert frequencies["python"] == 1
+
+
+def test_extract_keywords_custom_string_separado_por_comas():
+    # Defensivo: la config puede llegar como string crudo desde la UI.
+    keywords, _ = extract_keywords("Buscamos python", custom_keywords="zurbark, zap")
+    assert {"zurbark", "zap"}.issubset(set(keywords))
+
+
+def test_extract_keywords_sin_custom_regresion():
+    # Sin el parámetro, el comportamiento es idéntico al anterior.
+    keywords, frequencies = extract_keywords("Buscamos python y docker")
+    assert {"python", "docker"}.issubset(set(keywords))
+    assert frequencies["python"] == 1
+
+
+def test_build_keyword_ranking_incluye_bullets_de_custom():
+    bullets = [
+        {"id": "a", "text": "Administré clústeres zurbark."},
+        {"id": "b", "text": "Usé python para servicios."},
+    ]
+    # Sin custom, "zurbark" no existe para el canal de keywords.
+    assert "a" not in build_keyword_ranking(bullets, "Buscamos python")
+    # Con custom, el bullet que la contiene entra al ranking.
+    assert "a" in build_keyword_ranking(bullets, "Buscamos python", ["zurbark"])
+
+
+def test_build_keyword_report_incluye_custom():
+    master = {
+        "cv": {
+            "sections": {
+                "skills": [{"label": "Lenguajes", "details": ["python", "zurbark"]}],
+            }
+        }
+    }
+    report = build_keyword_report(master, {}, "Buscamos python", ["zurbark"])
+    assert "zurbark" in report["all_keywords"]
+    assert report["in_master"]["zurbark"] is True
+
+
+# ---------------------------------------------------------------------------
 # P0.2: extract_negated_terms detecta exclusiones explícitas del JD
 # ("no se requiere X"). Solo sobreviven términos presentes en el master
 # (mismo doble chequeo que las open keywords) y se filtran palabras

@@ -40,6 +40,12 @@ const SETTINGS_FIELDS = [
   { key: "max_education_extra", label: "Máx. certificaciones extra", type: "number" },
   { key: "max_keywords", label: "Máx. keywords ATS", type: "number" },
   {
+    key: "custom_keywords",
+    label: "Keywords ATS fijas (separadas por coma)",
+    type: "list",
+    hint: "Palabras clave que SIEMPRE entran al CV, aunque no estén en la oferta. Se agregan a las detectadas del JD (afectan el ranking de bullets y el reporte ATS).",
+  },
+  {
     key: "show_keywords_line",
     label: "Mostrar línea \"Palabras clave\" en el CV",
     type: "boolean",
@@ -65,6 +71,13 @@ function validateConfig(config) {
       if (!field.options.some((o) => o.value === value)) {
         throw new Error(`"${field.label}" tiene un valor inválido.`);
       }
+      continue;
+    }
+    if (field.type === "list") {
+      const list = Array.isArray(value) ? value : [];
+      validated[field.key] = list
+        .map((item) => String(item).trim())
+        .filter((item) => item !== "");
       continue;
     }
     if (field.type === "password") {
@@ -115,6 +128,25 @@ function drawSettingsView() {
       const fieldEl = h("div", { class: "settings-field" }, [
         h("label", {}, f.label),
         select,
+      ]);
+      if (f.hint) fieldEl.appendChild(h("span", { class: "hint" }, f.hint));
+      form.appendChild(fieldEl);
+      return;
+    }
+    if (f.type === "list") {
+      const input = h("input", {
+        type: "text",
+        value: (Array.isArray(state.config[f.key]) ? state.config[f.key] : []).join(", "),
+      });
+      input.addEventListener("input", () => {
+        state.config[f.key] = input.value
+          .split(",")
+          .map((item) => item.trim())
+          .filter((item) => item !== "");
+      });
+      const fieldEl = h("div", { class: "settings-field" }, [
+        h("label", {}, f.label),
+        input,
       ]);
       if (f.hint) fieldEl.appendChild(h("span", { class: "hint" }, f.hint));
       form.appendChild(fieldEl);

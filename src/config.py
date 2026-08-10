@@ -57,6 +57,11 @@ DEFAULTS: Dict[str, Any] = {
     # que las keywords críticas del JD (frecuencia >= 2) queden cubiertas
     # por alguna entrada seleccionada. 0 desactiva la pasada.
     "max_global_coverage_swaps": 3,
+    # Keywords ATS manuales (P1.3): el usuario fija términos que SIEMPRE
+    # entran al CV aunque la oferta no los mencione. Se agregan a las
+    # detectadas del JD (afectan keywords_detected, el ranking por
+    # keywords y el reporte ATS).
+    "custom_keywords": [],
 }
 
 # Claves de config que cambian el resultado de SelectionEngine.select() /
@@ -85,6 +90,7 @@ _SELECTION_CONFIG_KEYS = (
     "dense_weight",
     "negation_penalty",
     "max_global_coverage_swaps",
+    "custom_keywords",
 )
 
 

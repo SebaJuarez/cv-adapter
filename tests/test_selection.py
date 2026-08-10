@@ -284,3 +284,34 @@ def test_global_coverage_no_fuerza_keyword_negada(coverage_engine):
     assert "kubernetes" in sel["negated_terms"]
     assert [e["index"] for e in sel["selected_experience"]] == [0, 1]
     assert [e["index"] for e in sel["excluded_experience"]] == [2]
+
+
+# ---------------------------------------------------------------------------
+# P1.3: las keywords manuales del usuario (config custom_keywords) son
+# mandatorias: van PRIMERO en keywords_detected aunque la oferta no las
+# mencione.
+# ---------------------------------------------------------------------------
+def test_select_custom_keywords_van_primero(config, master_cv, job_description, tmp_path):
+    import numpy as np
+
+    e = SelectionEngine(
+        {
+            **config,
+            "use_reranker": False,
+            "sparse_weight": 0.0,
+            "dense_weight": 0.0,
+            "custom_keywords": ["zurbark"],
+        },
+        cache_dir=tmp_path / "sel_cache_custom",
+    )
+    e.store = IndexStore(tmp_path / "idx_custom")
+
+    class FakeDense:
+        def encode(self, texts, **kwargs):
+            return np.zeros((len(texts), 4))
+
+    e._get_dense_model = lambda: FakeDense()
+
+    sel = e.select(master_cv, job_description)
+    assert sel["keywords_detected"][0] == "zurbark"
+    assert "python" in sel["keywords_detected"]

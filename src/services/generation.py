@@ -40,7 +40,12 @@ def generate_cv(
         job_description=job_description,
         manual_keywords=manual_keywords or [],
     )
-    keyword_report = build_keyword_report(master_cv, target_cv, job_description)
+    keyword_report = build_keyword_report(
+        master_cv,
+        target_cv,
+        job_description,
+        custom_keywords=config.get("custom_keywords"),
+    )
     return target_cv, selection, keyword_report
 
 

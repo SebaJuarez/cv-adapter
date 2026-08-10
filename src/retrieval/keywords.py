@@ -11,7 +11,7 @@ Nuevas features:
 """
 
 import re
-from typing import Any, Dict, List, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from .sparse import get_synonym_variants, keyword_in_text
 
@@ -121,12 +121,41 @@ def _count_keyword_occurrences(text: str, keyword: str) -> int:
     return len(re.findall(pattern, text))
 
 
-def extract_keywords(job_description: str) -> Tuple[List[str], Dict[str, int]]:
+def _normalize_custom_keywords(custom_keywords: Optional[List[str]]) -> List[str]:
+    """Normaliza las keywords manuales del usuario (P1.3): minúsculas, sin
+    espacios de bordes y sin duplicados. Acepta listas o un string separado
+    por comas (defensivo: la config puede llegar como JSON crudo desde la
+    UI)."""
+    if custom_keywords is None:
+        return []
+    if isinstance(custom_keywords, str):
+        custom_keywords = [part for part in custom_keywords.split(",")]
+    seen: Set[str] = set()
+    normalized = []
+    for raw in custom_keywords:
+        kw = str(raw).strip().lower()
+        if kw and kw not in seen:
+            seen.add(kw)
+            normalized.append(kw)
+    return normalized
+
+
+def extract_keywords(
+    job_description: str,
+    custom_keywords: Optional[List[str]] = None,
+) -> Tuple[List[str], Dict[str, int]]:
     """Extrae keywords técnicas del JD usando el diccionario curado + bigramas dinámicos.
+
+    P1.3: `custom_keywords` son keywords manuales del usuario (settings)
+    que entran SIEMPRE aunque no estén en la oferta — su frecuencia queda
+    en max(ocurrencias en el JD, 1) para que pesen en el ranking por
+    keywords como cualquier término detectado, sin necesidad de que el JD
+    las mencione.
 
     Returns:
         (keywords_list, frequencies_dict)
     """
+    custom = _normalize_custom_keywords(custom_keywords)
     normalized = _normalize_text(job_description)
     raw = (job_description or "").lower()
     # La normalización no saca la puntuación: "docker." no es "docker", y
@@ -165,6 +194,16 @@ def extract_keywords(job_description: str) -> Tuple[List[str], Dict[str, int]]:
             found.add(kw)
             frequencies[kw] = _count_keyword_occurrences(job_description, kw)
 
+    # Keywords manuales del usuario (P1.3): se agregan siempre, con
+    # frecuencia mínima 1 para que el ranking por keywords las tome en
+    # serio aunque la oferta no las mencione. Si ya estaban detectadas,
+    # se respeta la frecuencia real del JD.
+    for kw in custom:
+        if kw in found:
+            continue
+        found.add(kw)
+        frequencies[kw] = max(_count_keyword_occurrences(job_description, kw), 1)
+
     # Ordenar por frecuencia descendente, luego alfabéticamente
     sorted_keywords = sorted(found, key=lambda k: (-frequencies.get(k, 0), k))
     return sorted_keywords, frequencies
@@ -173,6 +212,7 @@ def extract_keywords(job_description: str) -> Tuple[List[str], Dict[str, int]]:
 def build_keyword_ranking(
     bullets: List[Dict[str, Any]],
     job_description: str,
+    custom_keywords: Optional[List[str]] = None,
 ) -> List[str]:
     """Rankea bullets por peso de keywords técnicas del JD que contienen
     literalmente (o alguna variante sinónima), ponderado por la frecuencia
@@ -189,13 +229,15 @@ def build_keyword_ranking(
     Args:
         bullets: lista de dicts con al menos "id" y "text".
         job_description: texto completo de la oferta.
+        custom_keywords: keywords manuales del usuario (P1.3); se pasan a
+            extract_keywords para que pesen como cualquier otra.
 
     Returns:
         Lista de bullet_ids ordenada por peso de keywords descendente.
     """
     from .sparse import get_synonym_variants
 
-    jd_keywords, frequencies = extract_keywords(job_description)
+    jd_keywords, frequencies = extract_keywords(job_description, custom_keywords)
     if not jd_keywords:
         return []
 
@@ -298,6 +340,7 @@ def build_keyword_report(
     master_cv: Dict[str, Any],
     target_cv: Dict[str, Any],
     job_description: str,
+    custom_keywords: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """Construye el keyword_report para el frontend.
 
@@ -321,7 +364,7 @@ def build_keyword_report(
     chip amarillo del frontend solo aparece cuando la keyword realmente está
     en el master, y `locations` le dice al click EXACTAMENTE dónde.
     """
-    keywords, frequencies = extract_keywords(job_description)
+    keywords, frequencies = extract_keywords(job_description, custom_keywords)
     master_pieces = _collect_master_texts(master_cv)
     target_corpus = _corpus_text(target_cv)
 
