@@ -229,6 +229,47 @@ textarea { resize: vertical; min-height: 2.4em; }
 
 textarea.highlight-text { min-height: 1.6em; resize: none; overflow: hidden; }
 
+/* P2.3: la oferta laboral es un contenteditable (permite <mark> bidireccional) */
+.jd-editable {
+  width: 100%;
+  background: var(--paper);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius);
+  padding: 0.45rem 0.55rem;
+  line-height: 1.4;
+  min-height: 12.5em;
+  max-height: 28em;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.jd-editable:empty::before {
+  content: attr(data-placeholder);
+  color: var(--ink-faint);
+  pointer-events: none;
+}
+
+.jd-editable:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+mark.jd-mark {
+  background: #ffd54a;
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
+  cursor: pointer;
+}
+
+mark.jd-mark:hover { background: #f5b942; }
+
+/* Flash del bullet que matchea una keyword del JD (P2.3) */
+.highlight-row.bullet-flash { animation: bullet-flash 1.4s ease-out; }
+
+@keyframes bullet-flash {
+  0%, 60% { background: color-mix(in srgb, var(--accent) 22%, var(--paper-raised)); }
+  100% { background: transparent; }
+}
+
 /* ------------------------------------------------------------ bullets */
 
 .highlights { margin-top: 0.4rem; }

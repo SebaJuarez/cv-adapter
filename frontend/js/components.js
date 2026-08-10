@@ -73,7 +73,8 @@ function renderSectionBlock(name, entries, ctx) {
   if (ctx.isTarget && regeneratable.includes(name)) {
     regenBtn = h("button", { class: "btn-icon regen", title: "Regenerar esta sección con la IA", "aria-label": "Regenerar esta sección con la IA" }, "↻");
     regenBtn.addEventListener("click", async () => {
-      const jd = $("#job-description").value;
+      // La oferta es un contenteditable (P2.3): se lee como innerText.
+      const jd = $("#job-description").innerText;
       if (!jd.trim()) {
         await showMessageModal("Falta la oferta laboral", "Primero pegá la oferta laboral para poder regenerar esta sección.");
         return;
