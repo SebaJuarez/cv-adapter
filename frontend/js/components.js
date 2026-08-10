@@ -57,7 +57,7 @@ function renderSectionBlock(name, entries, ctx) {
       const sections = ctx.doc.cv.sections;
       const removed = sections[name];
       const removedType = ctx.sectionTypes ? ctx.sectionTypes[name] : null;
-      rememberUndo("Eliminar sección " + humanizeSectionName(name), () => {
+      rememberUndo(ctx.isTarget ? "apply" : "master", "Eliminar sección " + humanizeSectionName(name), () => {
         sections[name] = removed;
         if (ctx.sectionTypes && removedType !== null) ctx.sectionTypes[name] = removedType;
         ctx.onRerender();
@@ -153,7 +153,7 @@ function renderTextList(sectionName, entries, ctx) {
     const del = h("button", {
       class: "btn-icon danger", title: "Sacar", "aria-label": "Sacar ítem",
       onclick: () => {
-        rememberUndo("Eliminar ítem", () => { entries.splice(i, 0, value); ctx.onRerender(); });
+        rememberUndo(ctx.isTarget ? "apply" : "master", "Eliminar ítem", () => { entries.splice(i, 0, value); ctx.onRerender(); });
         entries.splice(i, 1);
         ctx.onRerender();
       },
@@ -210,7 +210,7 @@ function renderLabelDetailsList(sectionName, entries, ctx) {
     const del = h("button", {
       class: "btn-icon danger", title: "Sacar", "aria-label": "Sacar ítem",
       onclick: () => {
-        rememberUndo("Eliminar ítem", () => { entries.splice(i, 0, entry); ctx.onRerender(); });
+        rememberUndo(ctx.isTarget ? "apply" : "master", "Eliminar ítem", () => { entries.splice(i, 0, entry); ctx.onRerender(); });
         entries.splice(i, 1);
         ctx.onRerender();
       },
@@ -298,7 +298,7 @@ function renderEntryCard(sectionName, entries, entry, index, ctx) {
         confirmLabel: "Eliminar",
       });
       if (!confirmed) return;
-      rememberUndo("Eliminar entrada", () => { entries.splice(index, 0, entry); ctx.onRerender(); });
+      rememberUndo(ctx.isTarget ? "apply" : "master", "Eliminar entrada", () => { entries.splice(index, 0, entry); ctx.onRerender(); });
       entries.splice(index, 1);
       ctx.onRerender();
     },
@@ -374,7 +374,7 @@ function renderHighlights(entry, ctx, sectionName, entryIndex) {
     const del = h("button", {
       class: "btn-icon danger", title: "Sacar bullet", "aria-label": "Sacar bullet",
       onclick: () => {
-        rememberUndo("Eliminar bullet", () => { entry.highlights.splice(i, 0, text); ctx.onRerender(); });
+        rememberUndo(ctx.isTarget ? "apply" : "master", "Eliminar bullet", () => { entry.highlights.splice(i, 0, text); ctx.onRerender(); });
         entry.highlights.splice(i, 1);
         ctx.onRerender();
       },

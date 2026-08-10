@@ -6,7 +6,7 @@ import { confirmAction } from "./modals.js";
 import { setGlobalStatus } from "./notify.js";
 import { loadSettingsView } from "./views/settings.js";
 import { loadHistoryView } from "./views/history.js";
-import { dirty, hasUnsavedChanges, state } from "./state.js";
+import { dirty, hasUnsavedChanges, state, updateUndoButton } from "./state.js";
 
 "use strict";
 
@@ -21,7 +21,7 @@ import { dirty, hasUnsavedChanges, state } from "./state.js";
    - Pullback ordenado por relevancia
    - Resumen del resultado + keyword report unificado (incluye manuales)
    - Contenido no incluido agrupado, toasts, progreso, dirty state,
-     filtro/colapso en master, undo del último borrado
+     filtro/colapso en master, undo multi-nivel por vista (P2.1)
    ===================================================================== */
 
 // --------------------------------------------------- altura de la topbar
@@ -64,6 +64,7 @@ async function switchView(btn) {
   document.querySelectorAll(".view").forEach((v) => {
     v.classList.toggle("is-active", v.id === "view-" + btn.dataset.view);
   });
+  updateUndoButton();
   const heading = document.querySelector(".view.is-active .view-head h1");
   if (heading) heading.focus({ preventScroll: true });
 }

@@ -16,7 +16,6 @@ const state = {
   currentRunId: null,
   masterFilter: "",
   collapsedMaster: {},
-  lastUndo: null,
 };
 
 const dirty = { master: false, apply: false, settings: false };
@@ -87,35 +86,62 @@ function markDirty(view) {
 
 document.addEventListener("input", (e) => {
   if (e.target && e.target.id === "master-filter") return;
-  const activeView = document.querySelector(".view.is-active");
-  if (!activeView) return;
-  if (activeView.id === "view-master") markDirty("master");
-  else if (activeView.id === "view-apply") markDirty("apply");
-  else if (activeView.id === "view-settings") markDirty("settings");
+  const view = activeViewName();
+  if (view === "master") markDirty("master");
+  else if (view === "apply") markDirty("apply");
+  else if (view === "settings") markDirty("settings");
 }, true);
 
 // ---------------------------------------------------------------- undo
+// P2.1: historial por vista (master/apply), hasta MAX_UNDO_STACK niveles.
+// El botón deshace la última acción de la vista ACTIVA (muestra el conteo).
 
-function rememberUndo(label, restore) {
-  state.lastUndo = { label, restore };
+const MAX_UNDO_STACK = 10;
+const undoStacks = { master: [], apply: [] };
+
+function activeViewName() {
+  const activeView = document.querySelector(".view.is-active");
+  if (!activeView) return null;
+  if (activeView.id === "view-master") return "master";
+  if (activeView.id === "view-apply") return "apply";
+  if (activeView.id === "view-history") return "history";
+  return "settings";
+}
+
+function updateUndoButton() {
   const btn = $("#undo-btn");
-  if (btn) {
-    btn.hidden = false;
-    btn.title = "Deshacer: " + label;
+  if (!btn) return;
+  const stack = undoStacks[activeViewName()] || [];
+  const last = stack[stack.length - 1];
+  if (!last) {
+    btn.hidden = true;
+    btn.textContent = "↩ Deshacer";
+    btn.title = "";
+    return;
   }
+  btn.hidden = false;
+  btn.title = "Deshacer: " + last.label;
+  btn.textContent = stack.length > 1 ? "↩ Deshacer (" + stack.length + ")" : "↩ Deshacer";
+}
+
+function rememberUndo(view, label, restore) {
+  if (!undoStacks[view]) return;
+  const stack = undoStacks[view];
+  stack.push({ label, restore });
+  if (stack.length > MAX_UNDO_STACK) stack.shift();
+  updateUndoButton();
 }
 
 function undoLast() {
-  if (!state.lastUndo) return;
-  const undo = state.lastUndo;
-  state.lastUndo = null;
-  const btn = $("#undo-btn");
-  if (btn) btn.hidden = true;
+  const stack = undoStacks[activeViewName()];
+  if (!stack || !stack.length) return;
+  const undo = stack.pop();
   undo.restore();
+  updateUndoButton();
   toast("Se deshizo: " + undo.label + ".");
 }
 
 $("#undo-btn").addEventListener("click", undoLast);
 
 
-export { dirty, hasUnsavedChanges, markDirty, rememberUndo, snapshotView, state, undoLast };
+export { activeViewName, dirty, hasUnsavedChanges, markDirty, rememberUndo, snapshotView, state, undoLast, updateUndoButton };
