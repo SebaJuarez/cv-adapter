@@ -31,7 +31,8 @@ def chunk_text(text: str, max_tokens: int = 200, overlap: int = 50) -> list[str]
     """Divide el texto en chunks de aproximadamente max_tokens palabras
     con overlap para no perder contexto en los bordes.
 
-    Usado para el JD antes de pasarlo al dense encoder (MiniLM trunca a 256 tokens).
+    Usado para el JD antes de pasarlo al encoder denso (los sentence-transformers
+    truncan los textos largos, así que el JD completo se divide en chunks).
     """
     words = text.split()
     if len(words) <= max_tokens:

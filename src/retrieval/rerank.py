@@ -16,7 +16,7 @@ class CrossEncoderReranker:
 
     def __init__(
         self,
-        model_name: str = "cross-encoder/ms-marco-MiniLM-L-6-v2",
+        model_name: str = "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1",
         device: str = "cpu",
     ):
         from sentence_transformers import CrossEncoder
