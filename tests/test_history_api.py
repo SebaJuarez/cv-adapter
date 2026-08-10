@@ -137,6 +137,40 @@ class TestListRunsFilters:
         assert body["total"] == 1
         assert body["runs"][0]["offer_title"] == "Backend Engineer (Python)"
 
+    def test_filtro_por_rango_de_score(self, client, tmp_path):
+        # P2.4: min_score/max_score filtran por ats_score (0-100).
+        path = tmp_path / "run_history.json"
+        self._add_run_con_score("Backend Engineer", 85, path=path)
+        self._add_run_con_score("Data Analyst", 60, path=path)
+        self._add_run_con_score("QA Engineer", 40, path=path)
+
+        res = client.get("/api/history/runs", params={"min_score": 60})
+        body = res.json()
+        assert body["total"] == 2
+        assert {r["offer_title"] for r in body["runs"]} == {
+            "Backend Engineer", "Data Analyst",
+        }
+
+        res = client.get("/api/history/runs", params={"min_score": 50, "max_score": 70})
+        body = res.json()
+        assert body["total"] == 1
+        assert body["runs"][0]["offer_title"] == "Data Analyst"
+
+        # Los conteos de estado ignoran el filtro de score (mismos chips).
+        res = client.get("/api/history/runs", params={"min_score": 80})
+        assert res.json()["status_counts"] == {"pendiente": 3}
+
+    def _add_run_con_score(self, title_line, score, path):
+        report = {
+            "all_keywords": [],
+            "frequencies": {},
+            "missing_in_target": [],
+            "not_in_master": [],
+            "ats_impact_score": score,
+            "critical_missing": [],
+        }
+        return history_mod.add_run(title_line, report, path=path)
+
     def test_filtro_por_estado_y_status_counts(self, client, tmp_path):
         path = tmp_path / "run_history.json"
         self._add_run("Backend Engineer", status="aplicado", path=path)

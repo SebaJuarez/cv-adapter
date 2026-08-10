@@ -447,6 +447,21 @@ textarea.highlight-text { min-height: 1.6em; resize: none; overflow: hidden; }
 
 .filter-bar input { flex: 1; }
 
+/* Rango de score ATS (P2.4) */
+.score-filter {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.score-filter input {
+  width: 4.5rem;
+  flex: 0 0 auto;
+}
+
 .filter-count {
   font-family: var(--font-mono);
   font-size: 0.74rem;

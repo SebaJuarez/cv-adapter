@@ -7,7 +7,7 @@ el texto de la oferta), el CV guardado para previsualizar, la edición del
 seguimiento de la aplicación y la agregación de keywords faltantes del master.
 """
 
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, HTTPException, Response
 
@@ -49,14 +49,17 @@ def _summarize(run: Dict[str, Any]) -> Dict[str, Any]:
 def list_runs(
     q: str = "",
     status: str = "",
+    min_score: Optional[int] = None,
+    max_score: Optional[int] = None,
     limit: int = DEFAULT_PAGE_SIZE,
     offset: int = 0,
 ) -> Dict[str, Any]:
-    """Lista de corridas con filtros (`q` por texto, `status`) y paginación.
+    """Lista de corridas con filtros (`q` por texto, `status`, rango de
+    `ats_score` con `min_score`/`max_score`) y paginación.
 
     `status_counts` cuenta las corridas por estado de aplicación sobre el
-    resultado filtrado por `q` (ignora el filtro `status`) para que el
-    frontend pueda mostrar chips con conteos.
+    resultado filtrado por `q` (ignora los filtros `status` y de score) para
+    que el frontend pueda mostrar chips con conteos.
     """
     runs = _load_sorted_runs()
     if q:
@@ -67,6 +70,10 @@ def list_runs(
         st = (r.get("application") or {}).get("status") or "pendiente"
         status_counts[st] = status_counts.get(st, 0) + 1
 
+    if min_score is not None:
+        runs = [r for r in runs if int(r.get("ats_score") or 0) >= min_score]
+    if max_score is not None:
+        runs = [r for r in runs if int(r.get("ats_score") or 0) <= max_score]
     if status:
         runs = [r for r in runs if ((r.get("application") or {}).get("status") or "pendiente") == status]
 

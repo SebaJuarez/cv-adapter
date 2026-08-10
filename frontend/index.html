@@ -150,6 +150,12 @@
     <div class="history-toolbar">
       <div class="filter-bar">
         <input type="search" id="history-search" placeholder="Buscar por oferta…" aria-label="Buscar corridas por oferta">
+        <label class="score-filter">
+          ATS
+          <input type="number" id="history-min-score" min="0" max="100" placeholder="mín" aria-label="Score ATS mínimo">
+          –
+          <input type="number" id="history-max-score" min="0" max="100" placeholder="máx" aria-label="Score ATS máximo">
+        </label>
         <span id="history-total" class="filter-count" hidden></span>
       </div>
       <div id="history-status-chips" class="status-chips" role="group" aria-label="Filtrar por estado de la aplicación"></div>

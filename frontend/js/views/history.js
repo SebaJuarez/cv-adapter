@@ -35,7 +35,7 @@ function formatAppliedAt(dateStr) {
 
 // ------------------------------------------------------------ estado local
 
-let filters = { q: "", status: "" };
+let filters = { q: "", status: "", minScore: "", maxScore: "" };
 let page = { runs: [], total: 0, offset: 0, statusCounts: {}, loaded: false };
 let loading = false;
 
@@ -67,6 +67,8 @@ async function fetchPage(reset) {
   const params = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String(offset) });
   if (filters.q) params.set("q", filters.q);
   if (filters.status) params.set("status", filters.status);
+  if (filters.minScore !== "") params.set("min_score", filters.minScore);
+  if (filters.maxScore !== "") params.set("max_score", filters.maxScore);
   try {
     const body = await api("/api/history/runs?" + params.toString());
     page = {
@@ -95,7 +97,7 @@ function renderRuns() {
 
   if (!page.loaded) return;
 
-  if (!page.runs.length && !filters.q && !filters.status) {
+  if (!page.runs.length && !filters.q && !filters.status && !filters.minScore && !filters.maxScore) {
     list.appendChild(h("p", { class: "history-empty" },
       "Todavía no hay corridas registradas. Generá un CV para una oferta y aparece acá automáticamente."));
     loadMoreBtn.hidden = true;
@@ -151,7 +153,11 @@ function updateTotal() {
 function clearFilters() {
   filters.q = "";
   filters.status = "";
+  filters.minScore = "";
+  filters.maxScore = "";
   $("#history-search").value = "";
+  $("#history-min-score").value = "";
+  $("#history-max-score").value = "";
   renderStatusChips();
   fetchPage(true);
 }
@@ -580,6 +586,19 @@ $("#history-search").addEventListener("input", (e) => {
     fetchPage(true);
   }, 250);
 });
+
+// P2.4: rango de score ATS (debounce como el buscador; vacío = sin filtro).
+let scoreTimer = null;
+function scheduleScoreFilter(input) {
+  clearTimeout(scoreTimer);
+  scoreTimer = setTimeout(() => {
+    filters.minScore = $("#history-min-score").value;
+    filters.maxScore = $("#history-max-score").value;
+    fetchPage(true);
+  }, 250);
+}
+$("#history-min-score").addEventListener("input", scheduleScoreFilter);
+$("#history-max-score").addEventListener("input", scheduleScoreFilter);
 
 $("#history-load-more").addEventListener("click", () => fetchPage(false));
 
