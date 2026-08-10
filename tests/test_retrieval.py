@@ -453,6 +453,54 @@ def test_build_keyword_report_incluye_custom():
 
 
 # ---------------------------------------------------------------------------
+# P1.1: keywords abiertas — términos técnicos fuera del diccionario que
+# viven en JD y master. Sin master_corpus (firma original) no se detectan:
+# regresión de firma, el parámetro es opcional y no cambia el default.
+# ---------------------------------------------------------------------------
+def test_extract_open_keywords_detecta_fuera_del_diccionario():
+    keywords, _ = extract_keywords(
+        "Buscamos dev con zurbark y python.",
+        master_corpus="administro clústeres zurbark en producción.",
+    )
+    assert "zurbark" in keywords
+    assert "python" in keywords
+
+
+def test_extract_open_keywords_requiere_master():
+    # Sin master_corpus no hay dónde verificar el término: no se detecta.
+    keywords, _ = extract_keywords("Buscamos dev con zurbark y python.")
+    assert "zurbark" not in keywords
+
+
+def test_extract_open_keywords_filtra_genericas_de_ofertas():
+    # "experiencia" es genérica de ofertas (GENERIC_JD_WORDS, compartido
+    # con la negación): aunque exista en el master, no es un término
+    # técnico y no debe detectarse.
+    keywords, _ = extract_keywords(
+        "Buscamos experiencia en zurbark.",
+        master_corpus="experiencia previa en zurbark.",
+    )
+    assert "experiencia" not in keywords
+    assert "zurbark" in keywords
+
+
+def test_extract_open_keywords_detecta_bigram():
+    keywords, _ = extract_keywords(
+        "Manejamos sistemas de zurbark core.",
+        master_corpus="migré sistemas de zurbark core a gcp.",
+    )
+    assert "zurbark core" in keywords
+
+
+def test_extract_open_keywords_no_duplica_diccionario():
+    keywords, _ = extract_keywords(
+        "Buscamos python en producción.",
+        master_corpus="uso python en producción.",
+    )
+    assert keywords.count("python") == 1
+
+
+# ---------------------------------------------------------------------------
 # P0.2: extract_negated_terms detecta exclusiones explícitas del JD
 # ("no se requiere X"). Solo sobreviven términos presentes en el master
 # (mismo doble chequeo que las open keywords) y se filtran palabras

@@ -208,7 +208,11 @@ def main() -> None:
         set_stemming(True)
 
         dense_ranking, _ = dense_idx.query(chunk_embs, top_k=50)
-        kw_ranking = build_keyword_ranking(corpus, jd)
+        kw_ranking = build_keyword_ranking(
+            corpus,
+            jd,
+            master_corpus=" ".join(b["text"] for b in corpus).lower(),
+        )
 
         results["sparse (stem on)"].append(
             (recall_at_k(sparse_stem_ranking, relevant), mrr_at_k(sparse_stem_ranking, relevant))

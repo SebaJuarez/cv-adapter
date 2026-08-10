@@ -58,6 +58,32 @@ TECH_ALLOWLIST: frozenset[str] = frozenset({
 
 STOPWORDS: frozenset[str] = (STOPWORDS_EN | STOPWORDS_ES) - TECH_ALLOWLIST
 
+# Palabras genéricas de ofertas laborales que NO son términos técnicos
+# aunque aparezcan en contextos de extracción ("No se requiere EXPERIENCIA
+# en...", "Buscamos un PERFIL backend"). Sin este filtro, "experiencia" o
+# "conocimientos" se colarían como keywords abiertas (P1.1) o términos
+# negados (P0.2). Compartido entre jd_processor y keywords (un módulo hoja
+# no puede importar al otro sin circularidad).
+GENERIC_JD_WORDS: frozenset[str] = frozenset({
+    # Español
+    "experiencia", "conocimiento", "conocimientos", "manejo", "nivel",
+    "años", "año", "ingles", "inglés", "titulo", "título", "estudios",
+    "carrera", "universidad", "deseable", "excluyente", "requerido",
+    "requerida", "requisito", "requisitos", "obligatorio", "trabajo",
+    "laboral", "perfil", "puesto", "cargo", "empresa", "idioma", "idiomas",
+    "modalidad", "jornada", "horario", "salario", "sueldo", "beneficios",
+    "búsqueda", "busqueda", "candidato", "candidatos", "disponibilidad",
+    "remoto", "remota", "híbrido", "hibrido", "hibrida", "híbrida",
+    "presencial", "senior", "junior", "semi", "mid", "sr", "jr", "ssr",
+    # Inglés
+    "experience", "years", "year", "knowledge", "level", "english",
+    "spanish", "degree", "required", "requirement", "requirements",
+    "candidate", "candidates", "job", "work", "role", "position",
+    "company", "skills", "skill", "bachelor", "master", "university",
+    "desired", "preferred", "must", "need", "needed", "remote", "hybrid",
+    "onsite", "salary", "benefits", "language", "languages", "availability",
+})
+
 
 def is_stopword(token: str) -> bool:
     return token.lower() in STOPWORDS

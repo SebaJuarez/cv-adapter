@@ -11,7 +11,7 @@ import re
 
 from .keywords import extract_keywords
 from .sparse import keyword_in_text
-from .stopwords import is_stopword
+from .stopwords import GENERIC_JD_WORDS, is_stopword
 
 
 def extract_requirements_section(jd: str) -> str:
@@ -83,40 +83,17 @@ _NEGATION_PATTERNS = (
 
 _SENTENCE_SPLIT_RE = re.compile(r"[.!?\n]+")
 
-# Palabras genéricas de ofertas que NO son términos técnicos aunque
-# aparezcan en un fragmento negado ("No se requiere EXPERIENCIA en...").
-# Sin este filtro, "experiencia" penalizaría cualquier bullet del master
-# que la mencione — el caso de ruido más probable de la heurística.
-_GENERIC_JD_WORDS = frozenset({
-    # Español
-    "experiencia", "conocimiento", "conocimientos", "manejo", "nivel",
-    "años", "año", "ingles", "inglés", "titulo", "título", "estudios",
-    "carrera", "universidad", "deseable", "excluyente", "requerido",
-    "requerida", "requisito", "requisitos", "obligatorio", "trabajo",
-    "laboral", "perfil", "puesto", "cargo", "empresa", "idioma", "idiomas",
-    "modalidad", "jornada", "horario", "salario", "sueldo", "beneficios",
-    "búsqueda", "busqueda", "candidato", "candidatos", "disponibilidad",
-    "remoto", "remota", "híbrido", "hibrido", "hibrida", "híbrida",
-    "presencial", "senior", "junior", "semi", "mid", "sr", "jr", "ssr",
-    # Inglés
-    "experience", "years", "year", "knowledge", "level", "english",
-    "spanish", "degree", "required", "requirement", "requirements",
-    "candidate", "candidates", "job", "work", "role", "position",
-    "company", "skills", "skill", "bachelor", "master", "university",
-    "desired", "preferred", "must", "need", "needed", "remote", "hybrid",
-    "onsite", "salary", "benefits", "language", "languages", "availability",
-})
-
 
 def _clean_negation_tokens(fragment: str) -> list[str]:
     """Tokens candidatos de un fragmento negado: minúsculas, sin stopwords
-    ni palabras genéricas de ofertas. Solo los tokens que representan
+    ni palabras genéricas de ofertas (GENERIC_JD_WORDS, compartido con el
+    extractor de keywords abiertas). Solo los tokens que representan
     contenido técnico potencial quedan para el doble chequeo con master."""
     words = re.findall(r"[a-zA-ZáéíóúñüÁÉÍÓÚÑÜ][\w+#.-]*", fragment)
     tokens = []
     for word in words:
         low = word.lower()
-        if is_stopword(low) or low in _GENERIC_JD_WORDS:
+        if is_stopword(low) or low in GENERIC_JD_WORDS:
             continue
         if len(low) < 3:
             continue

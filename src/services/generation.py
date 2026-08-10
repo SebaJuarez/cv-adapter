@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Optional
 from ..config import load_config
 from ..llm_node import generate_section_selection, generate_selection
 from ..merge import build_section_entries, build_target_cv
-from ..retrieval.keywords import build_keyword_report
+from ..retrieval.keywords import _corpus_text, build_keyword_report
 
 
 def generate_cv(
@@ -45,6 +45,7 @@ def generate_cv(
         target_cv,
         job_description,
         custom_keywords=config.get("custom_keywords"),
+        master_corpus=_corpus_text(master_cv),
     )
     return target_cv, selection, keyword_report
 

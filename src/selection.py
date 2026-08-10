@@ -761,7 +761,10 @@ class SelectionEngine:
         # del top-N de una entrada por poco margen de score, se prioriza su
         # inclusión sobre el bullet de menor score, sin agregar contenido nuevo.
         custom_keywords = self.config.get("custom_keywords")
-        _jd_kws, _jd_freqs = extract_keywords(job_description, custom_keywords)
+        master_corpus = _corpus_text(master_cv)
+        _jd_kws, _jd_freqs = extract_keywords(
+            job_description, master_corpus=master_corpus, custom_keywords=custom_keywords
+        )
         critical_keyword_variants = {
             kw: get_synonym_variants(kw)
             for kw in _jd_kws
@@ -776,6 +779,16 @@ class SelectionEngine:
         max_keywords = self.config.get("max_keywords", 10)
         custom_normalized = _normalize_custom_keywords(custom_keywords)
         keywords_detected = list(dict.fromkeys(custom_normalized + _jd_kws))[:max_keywords]
+        # P0.2: una keyword que el JD excluye explícitamente ("no se
+        # requiere X") no puede figurar como candidata ATS — merge.py la
+        # verificaría contra el master y la dejaría sobrevivir en la línea
+        # de keywords, mostrando como ventaja lo que la oferta descarta.
+        if negated_terms:
+            keywords_detected = [
+                kw
+                for kw in keywords_detected
+                if not any(v in negated_terms for v in get_synonym_variants(kw))
+            ]
 
         summary_index, summary_index_mode = self._resolve_summary_index(master_cv, query_text)
 
@@ -816,6 +829,7 @@ class SelectionEngine:
                 [{"id": b.id, "text": b.text} for b in bullets],
                 job_description,
                 custom_keywords,
+                master_corpus,
             )
             hybrid_ranking = reciprocal_rank_fusion(
                 sparse_ranking,
@@ -1018,7 +1032,10 @@ class SelectionEngine:
         bullets = _extract_bullets_from_section(master_cv, section_name)
 
         custom_keywords = self.config.get("custom_keywords")
-        _jd_kws, _jd_freqs = extract_keywords(job_description, custom_keywords)
+        master_corpus = _corpus_text(master_cv)
+        _jd_kws, _jd_freqs = extract_keywords(
+            job_description, master_corpus=master_corpus, custom_keywords=custom_keywords
+        )
         critical_keyword_variants = {
             kw: get_synonym_variants(kw)
             for kw in _jd_kws
@@ -1055,6 +1072,7 @@ class SelectionEngine:
             [{"id": b.id, "text": b.text} for b in bullets],
             job_description,
             custom_keywords,
+            master_corpus,
         )
         hybrid_ranking = reciprocal_rank_fusion(
             sparse_ranking,

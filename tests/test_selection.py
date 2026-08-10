@@ -157,6 +157,10 @@ def test_select_penaliza_bullet_de_termino_negado(config, tmp_path):
     # El bullet que NO matchea términos negados queda idéntico (la base de
     # retrieval es la misma; la penalización es selectiva por bullet).
     assert sel_pen["bullet_scores"][ci_id] == sel_base["bullet_scores"][ci_id]
+    # La keyword negada no puede figurar como candidata ATS: merge.py la
+    # dejaría sobrevivir en la línea de keywords mostrando lo que la
+    # oferta descarta.
+    assert "soporte técnico" not in sel_pen["keywords_detected"]
     # El bullet de soporte técnico se multiplica por negation_penalty.
     assert sel_pen["bullet_scores"][soporte_id] == round(
         sel_base["bullet_scores"][soporte_id] * 0.3, 3
@@ -315,3 +319,46 @@ def test_select_custom_keywords_van_primero(config, master_cv, job_description, 
     sel = e.select(master_cv, job_description)
     assert sel["keywords_detected"][0] == "zurbark"
     assert "python" in sel["keywords_detected"]
+
+
+# ---------------------------------------------------------------------------
+# P1.1: keywords abiertas — un término fuera del diccionario, presente en
+# el master y en el JD (frecuencia 2), entra a keywords_detected.
+# ---------------------------------------------------------------------------
+def test_select_detecta_open_keyword_del_master(config, tmp_path):
+    import numpy as np
+
+    master = {
+        "cv": {
+            "name": "Test User",
+            "sections": {
+                "experience": [
+                    {
+                        "company": "Empresa A",
+                        "position": "SRE",
+                        "highlights": ["Operé clústeres zurbark en producción."],
+                    }
+                ],
+                "skills": [],
+                "projects": [],
+                "education": [],
+            },
+        },
+        "design": {"theme": "engineeringresumes"},
+    }
+    jd = "Buscamos python y zurbark. Valoramos zurbark en producción."
+
+    e = SelectionEngine(
+        {**config, "use_reranker": False, "sparse_weight": 0.0, "dense_weight": 0.0},
+        cache_dir=tmp_path / "sel_cache_open",
+    )
+    e.store = IndexStore(tmp_path / "idx_open")
+
+    class FakeDense:
+        def encode(self, texts, **kwargs):
+            return np.zeros((len(texts), 4))
+
+    e._get_dense_model = lambda: FakeDense()
+
+    sel = e.select(master, jd)
+    assert "zurbark" in sel["keywords_detected"]

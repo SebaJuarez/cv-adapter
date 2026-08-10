@@ -140,8 +140,76 @@ def _normalize_custom_keywords(custom_keywords: Optional[List[str]]) -> List[str
     return normalized
 
 
+def _extract_open_keywords(
+    job_description: str,
+    master_corpus: str,
+    known_keywords: Set[str],
+) -> List[str]:
+    """Términos técnicos FUERA del diccionario curado que viven en el JD.
+
+    P1.1: el diccionario curado nunca está completo (herramientas nicho,
+    plataformas internas, términos nuevos). Estos candidatos abiertos son
+    n-gramas de 1-2 palabras del JD, filtrados con stopwords y palabras
+    genéricas de ofertas, que deben existir LITERALMENTE en el master
+    (keyword_in_text, mismo doble chequeo que las open keywords del
+    frontend): sin presencia en el CV maestro no hay forma de cubrirlas,
+    y el riesgo de falsos positivos (nombres de empresas, sectores) se
+    paga con una keyword inútil que merge.py descartaría igual.
+
+    Args:
+        job_description: texto completo de la oferta.
+        master_corpus: texto del master en minúsculas (vacío = desactivado).
+        known_keywords: términos ya detectados (diccionario + custom) para
+            no duplicar candidatos.
+
+    Returns:
+        Lista de keywords abiertas (minúsculas), sin orden garantizado.
+    """
+    from .stopwords import GENERIC_JD_WORDS, is_stopword
+
+    if not master_corpus:
+        return []
+
+    words = [
+        w.strip(".,;:!?()[]{}<>\"'¡¿…")
+        for w in _normalize_text(job_description).split()
+    ]
+
+    def _valid(token: str) -> bool:
+        low = token.lower()
+        return (
+            len(low) >= 3
+            and low not in known_keywords
+            and low not in GENERIC_JD_WORDS
+            and not is_stopword(low)
+        )
+
+    candidates: List[str] = []
+    i = 0
+    while i < len(words):
+        bigram = None
+        if i + 1 < len(words):
+            candidate_bigram = f"{words[i].lower()} {words[i + 1].lower()}"
+            if (
+                _valid(words[i])
+                and _valid(words[i + 1])
+                and keyword_in_text(candidate_bigram, master_corpus)
+            ):
+                bigram = candidate_bigram
+        if bigram:
+            candidates.append(bigram)
+            i += 2
+            continue
+        low = words[i].lower()
+        if _valid(words[i]) and keyword_in_text(low, master_corpus):
+            candidates.append(low)
+        i += 1
+    return candidates
+
+
 def extract_keywords(
     job_description: str,
+    master_corpus: str = "",
     custom_keywords: Optional[List[str]] = None,
 ) -> Tuple[List[str], Dict[str, int]]:
     """Extrae keywords técnicas del JD usando el diccionario curado + bigramas dinámicos.
@@ -151,6 +219,11 @@ def extract_keywords(
     en max(ocurrencias en el JD, 1) para que pesen en el ranking por
     keywords como cualquier término detectado, sin necesidad de que el JD
     las mencione.
+
+    P1.1: con `master_corpus` no vacío también detecta keywords ABIERTAS
+    (fuera del diccionario) presentes en ambos lados (ver
+    `_extract_open_keywords`). Sin el parámetro, el comportamiento es
+    idéntico al original.
 
     Returns:
         (keywords_list, frequencies_dict)
@@ -204,6 +277,13 @@ def extract_keywords(
         found.add(kw)
         frequencies[kw] = max(_count_keyword_occurrences(job_description, kw), 1)
 
+    # Keywords abiertas (P1.1): fuera del diccionario, presentes en JD y
+    # master. Requieren master_corpus explícito (passthrough de los
+    # callers); sin él, el comportamiento queda idéntico al original.
+    for kw in _extract_open_keywords(job_description, master_corpus, found):
+        found.add(kw)
+        frequencies[kw] = max(_count_keyword_occurrences(job_description, kw), 1)
+
     # Ordenar por frecuencia descendente, luego alfabéticamente
     sorted_keywords = sorted(found, key=lambda k: (-frequencies.get(k, 0), k))
     return sorted_keywords, frequencies
@@ -213,6 +293,7 @@ def build_keyword_ranking(
     bullets: List[Dict[str, Any]],
     job_description: str,
     custom_keywords: Optional[List[str]] = None,
+    master_corpus: str = "",
 ) -> List[str]:
     """Rankea bullets por peso de keywords técnicas del JD que contienen
     literalmente (o alguna variante sinónima), ponderado por la frecuencia
@@ -231,13 +312,17 @@ def build_keyword_ranking(
         job_description: texto completo de la oferta.
         custom_keywords: keywords manuales del usuario (P1.3); se pasan a
             extract_keywords para que pesen como cualquier otra.
+        master_corpus: texto del master en minúsculas (P1.1); habilita las
+            keywords abiertas dentro de extract_keywords.
 
     Returns:
         Lista de bullet_ids ordenada por peso de keywords descendente.
     """
     from .sparse import get_synonym_variants
 
-    jd_keywords, frequencies = extract_keywords(job_description, custom_keywords)
+    jd_keywords, frequencies = extract_keywords(
+        job_description, master_corpus, custom_keywords
+    )
     if not jd_keywords:
         return []
 
@@ -341,6 +426,7 @@ def build_keyword_report(
     target_cv: Dict[str, Any],
     job_description: str,
     custom_keywords: Optional[List[str]] = None,
+    master_corpus: str = "",
 ) -> Dict[str, Any]:
     """Construye el keyword_report para el frontend.
 
@@ -364,7 +450,7 @@ def build_keyword_report(
     chip amarillo del frontend solo aparece cuando la keyword realmente está
     en el master, y `locations` le dice al click EXACTAMENTE dónde.
     """
-    keywords, frequencies = extract_keywords(job_description, custom_keywords)
+    keywords, frequencies = extract_keywords(job_description, master_corpus, custom_keywords)
     master_pieces = _collect_master_texts(master_cv)
     target_corpus = _corpus_text(target_cv)
 
