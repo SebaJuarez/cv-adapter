@@ -28,8 +28,11 @@ DEFAULTS: Dict[str, Any] = {
     # --- para motor de IR ---
     "use_reranker": True,
     "use_stemming": True,  # stemming Snowball ES/EN en el tokenizador BM25
-    "dense_model": "sentence-transformers/all-MiniLM-L6-v2",
-    "cross_encoder_model": "cross-encoder/ms-marco-MiniLM-L-6-v2",
+    # Modelos multilingües (ES/EN): el corpus real mezcla ambos idiomas y
+    # los modelos inglés-only (MiniLM/ms-marco) pierden las ofertas en
+    # español. e5-small requiere los prefijos query:/passage: al encodear.
+    "dense_model": "intfloat/multilingual-e5-small",
+    "cross_encoder_model": "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1",
     "keyword_boost_weight": 0.5,
     "show_keywords_line": True,
     "diversity_lambda": 0.7,

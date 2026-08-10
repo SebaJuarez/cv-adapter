@@ -34,8 +34,8 @@ def health_check() -> Dict[str, Any]:
         from sentence_transformers import SentenceTransformer
 
         config = load_config()
-        status["embeddings"]["dense_model"] = config.get("dense_model", "sentence-transformers/all-MiniLM-L6-v2")
-        status["embeddings"]["cross_encoder"] = config.get("cross_encoder_model", "cross-encoder/ms-marco-MiniLM-L-6-v2")
+        status["embeddings"]["dense_model"] = config.get("dense_model", "intfloat/multilingual-e5-small")
+        status["embeddings"]["cross_encoder"] = config.get("cross_encoder_model", "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1")
         status["embeddings"]["ok"] = True
     except ImportError as e:
         status["embeddings"]["error"] = f"Librerías de embeddings no instaladas: {e}"

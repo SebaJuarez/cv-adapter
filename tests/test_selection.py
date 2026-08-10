@@ -71,6 +71,12 @@ def test_singleton_nuevo_si_cambia_keyword_boost_weight(config):
     assert e1 is not e2
 
 
+def test_singleton_nuevo_si_cambia_use_stemming(config):
+    e1 = get_selection_engine(config)
+    e2 = get_selection_engine({**config, "use_stemming": False})
+    assert e1 is not e2
+
+
 def test_singleton_reutiliza_si_cambia_clave_irrelevante(config):
     e1 = get_selection_engine(config)
     e2 = get_selection_engine({**config, "ollama_model": "otro-modelo"})

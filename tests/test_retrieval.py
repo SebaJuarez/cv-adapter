@@ -170,6 +170,102 @@ def test_keyword_report_keyword_variants_expone_sinonimos():
 
 
 # ---------------------------------------------------------------------------
+# Prefijos E5 (intfloat/multilingual-e5-small): la query lleva "query: " y
+# los documentos "passage: ". Solo se aplican a modelos e5; el resto queda
+# intacto (los prefijos degradan los embeddings de otros modelos).
+# ---------------------------------------------------------------------------
+def test_prefixed_texts_e5_agrega_prefijos():
+    from src.retrieval.dense import prefixed_texts
+
+    assert prefixed_texts(
+        ["hola mundo"], "query", "intfloat/multilingual-e5-small"
+    ) == ["query: hola mundo"]
+    assert prefixed_texts(
+        ["hola mundo"], "passage", "intfloat/multilingual-e5-small"
+    ) == ["passage: hola mundo"]
+
+
+def test_prefixed_texts_no_e5_sin_prefijo():
+    from src.retrieval.dense import prefixed_texts
+
+    assert prefixed_texts(["hola"], "query", "sentence-transformers/all-MiniLM-L6-v2") == ["hola"]
+    assert prefixed_texts(["hola"], "query", "") == ["hola"]
+    assert prefixed_texts(["hola"], "query", None) == ["hola"]
+
+
+def test_prefixed_texts_role_invalido_sin_prefijo():
+    from src.retrieval.dense import prefixed_texts
+
+    assert prefixed_texts(["hola"], "doc", "intfloat/multilingual-e5-small") == ["hola"]
+
+
+def test_dense_index_e5_prefija_bullets_al_indexar():
+    import numpy as np
+
+    from src.retrieval.dense import DenseIndex
+
+    class FakeModel:
+        def __init__(self):
+            self.seen = None
+
+        def encode(self, texts, **kwargs):
+            self.seen = list(texts)
+            return np.zeros((len(texts), 4))
+
+    model = FakeModel()
+    DenseIndex(model, "intfloat/multilingual-e5-small").build(
+        [{"id": "a", "text": "Desarrollé APIs REST"}]
+    )
+    assert model.seen == ["passage: Desarrollé APIs REST"]
+
+
+def test_dense_index_sin_e5_no_prefija():
+    import numpy as np
+
+    from src.retrieval.dense import DenseIndex
+
+    class FakeModel:
+        def __init__(self):
+            self.seen = None
+
+        def encode(self, texts, **kwargs):
+            self.seen = list(texts)
+            return np.zeros((len(texts), 4))
+
+    model = FakeModel()
+    DenseIndex(model, "sentence-transformers/all-MiniLM-L6-v2").build(
+        [{"id": "a", "text": "Desarrollé APIs REST"}]
+    )
+    assert model.seen == ["Desarrollé APIs REST"]
+
+
+# ---------------------------------------------------------------------------
+# Fingerprint del índice: el cambio de modelo/flag de stemming invalida el
+# índice persistido aunque el master no cambie (si no, se cargan embeddings
+# stale, de otra dimensión cuando el modelo cambia).
+# ---------------------------------------------------------------------------
+def test_index_store_fingerprint_incluye_params(tmp_path):
+    from src.retrieval.store import IndexStore
+
+    store = IndexStore(tmp_path / "idx")
+    master = "yaml: contenido"
+    store.save_hash(master, {"dense_model": "modelo-a", "use_stemming": True})
+    assert store.is_fresh(master, {"dense_model": "modelo-a", "use_stemming": True})
+    assert not store.is_fresh(master, {"dense_model": "modelo-b", "use_stemming": True})
+    assert not store.is_fresh(master, {"dense_model": "modelo-a", "use_stemming": False})
+    assert not store.is_fresh(master)
+
+
+def test_index_store_fingerprint_legacy_sin_params(tmp_path):
+    from src.retrieval.store import IndexStore
+
+    store = IndexStore(tmp_path / "idx")
+    store.save_hash("yaml")
+    assert store.is_fresh("yaml")
+    assert not store.is_fresh("otro yaml")
+
+
+# ---------------------------------------------------------------------------
 # C2: keywords con separadores (+ # - . /) se detectan sobre el texto crudo.
 # ---------------------------------------------------------------------------
 @pytest.mark.parametrize(

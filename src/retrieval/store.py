@@ -62,16 +62,28 @@ class IndexStore:
             return path.read_text(encoding="utf-8").strip()
         return None
 
-    def save_hash(self, yaml_content: str) -> None:
-        h = hashlib.sha256(yaml_content.encode("utf-8")).hexdigest()
-        self._hash_file().write_text(h, encoding="utf-8")
+    def save_hash(self, yaml_content: str, params: dict | None = None) -> None:
+        """Guarda la huella del índice: master + parámetros que cambian el
+        corpus persistido (modelo denso, reranker, stemming). Sin los
+        parámetros, cambiar dense_model en config con el master intacto
+        cargaría embeddings viejos (dimensiones distintas = crash)."""
+        self._hash_file().write_text(
+            self.build_fingerprint(yaml_content, params), encoding="utf-8"
+        )
 
-    def is_fresh(self, yaml_content: str) -> bool:
+    @staticmethod
+    def build_fingerprint(yaml_content: str, params: dict | None = None) -> str:
+        payload = {"master": yaml_content}
+        if params:
+            payload.update(params)
+        raw = json.dumps(payload, sort_keys=True, ensure_ascii=False)
+        return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+    def is_fresh(self, yaml_content: str, params: dict | None = None) -> bool:
         stored = self.get_stored_hash()
         if stored is None:
             return False
-        current = hashlib.sha256(yaml_content.encode("utf-8")).hexdigest()
-        return stored == current
+        return stored == self.build_fingerprint(yaml_content, params)
 
     def save_bullets(self, section: str, bullets: list[BulletDoc]) -> None:
         section_dir = self._section_dir(section)

@@ -32,6 +32,7 @@ from .retrieval import (
     extract_requirements_section,
     reciprocal_rank_fusion,
 )
+from .retrieval.dense import prefixed_texts
 from .retrieval.keywords import _count_keyword_occurrences
 from .retrieval.sparse import get_synonym_variants
 
@@ -99,10 +100,11 @@ def _build_indices_for_section(
     section_name: str,
     bullets: list[BulletDoc],
     dense_model: SentenceTransformer,
+    dense_model_name: str,
     store: IndexStore,
 ) -> tuple[SparseIndex, DenseIndex]:
     sparse_idx = SparseIndex()
-    dense_idx = DenseIndex(dense_model)
+    dense_idx = DenseIndex(dense_model, dense_model_name)
 
     bullet_dicts = [
         {
@@ -129,6 +131,7 @@ def _build_indices_for_section(
 def _load_indices_for_section(
     section_name: str,
     dense_model: SentenceTransformer,
+    dense_model_name: str,
     store: IndexStore,
 ) -> tuple[SparseIndex, DenseIndex] | None:
     bullets = store.load_bullets(section_name)
@@ -145,7 +148,7 @@ def _load_indices_for_section(
     sparse_idx.bm25 = sparse_obj
     sparse_idx.bullet_ids = [b.id for b in bullets]
 
-    dense_idx = DenseIndex(dense_model)
+    dense_idx = DenseIndex(dense_model, dense_model_name)
     dense_idx.bullet_ids = [b.id for b in bullets]
     dense_idx.embeddings = dense_emb
 
@@ -411,20 +414,34 @@ class SelectionEngine:
     def _get_dense_model(self) -> SentenceTransformer:
         if self._dense_model is None:
             model_name = self.config.get(
-                "dense_model", "sentence-transformers/all-MiniLM-L6-v2"
+                "dense_model", "intfloat/multilingual-e5-small"
             )
             self._dense_model = SentenceTransformer(model_name, device="cpu")
         return self._dense_model
+
+    def _dense_model_name(self) -> str:
+        return self.config.get("dense_model", "intfloat/multilingual-e5-small")
 
     def _get_reranker(self) -> CrossEncoderReranker | None:
         if not self.config.get("use_reranker", True):
             return None
         if self._reranker is None:
             model_name = self.config.get(
-                "cross_encoder_model", "cross-encoder/ms-marco-MiniLM-L-6-v2"
+                "cross_encoder_model", "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1"
             )
             self._reranker = CrossEncoderReranker(model_name, device="cpu")
         return self._reranker
+
+    def _index_params(self) -> dict[str, Any]:
+        """Parámetros que cambian el corpus persistido del índice (modelo
+        denso, reranker, stemming). Forman parte de la huella de frescura
+        de IndexStore: si cambian con el master intacto, el índice se
+        reconstruye en vez de cargar datos stale."""
+        return {
+            "dense_model": self._dense_model_name(),
+            "cross_encoder_model": self.config.get("cross_encoder_model", ""),
+            "use_stemming": self.config.get("use_stemming", True),
+        }
 
     def _resolve_summary_index(
         self, master_cv: dict[str, Any], query_text: str
@@ -476,7 +493,7 @@ class SelectionEngine:
 
         dense_model = self._get_dense_model()
         chunk_embeddings = dense_model.encode(
-            query_chunks,
+            prefixed_texts(query_chunks, "query", self._dense_model_name()),
             convert_to_numpy=True,
             normalize_embeddings=True,
             show_progress_bar=False,
@@ -527,10 +544,14 @@ class SelectionEngine:
             if not bullets:
                 continue
 
-            indices = _load_indices_for_section(section, dense_model, self.store)
-            if indices is None or not self.store.is_fresh(master_json):
+            indices = _load_indices_for_section(
+                section, dense_model, self._dense_model_name(), self.store
+            )
+            if indices is None or not self.store.is_fresh(
+                master_json, self._index_params()
+            ):
                 indices = _build_indices_for_section(
-                    section, bullets, dense_model, self.store
+                    section, bullets, dense_model, self._dense_model_name(), self.store
                 )
 
             sparse_idx, dense_idx = indices
@@ -656,8 +677,8 @@ class SelectionEngine:
                         master_cv, section, selection[key]
                     )
 
-        if not self.store.is_fresh(master_json):
-            self.store.save_hash(master_json)
+        if not self.store.is_fresh(master_json, self._index_params()):
+            self.store.save_hash(master_json, self._index_params())
 
         return selection
 
@@ -675,7 +696,7 @@ class SelectionEngine:
 
         dense_model = self._get_dense_model()
         chunk_embeddings = dense_model.encode(
-            query_chunks,
+            prefixed_texts(query_chunks, "query", self._dense_model_name()),
             convert_to_numpy=True,
             normalize_embeddings=True,
             show_progress_bar=False,
@@ -698,10 +719,18 @@ class SelectionEngine:
                 else {"selected_skills_indices": []}
             )
 
-        indices = _load_indices_for_section(section_name, dense_model, self.store)
-        if indices is None or not self.store.is_fresh(master_json):
+        indices = _load_indices_for_section(
+            section_name, dense_model, self._dense_model_name(), self.store
+        )
+        if indices is None or not self.store.is_fresh(
+            master_json, self._index_params()
+        ):
             indices = _build_indices_for_section(
-                section_name, bullets, dense_model, self.store
+                section_name,
+                bullets,
+                dense_model,
+                self._dense_model_name(),
+                self.store,
             )
 
         sparse_idx, dense_idx = indices
@@ -847,11 +876,12 @@ def get_selection_engine(config: dict[str, Any] | None = None) -> SelectionEngin
     # Solo hasheamos las claves que afectan a los modelos o a la selección
     hashable = json.dumps(
         {k: config.get(k) for k in (
-            "dense_model", "cross_encoder_model", "use_reranker",
+            "dense_model", "cross_encoder_model", "use_reranker", "use_stemming",
             "max_experience_entries", "max_project_entries",
             "max_highlights_per_entry", "max_skill_categories",
             "max_education_extra", "max_keywords",
             "diversity_lambda", "keyword_boost_weight",
+            "rrf_k", "sparse_weight", "dense_weight",
         )},
         sort_keys=True,
     )
