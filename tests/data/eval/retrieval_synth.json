@@ -1,0 +1,62 @@
+[
+  {
+    "id": "morfo-es",
+    "note": "Variantes morfológicas ES (trabaje/desplegado/desarrollador) vs bullets en pasado: el stemming debe matchear, el diccionario de sinónimos no alcanza.",
+    "job_description": "Buscamos un desarrollador que trabaje con Java y Spring Boot, y que haya desplegado contenedores en entornos productivos.",
+    "relevant_bullets": ["experience_0_bullet_0", "experience_0_bullet_1", "experience_1_bullet_0"]
+  },
+  {
+    "id": "sinonimos",
+    "note": "Sinónimos del diccionario: k8s -> kubernetes, ci/cd.",
+    "job_description": "Experiencia con k8s y pipelines de CI/CD para deploys frecuentes.",
+    "relevant_bullets": ["experience_0_bullet_1", "experience_0_bullet_2"]
+  },
+  {
+    "id": "multilingue-en",
+    "note": "JD en inglés contra bullets en español: lo resuelve el modelo denso multilingüe, no el léxico.",
+    "job_description": "Backend engineer with Spring Boot, designing REST APIs and building microservices on AWS.",
+    "relevant_bullets": ["experience_0_bullet_0", "experience_0_bullet_1", "projects_0_bullet_0", "skills_2_0"]
+  },
+  {
+    "id": "separadores",
+    "note": "Términos con separadores y bigramas: GitHub Actions, Grafana.",
+    "job_description": "Mantenemos GitHub Actions para automatizar releases y monitoreo con Grafana.",
+    "relevant_bullets": ["experience_0_bullet_2", "skills_2_0", "skills_4_0"]
+  },
+  {
+    "id": "pagos-en",
+    "note": "Semántica EN->ES (payment platform -> sistema de pagos/transacciones) + postgres -> postgresql.",
+    "job_description": "We run a high-volume payment platform; you will maintain Java services and optimize PostgreSQL queries.",
+    "relevant_bullets": ["experience_0_bullet_0", "experience_1_bullet_1"]
+  },
+  {
+    "id": "generalizacion-mensajeria",
+    "note": "Generalización fuera de diccionarios: 'mensajería asíncrona y colas' debe encontrar el bullet de RabbitMQ sin nombrarlo.",
+    "job_description": "Diseñamos sistemas con mensajería asíncrona y colas para procesar eventos.",
+    "relevant_bullets": ["experience_1_bullet_2"]
+  },
+  {
+    "id": "soporte",
+    "note": "Vocabulario de soporte técnico N2.",
+    "job_description": "Buscamos candidato con experiencia en soporte técnico de nivel 2 atendiendo incidentes.",
+    "relevant_bullets": ["experience_2_bullet_0", "experience_2_bullet_1", "skills_4_0"]
+  },
+  {
+    "id": "react",
+    "note": "Keyword exacta fuera de experiencia (vive en skills).",
+    "job_description": "Sumamos un desarrollador frontend que domine React para nuestro equipo de producto.",
+    "relevant_bullets": ["skills_1_0"]
+  },
+  {
+    "id": "postgres-dbs",
+    "note": "Bases de datos relacionales: MySQL y PostgreSQL.",
+    "job_description": "Necesitamos alguien que domine bases de datos relacionales, especialmente MySQL y PostgreSQL.",
+    "relevant_bullets": ["skills_3_0", "experience_1_bullet_1"]
+  },
+  {
+    "id": "aws-en",
+    "note": "Inglés + stemming EN (containerized) + AWS ECS literal + GitHub Actions.",
+    "job_description": "Deploying containerized services to AWS ECS, with GitHub Actions for CI/CD.",
+    "relevant_bullets": ["skills_2_0", "experience_0_bullet_1", "experience_0_bullet_2"]
+  }
+]
