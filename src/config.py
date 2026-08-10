@@ -48,6 +48,10 @@ DEFAULTS: Dict[str, Any] = {
     # cuando se regenera la misma oferta. TTL en horas; la clave se deriva
     # de selection_config_fingerprint (ver abajo).
     "selection_cache_ttl_hours": 24,
+    # Penalización de términos negados (P0.2): multiplicador de score para
+    # bullets que matchean algo que el JD excluye explícitamente ("no se
+    # requiere X"). < 1 baja el rank; 1.0 desactiva la penalización.
+    "negation_penalty": 0.3,
 }
 
 # Claves de config que cambian el resultado de SelectionEngine.select() /
@@ -74,6 +78,7 @@ _SELECTION_CONFIG_KEYS = (
     "rrf_k",
     "sparse_weight",
     "dense_weight",
+    "negation_penalty",
 )
 
 

@@ -29,18 +29,19 @@ from .retrieval import (
     build_keyword_ranking,
     chunk_text,
     extract_keywords,
+    extract_negated_terms,
     extract_requirements_section,
     reciprocal_rank_fusion,
 )
 from .retrieval.dense import prefixed_texts
-from .retrieval.keywords import _count_keyword_occurrences
+from .retrieval.keywords import _corpus_text, _count_keyword_occurrences
 from .retrieval.selection_cache import (
     SELECTION_CACHE_DIR,
     get_cache_key,
     load_cached_selection,
     save_cached_selection,
 )
-from .retrieval.sparse import get_synonym_variants
+from .retrieval.sparse import get_synonym_variants, keyword_in_text
 
 _RETRIEVAL_SECTIONS = ["experience", "projects", "skills", "education"]
 _SECTION_LIMIT_KEYS = {
@@ -527,6 +528,21 @@ class SelectionEngine:
         key = get_cache_key(job_description, master_json, self.config, section)
         save_cached_selection(self.cache_dir, key, selection)
 
+    def _apply_negation_penalty(
+        self, score: float, bullet_text: str, negated_terms: set[str]
+    ) -> float:
+        """Multiplica el score por negation_penalty si el bullet matchea un
+        término que el JD excluye ("no se requiere X"). El bullet no se
+        descarta: solo baja en el rank, para que siga visible como opción
+        pero nunca encima de contenido que sí pide la oferta."""
+        if not negated_terms:
+            return score
+        if any(keyword_in_text(term, bullet_text) for term in negated_terms):
+            return round(
+                score * self.config.get("negation_penalty", 0.3), 3
+            )
+        return score
+
     def select(
         self,
         master_cv: dict[str, Any],
@@ -546,6 +562,12 @@ class SelectionEngine:
 
         query_text = extract_requirements_section(job_description)
         query_chunks = chunk_text(query_text, max_tokens=200, overlap=50)
+
+        # P0.2: términos que el JD excluye explícitamente. Se escanea el JD
+        # COMPLETO (no la sección de requisitos): la cláusula de exclusión
+        # ("No se requiere experiencia en X") suele estar fuera de esa
+        # sección. El corpus del master acota los candidatos abiertos.
+        negated_terms = extract_negated_terms(job_description, _corpus_text(master_cv))
 
         dense_model = self._get_dense_model()
         chunk_embeddings = dense_model.encode(
@@ -591,6 +613,7 @@ class SelectionEngine:
             "jd_snippets": {},         # NUEVO: bullet_id -> snippet del JD
             "section_scores": {},      # NUEVO: section -> {entry_idx: score}
             "score_mode": score_mode,  # NUEVO: "cross_encoder" | "positional_fallback"
+            "negated_terms": sorted(negated_terms),  # P0.2
         }
 
         for section in _RETRIEVAL_SECTIONS:
@@ -652,7 +675,9 @@ class SelectionEngine:
                             "section": b.section,
                             "entry_index": b.entry_index,
                             "bullet_index": b.bullet_index,
-                            "score": round(score, 3),
+                            "score": self._apply_negation_penalty(
+                                round(score, 3), b.text, negated_terms
+                            ),
                             "match_reason": match_reason,
                             "best_chunk_idx": best_chunk_idx,
                             "jd_snippet": jd_chunk[:200],  # NUEVO
@@ -674,7 +699,9 @@ class SelectionEngine:
                             "section": b.section,
                             "entry_index": b.entry_index,
                             "bullet_index": b.bullet_index,
-                            "score": round(1.0 / (rank + 1), 3),
+                            "score": self._apply_negation_penalty(
+                                round(1.0 / (rank + 1), 3), b.text, negated_terms
+                            ),
                             "match_reason": match_reason,
                             "best_chunk_idx": best_chunk_idx,
                             "jd_snippet": jd_chunk[:200],
@@ -788,6 +815,8 @@ class SelectionEngine:
         query_text = extract_requirements_section(job_description)
         query_chunks = chunk_text(query_text, max_tokens=200, overlap=50)
 
+        negated_terms = extract_negated_terms(job_description, _corpus_text(master_cv))
+
         dense_model = self._get_dense_model()
         chunk_embeddings = dense_model.encode(
             prefixed_texts(query_chunks, "query", self._dense_model_name()),
@@ -806,11 +835,13 @@ class SelectionEngine:
         }
 
         if not bullets:
-            return (
+            empty = (
                 {f"selected_{section_name}": []}
                 if section_name != "skills"
                 else {"selected_skills_indices": []}
             )
+            empty["negated_terms"] = sorted(negated_terms)
+            return empty
 
         indices = _load_indices_for_section(
             section_name, dense_model, self._dense_model_name(), self.store
@@ -872,7 +903,9 @@ class SelectionEngine:
                         "section": b.section,
                         "entry_index": b.entry_index,
                         "bullet_index": b.bullet_index,
-                        "score": round(score, 3),
+                        "score": self._apply_negation_penalty(
+                            round(score, 3), b.text, negated_terms
+                        ),
                         "match_reason": match_reason,
                         "best_chunk_idx": best_chunk_idx,
                         "jd_snippet": jd_chunk[:200],
@@ -894,7 +927,9 @@ class SelectionEngine:
                         "section": b.section,
                         "entry_index": b.entry_index,
                         "bullet_index": b.bullet_index,
-                        "score": round(1.0 / (rank + 1), 3),
+                        "score": self._apply_negation_penalty(
+                            round(1.0 / (rank + 1), 3), b.text, negated_terms
+                        ),
                         "match_reason": match_reason,
                         "best_chunk_idx": best_chunk_idx,
                         "jd_snippet": jd_chunk[:200],
@@ -916,6 +951,7 @@ class SelectionEngine:
                 "selected_skills_indices": skill_indices[:max_entries],
                 "excluded_skills_indices": skill_indices[max_entries:],
                 "score_mode": score_mode,
+                "negated_terms": sorted(negated_terms),
             }
 
         elif section_name == "education":
@@ -930,6 +966,7 @@ class SelectionEngine:
                 "selected_education_indices": edu_indices[:max_entries],
                 "excluded_education_indices": edu_indices[max_entries:],
                 "score_mode": score_mode,
+                "negated_terms": sorted(negated_terms),
             }
 
         else:
@@ -948,6 +985,7 @@ class SelectionEngine:
                 f"selected_{section_name}": grouped,
                 f"excluded_{section_name}": excluded_grouped,
                 "score_mode": score_mode,
+                "negated_terms": sorted(negated_terms),
             }
 
 

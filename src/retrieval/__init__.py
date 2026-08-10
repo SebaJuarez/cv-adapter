@@ -9,7 +9,11 @@ Módulos:
 - rerank: Cross-encoder re-ranker.
 - keywords: extracción y verificación ATS de keywords técnicas.
 """
-from .jd_processor import chunk_text, extract_requirements_section
+from .jd_processor import (
+    chunk_text,
+    extract_negated_terms,
+    extract_requirements_section,
+)
 from .store import BulletDoc, IndexStore
 from .sparse import SparseIndex
 from .dense import DenseIndex
@@ -19,6 +23,7 @@ from .keywords import build_keyword_ranking, build_keyword_report, extract_keywo
 
 __all__ = [
     "extract_requirements_section",
+    "extract_negated_terms",
     "chunk_text",
     "BulletDoc",
     "IndexStore",

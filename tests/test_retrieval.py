@@ -2,7 +2,7 @@
 separadores (C2) y delimitadores de sección del JD (M1)."""
 import pytest
 
-from src.retrieval.jd_processor import extract_requirements_section
+from src.retrieval.jd_processor import extract_negated_terms, extract_requirements_section
 from src.retrieval.keywords import build_keyword_ranking, build_keyword_report, extract_keywords
 from src.retrieval.sparse import (
     get_synonym_variants,
@@ -386,3 +386,49 @@ def test_requirements_section_corta_en_salario():
 def test_requirements_section_sin_marcadores_devuelve_jd_completo():
     jd = "Somos una empresa moderna buscando talento."
     assert extract_requirements_section(jd) == jd
+
+
+# ---------------------------------------------------------------------------
+# P0.2: extract_negated_terms detecta exclusiones explícitas del JD
+# ("no se requiere X"). Solo sobreviven términos presentes en el master
+# (mismo doble chequeo que las open keywords) y se filtran palabras
+# genéricas de ofertas ("experiencia", "conocimientos").
+# ---------------------------------------------------------------------------
+def test_extract_negated_terms_detecta_patron_es():
+    jd = "No se requiere experiencia en soporte técnico ni en frontend."
+    master = "Brindé soporte técnico a clientes. Desarrollo frontend con React."
+    terms = extract_negated_terms(jd, master)
+    assert {"soporte técnico", "frontend"}.issubset(terms)
+    # "experiencia" es genérica de ofertas: no puede penalizar un bullet.
+    assert "experiencia" not in terms
+
+
+def test_extract_negated_terms_detecta_patron_en():
+    # "zurbark" no está en TECH_KEYWORDS: el patrón inglés de open tokens
+    # ("no experience with X") solo se prueba vía el doble chequeo con master.
+    jd = "No experience with zurbark needed."
+    master = "Monitoreo de clústeres con zurbark."
+    assert "zurbark" in extract_negated_terms(jd, master)
+
+
+def test_extract_negated_terms_sin_negaciones_devuelve_vacio():
+    jd = "Buscamos un backend developer con python y docker."
+    assert extract_negated_terms(jd, "Uso python y docker.") == set()
+
+
+def test_extract_negated_terms_requiere_master_para_no_diccionario():
+    jd = "No se requiere experiencia en frontend."
+    # Sin master no hay cómo verificar que el término existe: vacío.
+    assert extract_negated_terms(jd) == set()
+    assert "frontend" in extract_negated_terms(jd, "Maqueté con frontend.")
+
+
+def test_extract_negated_terms_jd_contradictorio_no_penaliza():
+    # El mismo término mencionado en positivo gana sobre la negación:
+    # penalizarlo sería un falso negativo agresivo.
+    jd = "Se requiere soporte técnico. No se requiere experiencia en frontend."
+    master = "Brindé soporte técnico a clientes. Desarrollo frontend con React."
+    terms = extract_negated_terms(jd, master)
+    assert "soporte técnico" not in terms
+    assert "soporte" not in terms
+    assert "frontend" in terms

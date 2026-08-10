@@ -82,3 +82,92 @@ def test_singleton_reutiliza_si_cambia_clave_irrelevante(config):
     e1 = get_selection_engine(config)
     e2 = get_selection_engine({**config, "ollama_model": "otro-modelo"})
     assert e1 is e2
+
+
+# ---------------------------------------------------------------------------
+# P0.2: penalización de términos negados del JD ("no se requiere X").
+# Mismo JD y motor salvo negation_penalty (0.3 vs 1.0 = desactivado): la
+# base de retrieval es idéntica, así que la comparación es exacta. El canal
+# denso se excluye (dense_weight=0.0) y el reranker se apaga para no
+# descargar modelos reales.
+# ---------------------------------------------------------------------------
+def test_select_penaliza_bullet_de_termino_negado(config, tmp_path):
+    import numpy as np
+
+    master = {
+        "cv": {
+            "name": "Test User",
+            "sections": {
+                "experience": [
+                    {
+                        "company": "Empresa A",
+                        "position": "Backend Developer",
+                        "start_date": "2021-01",
+                        "end_date": "2024-12",
+                        "highlights": [
+                            "Brindé soporte técnico a clientes.",
+                            "Desarrollé APIs REST en python.",
+                            "Mantuve pipelines de CI/CD.",
+                        ],
+                    }
+                ],
+                "skills": [],
+                "projects": [],
+                "education": [],
+            },
+        },
+        "design": {"theme": "engineeringresumes"},
+    }
+    jd = (
+        "Buscamos dev con APIs REST en python y CI/CD. "
+        "No se requiere experiencia en soporte técnico ni en frontend."
+    )
+    jd_sin_negacion = "Buscamos dev con APIs REST en python y CI/CD."
+
+    class FakeDense:
+        def encode(self, texts, **kwargs):
+            return np.zeros((len(texts), 4))
+
+    def build_engine(penalty, tag):
+        e = SelectionEngine(
+            {
+                **config,
+                "use_reranker": False,
+                "dense_weight": 0.0,
+                "negation_penalty": penalty,
+            },
+            cache_dir=tmp_path / f"sel_cache_{tag}",
+        )
+        e.store = IndexStore(tmp_path / f"idx_{tag}")
+        e._get_dense_model = lambda: FakeDense()
+        return e
+
+    base = build_engine(1.0, "base")
+    penalizado = build_engine(0.3, "pen")
+
+    sel_base = base.select(master, jd)
+    sel_pen = penalizado.select(master, jd)
+
+    soporte_id = "experience_0_bullet_0"
+    ci_id = "experience_0_bullet_2"
+
+    # El término negado se detecta y se reporta en ambas selecciones.
+    assert "soporte técnico" in sel_base["negated_terms"]
+    assert "soporte técnico" in sel_pen["negated_terms"]
+    # El bullet que NO matchea términos negados queda idéntico (la base de
+    # retrieval es la misma; la penalización es selectiva por bullet).
+    assert sel_pen["bullet_scores"][ci_id] == sel_base["bullet_scores"][ci_id]
+    # El bullet de soporte técnico se multiplica por negation_penalty.
+    assert sel_pen["bullet_scores"][soporte_id] == round(
+        sel_base["bullet_scores"][soporte_id] * 0.3, 3
+    )
+    assert sel_pen["bullet_scores"][soporte_id] < sel_base["bullet_scores"][soporte_id]
+
+    # Control: sin cláusula de negación, el penalty no cambia nada.
+    sel_pen_pos = penalizado.select(master, jd_sin_negacion)
+    sel_base_pos = base.select(master, jd_sin_negacion)
+    assert sel_pen_pos["negated_terms"] == []
+    assert (
+        sel_pen_pos["bullet_scores"][soporte_id]
+        == sel_base_pos["bullet_scores"][soporte_id]
+    )
