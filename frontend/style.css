@@ -607,6 +607,40 @@ textarea.highlight-text { min-height: 1.6em; resize: none; overflow: hidden; }
   background: color-mix(in srgb, var(--danger, #d64545) 6%, var(--paper-raised));
 }
 
+/* Preview en vivo de keywords (P1.2) */
+.preview-keywords {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.6rem;
+}
+
+.preview-hint {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin-right: 0.2rem;
+}
+
+.preview-chip {
+  font-size: 0.82rem;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid var(--rule);
+  background: var(--paper-raised);
+  color: var(--text);
+}
+
+.preview-chip.in-master {
+  border-color: color-mix(in srgb, var(--accent-strong, #33513a) 45%, var(--rule));
+  background: color-mix(in srgb, var(--accent-strong, #33513a) 10%, var(--paper-raised));
+}
+
+.preview-chip.not-in-master {
+  border-color: color-mix(in srgb, var(--warn, #d49a2a) 45%, var(--rule));
+  background: color-mix(in srgb, var(--warn, #d49a2a) 10%, var(--paper-raised));
+}
+
 .result-summary {
   display: flex;
   align-items: center;

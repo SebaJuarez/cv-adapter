@@ -279,6 +279,44 @@ class TestGenerateHook:
         assert res.status_code == 400
 
 
+class TestPreviewKeywords:
+    def test_preview_solo_extract_keywords_sin_pipeline(self, client, master_cv, monkeypatch):
+        # P1.2: el preview es barato por diseño — nunca debe instanciar
+        # SelectionEngine (eso cargaría los modelos de embeddings).
+        from src.selection import SelectionEngine
+
+        class _NuncaInstanciar:
+            def __init__(self, *args, **kwargs):
+                raise AssertionError(
+                    "El preview de keywords no debe instanciar SelectionEngine"
+                )
+
+        monkeypatch.setattr("api.routers.generate.load_master_cv", lambda _p: master_cv)
+        monkeypatch.setattr(SelectionEngine, "__init__", _NuncaInstanciar.__init__)
+
+        jd = "Buscamos un backend developer con python y docker."
+        res = client.post("/api/preview-keywords", json={"job_description": jd})
+        assert res.status_code == 200
+        body = res.json()
+        assert isinstance(body["keywords_detected"], list)
+        assert "python" in body["keywords_detected"]
+        assert isinstance(body["in_master"], dict)
+        assert body["in_master"].get("python") is True
+
+    def test_preview_con_jd_corto_devuelve_vacio(self, client, master_cv, monkeypatch):
+        monkeypatch.setattr("api.routers.generate.load_master_cv", lambda _p: master_cv)
+        res = client.post("/api/preview-keywords", json={"job_description": "hola"})
+        assert res.status_code == 200
+        assert res.json()["keywords_detected"] == []
+
+    def test_preview_sin_master_404(self, client, monkeypatch):
+        monkeypatch.setattr(
+            "api.routers.generate.load_master_cv", lambda _p: None
+        )
+        res = client.post("/api/preview-keywords", json={"job_description": "python"})
+        assert res.status_code == 404
+
+
 class TestRenderHook:
     def test_render_actualiza_pdf_path_del_run(self, client, tmp_path, monkeypatch):
         from api.routers import render as render_router

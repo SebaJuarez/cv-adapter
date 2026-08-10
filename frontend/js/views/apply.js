@@ -83,6 +83,72 @@ $("#ats-keywords").addEventListener("input", () => {
   if (state.targetDoc && state.keywordReport) refreshKeywordWidgets();
 });
 
+// ------------------------------------------- preview en vivo de keywords (P1.2)
+
+// Solo extract_keywords en el backend (sin modelos ni LLM): debounce de 400ms
+// y abort de la petición anterior si el texto siguió cambiando.
+const PREVIEW_MIN_CHARS = 40;
+const PREVIEW_DEBOUNCE_MS = 400;
+
+let previewTimer = null;
+let previewAbort = null;
+
+function renderPreviewChips(payload) {
+  const el = $("#preview-keywords");
+  if (!el) return;
+  const kws = payload.keywords_detected || [];
+  if (!kws.length) {
+    el.hidden = true;
+    el.innerHTML = "";
+    return;
+  }
+  const hint = document.createElement("span");
+  hint.className = "preview-hint";
+  hint.textContent = "Keywords detectadas en la oferta:";
+  const chips = kws.map((kw) => {
+    const chip = document.createElement("span");
+    chip.className = "preview-chip" + (payload.in_master[kw] ? " in-master" : " not-in-master");
+    chip.textContent = kw;
+    chip.title = payload.in_master[kw]
+      ? "Ya está en tu CV maestro"
+      : "No está en tu CV maestro";
+    return chip;
+  });
+  el.innerHTML = "";
+  el.append(hint, ...chips);
+  el.hidden = false;
+}
+
+async function fetchKeywordPreview() {
+  const jd = $("#job-description").value.trim();
+  const el = $("#preview-keywords");
+  if (jd.length < PREVIEW_MIN_CHARS) {
+    el.hidden = true;
+    el.innerHTML = "";
+    return;
+  }
+  if (previewAbort) previewAbort.abort();
+  previewAbort = new AbortController();
+  el.hidden = false;
+  el.innerHTML = '<span class="preview-hint">Detectando keywords…</span>';
+  try {
+    const payload = await api("/api/preview-keywords", {
+      method: "POST",
+      signal: previewAbort.signal,
+      body: JSON.stringify({ job_description: jd }),
+    });
+    renderPreviewChips(payload);
+  } catch (e) {
+    if (e.name === "AbortError") return;
+    el.hidden = true; // preview es opcional: falla silencioso
+  }
+}
+
+$("#job-description").addEventListener("input", () => {
+  clearTimeout(previewTimer);
+  previewTimer = setTimeout(fetchKeywordPreview, PREVIEW_DEBOUNCE_MS);
+});
+
 $("#add-section-target").addEventListener("click", async () => {
   const result = await promptAddSection();
   if (!result) return;

@@ -7,6 +7,8 @@ from fastapi import APIRouter, HTTPException
 from src.config import load_config
 from src.history import add_run
 from src.merge import estimate_page_overflow
+from src.retrieval.keywords import _corpus_text, extract_keywords
+from src.retrieval.sparse import keyword_in_text
 from src.services.generation import generate_cv, regenerate_section
 from src.storage import load_master_cv
 
@@ -63,6 +65,24 @@ def generate(payload: JobDescriptionIn) -> Dict[str, Any]:
         "page_estimate": estimate_page_overflow(target_cv, config),
         "run_id": run["run_id"],
     }
+
+
+@router.post("/api/preview-keywords")
+def preview_keywords(payload: JobDescriptionIn) -> Dict[str, Any]:
+    """Preview en vivo (P1.2): detecta keywords del JD sin instanciar el
+    pipeline completo — solo extract_keywords (diccionario + abiertas + 
+    manuales), sin modelos, sin LLM, sin cache ni historial."""
+    master_cv = _require_master()
+    corpus = _corpus_text(master_cv)
+    keywords, _ = extract_keywords(
+        payload.job_description,
+        master_corpus=corpus,
+        custom_keywords=payload.manual_keywords,
+    )
+    # Flag por keyword: si existe (o su sinónimo) en el master. Misma fuente
+    # única de sinónimos que el resto del pipeline (SYNONYMS en sparse.py).
+    in_master = {kw: keyword_in_text(kw, corpus) for kw in keywords}
+    return {"keywords_detected": keywords, "in_master": in_master}
 
 
 @router.post("/api/regenerate-section")
