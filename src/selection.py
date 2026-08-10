@@ -563,8 +563,11 @@ class SelectionEngine:
             hybrid_ranking = reciprocal_rank_fusion(
                 sparse_ranking,
                 dense_ranking,
+                k=self.config.get("rrf_k", 15),
                 keyword_ranking=keyword_ranking,
                 keyword_weight=self.config.get("keyword_boost_weight", 0.5),
+                sparse_weight=self.config.get("sparse_weight", 1.0),
+                dense_weight=self.config.get("dense_weight", 1.0),
             )
 
             bullet_map = {b.id: b for b in bullets}
@@ -742,8 +745,11 @@ class SelectionEngine:
         hybrid_ranking = reciprocal_rank_fusion(
             sparse_ranking,
             dense_ranking,
+            k=self.config.get("rrf_k", 15),
             keyword_ranking=keyword_ranking,
             keyword_weight=self.config.get("keyword_boost_weight", 0.5),
+            sparse_weight=self.config.get("sparse_weight", 1.0),
+            dense_weight=self.config.get("dense_weight", 1.0),
         )
 
         reranker = self._get_reranker()

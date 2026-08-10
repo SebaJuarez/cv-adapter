@@ -33,6 +33,13 @@ DEFAULTS: Dict[str, Any] = {
     # español. e5-small requiere los prefijos query:/passage: al encodear.
     "dense_model": "intfloat/multilingual-e5-small",
     "cross_encoder_model": "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1",
+    # RRF: k=60 es el valor de la literatura para corpus TREC (miles de
+    # docs); con ~10-50 bullets por sección aplana las diferencias de rank
+    # y conviene k=10-20. Los pesos escalan la contribución de cada canal
+    # (keyword_boost_weight ya existía; sparse/dense default 1.0).
+    "rrf_k": 15,
+    "sparse_weight": 1.0,
+    "dense_weight": 1.0,
     "keyword_boost_weight": 0.5,
     "show_keywords_line": True,
     "diversity_lambda": 0.7,

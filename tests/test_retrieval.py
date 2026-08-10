@@ -266,6 +266,50 @@ def test_index_store_fingerprint_legacy_sin_params(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# RRF: pesos de canales configurables (sparse_weight/dense_weight) y k.
+# Con peso 0 en un canal, el otro decide el orden exacto; el conjunto de
+# resultados se mantiene para cualquier k razonable.
+# ---------------------------------------------------------------------------
+def test_rrf_peso_sparse_cero_usa_solo_denso():
+    from src.retrieval.hybrid import reciprocal_rank_fusion
+
+    sparse = ["a", "b", "c"]
+    dense = ["b", "c", "d"]
+    fused = reciprocal_rank_fusion(sparse, dense, sparse_weight=0.0, dense_weight=1.0)
+    assert fused == ["b", "c", "d"]
+
+
+def test_rrf_peso_dense_cero_usa_solo_sparse():
+    from src.retrieval.hybrid import reciprocal_rank_fusion
+
+    sparse = ["a", "b", "c"]
+    dense = ["b", "c", "d"]
+    fused = reciprocal_rank_fusion(sparse, dense, sparse_weight=1.0, dense_weight=0.0)
+    assert fused == ["a", "b", "c"]
+
+
+def test_rrf_peso_sparse_dominante_prioriza_orden_sparse():
+    from src.retrieval.hybrid import reciprocal_rank_fusion
+
+    # "a" rank 1 en sparse; "b" rank 1 en dense. Con sparse_weight alto,
+    # "a" gana aunque dense la tenga peor rankeada.
+    fused = reciprocal_rank_fusion(
+        ["a", "b"], ["b", "a"], sparse_weight=5.0, dense_weight=1.0
+    )
+    assert fused[0] == "a"
+
+
+def test_rrf_distintos_k_preservan_conjunto_de_resultados():
+    from src.retrieval.hybrid import reciprocal_rank_fusion
+
+    sparse = ["a", "b", "c", "d"]
+    dense = ["d", "c", "b"]
+    for k in (1, 15, 60):
+        fused = reciprocal_rank_fusion(sparse, dense, k=k)
+        assert set(fused) == {"a", "b", "c", "d"}
+
+
+# ---------------------------------------------------------------------------
 # C2: keywords con separadores (+ # - . /) se detectan sobre el texto crudo.
 # ---------------------------------------------------------------------------
 @pytest.mark.parametrize(
