@@ -25,6 +25,8 @@ $("#generate-btn").addEventListener("click", async () => {
   }
 
   const manualKeywords = ($("#ats-keywords").value || "").split(",").map((s) => s.trim()).filter(Boolean);
+  // "Forzar regeneración" (P0.1): saltea el cache de selección en el backend.
+  const force = $("#force-regenerate").checked;
 
   const btn = $("#generate-btn");
   btn.disabled = true;
@@ -34,7 +36,7 @@ $("#generate-btn").addEventListener("click", async () => {
   try {
     const result = await api("/api/generate", {
       method: "POST",
-      body: JSON.stringify({ job_description: jd, manual_keywords: manualKeywords }),
+      body: JSON.stringify({ job_description: jd, manual_keywords: manualKeywords, force }),
     });
     state.targetDoc = { cv: result.target_cv.cv, design: result.target_cv.design };
     state.targetSectionTypes = deriveSectionTypes(state.targetDoc);

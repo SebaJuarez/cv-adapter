@@ -391,6 +391,16 @@ textarea.highlight-text { min-height: 1.6em; resize: none; overflow: hidden; }
   flex-wrap: wrap;
 }
 
+.force-regenerate {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+  cursor: pointer;
+  user-select: none;
+}
+
 .save-bar.sticky {
   position: sticky;
   bottom: 0;

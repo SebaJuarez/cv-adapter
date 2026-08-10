@@ -5,6 +5,7 @@ Ahora viven en config.json (raíz del proyecto), editable desde la UI web o
 a mano. Si el archivo no existe todavía, se usan estos defaults — que son
 los mismos valores que ya veníamos usando.
 """
+import hashlib
 import json
 from pathlib import Path
 from typing import Any, Dict
@@ -43,7 +44,54 @@ DEFAULTS: Dict[str, Any] = {
     "keyword_boost_weight": 0.5,
     "show_keywords_line": True,
     "diversity_lambda": 0.7,
+    # Cache de selección (P0.1): evita recalculcar embeddings + reranker
+    # cuando se regenera la misma oferta. TTL en horas; la clave se deriva
+    # de selection_config_fingerprint (ver abajo).
+    "selection_cache_ttl_hours": 24,
 }
+
+# Claves de config que cambian el resultado de SelectionEngine.select() /
+# select_section(). TODO parámetro que afecte la selección DEBE estar acá:
+# es la única fuente de verdad para la clave del cache de selección y para
+# el hash del singleton del motor (get_selection_engine en selection.py).
+# Al agregar una clave de config que influya en el ranking/selección
+# (ej. negation_penalty, custom_keywords, max_global_coverage_swaps,
+# use_hyde), hay que sumarla a este set o el cache devolverá resultados
+# stale.
+_SELECTION_CONFIG_KEYS = (
+    "dense_model",
+    "cross_encoder_model",
+    "use_reranker",
+    "use_stemming",
+    "max_experience_entries",
+    "max_project_entries",
+    "max_highlights_per_entry",
+    "max_skill_categories",
+    "max_education_extra",
+    "max_keywords",
+    "diversity_lambda",
+    "keyword_boost_weight",
+    "rrf_k",
+    "sparse_weight",
+    "dense_weight",
+)
+
+
+def selection_config_fingerprint(config: Dict[str, Any]) -> str:
+    """Hash de las claves de config que afectan la selección IR.
+
+    Compartido por get_selection_engine (para reutilizar la instancia con
+    modelos en memoria) y por el cache de selección (para invalidar
+    resultados cuando el usuario toca un knob del ranking). Mismo criterio
+    que IndexStore.build_fingerprint: JSON con sort_keys para ser inmune al
+    orden de inserción.
+    """
+    hashable = json.dumps(
+        {k: config.get(k) for k in _SELECTION_CONFIG_KEYS},
+        sort_keys=True,
+        ensure_ascii=False,
+    )
+    return hashlib.sha256(hashable.encode("utf-8")).hexdigest()
 
 
 def load_config() -> Dict[str, Any]:

@@ -21,14 +21,18 @@ def generate_cv(
     job_description: str,
     manual_keywords: Optional[List[str]] = None,
     config: Optional[Dict[str, Any]] = None,
+    force: bool = False,
 ):
     """Genera el CV target completo para una oferta.
 
     Encadena: selección (IR + LLM estratégico) -> merge determinístico ->
     keyword report ATS. Devuelve (target_cv, selection, keyword_report).
+
+    Con `force=True` se saltea el cache de selección (P0.1) y se
+    recalcula la fase IR completa.
     """
     config = config or load_config()
-    selection = generate_selection(master_cv, job_description, config)
+    selection = generate_selection(master_cv, job_description, config, force=force)
     target_cv = build_target_cv(
         master_cv,
         selection,
@@ -45,6 +49,7 @@ def regenerate_section(
     job_description: str,
     section_name: str,
     config: Optional[Dict[str, Any]] = None,
+    force: bool = False,
 ):
     """Regenera UNA sección del target (experience/projects/skills).
 
@@ -52,7 +57,7 @@ def regenerate_section(
     """
     config = config or load_config()
     section_selection = generate_section_selection(
-        master_cv, job_description, section_name, config
+        master_cv, job_description, section_name, config, force=force
     )
     entries = build_section_entries(master_cv, section_name, section_selection, config)
     return entries, section_selection

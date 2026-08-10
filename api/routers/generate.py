@@ -38,6 +38,7 @@ def generate(payload: JobDescriptionIn) -> Dict[str, Any]:
             payload.job_description,
             manual_keywords=payload.manual_keywords,
             config=config,
+            force=payload.force,
         )
     except Exception as e:
         # Exception (no solo RuntimeError): fallos de descarga de modelos,

@@ -217,6 +217,7 @@ def generate_selection(
     master_cv: Dict[str, Any],
     job_description: str,
     config: Optional[Dict[str, Any]] = None,
+    force: bool = False,
 ) -> Dict[str, Any]:
     """Pipeline completo: IR + LLM estratégico.
 
@@ -224,12 +225,15 @@ def generate_selection(
        resuelve summary_index + keywords ATS candidatas.
     2. LLM estratégico mejora los match_reasons (verificado anti-alucinación).
     3. Merge de ambas salidas: los índices de IR son inmutables.
+
+    Con `force=True` se saltea el cache de selección (P0.1); la fase LLM
+    estratégica corre igual en ambos casos (el cache guarda solo la fase IR).
     """
     config = config or load_config()
 
     # --- Fase 1: IR (rápido, determinístico) ---
     engine = get_selection_engine(config)
-    ir_selection = engine.select(master_cv, job_description)
+    ir_selection = engine.select(master_cv, job_description, use_cache=not force)
 
     # --- Fase 2: LLM Estratégico (liviano) ---
     system_prompt = build_system_prompt(config)
@@ -279,14 +283,18 @@ def generate_section_selection(
     job_description: str,
     section_name: str,
     config: Optional[Dict[str, Any]] = None,
+    force: bool = False,
 ) -> Dict[str, Any]:
     """Igual que generate_selection, pero acotado a UNA sola sección.
 
     Usado por el botón 'Regenerar esta sección' de la UI.
     Ahora usa SelectionEngine.select_section() en vez del LLM para retrieval.
+    Con `force=True` se saltea el cache de selección (P0.1).
     """
     config = config or load_config()
 
     # Fase IR para una sola sección (singleton, reutiliza modelos en memoria)
     engine = get_selection_engine(config)
-    return engine.select_section(master_cv, job_description, section_name)
+    return engine.select_section(
+        master_cv, job_description, section_name, use_cache=not force
+    )

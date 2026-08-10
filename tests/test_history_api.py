@@ -22,7 +22,7 @@ def client(tmp_path, monkeypatch):
     return TestClient(app)
 
 
-def _fake_generate_cv(master_cv, job_description, manual_keywords=None, config=None):
+def _fake_generate_cv(master_cv, job_description, manual_keywords=None, config=None, force=False):
     from src.retrieval.keywords import build_keyword_report
 
     target_cv = dict(master_cv)

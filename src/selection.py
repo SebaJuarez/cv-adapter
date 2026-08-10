@@ -10,16 +10,16 @@ Nuevas features:
 - Section scores: score promedio por entrada para heatmap de secciones.
 """
 
-import hashlib
 import json
 from copy import deepcopy
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 import numpy as np
 from sentence_transformers import SentenceTransformer
 
-from .config import load_config
+from .config import load_config, selection_config_fingerprint
 from .retrieval import (
     BulletDoc,
     CrossEncoderReranker,
@@ -34,6 +34,12 @@ from .retrieval import (
 )
 from .retrieval.dense import prefixed_texts
 from .retrieval.keywords import _count_keyword_occurrences
+from .retrieval.selection_cache import (
+    SELECTION_CACHE_DIR,
+    get_cache_key,
+    load_cached_selection,
+    save_cached_selection,
+)
 from .retrieval.sparse import get_synonym_variants
 
 _RETRIEVAL_SECTIONS = ["experience", "projects", "skills", "education"]
@@ -400,9 +406,17 @@ def _group_bullets_into_entries(
 
 
 class SelectionEngine:
-    def __init__(self, config: dict[str, Any] | None = None):
+    def __init__(
+        self,
+        config: dict[str, Any] | None = None,
+        cache_dir: Path | None = None,
+    ):
         self.config = config or load_config()
         self.store = IndexStore()
+        # Cache de selección (P0.1): solo si hay un hit para el mismo
+        # (JD, master, config) se evita recalcular embeddings + reranker.
+        # Inyectable para que los tests usen un tmp_path.
+        self.cache_dir = cache_dir or SELECTION_CACHE_DIR
         self._dense_model: SentenceTransformer | None = None
         self._reranker: CrossEncoderReranker | None = None
         # El tokenizador BM25 vive en sparse.py (módulo hoja sin config);
@@ -483,11 +497,53 @@ class SelectionEngine:
                 best_idx, best_score = i, overlap
         return best_idx, "positional_fallback"
 
+    def _load_from_cache(
+        self,
+        job_description: str,
+        master_json: str,
+        section: str = "",
+    ) -> dict[str, Any] | None:
+        """Lee la selección IR cacheada para (JD, master, config, sección).
+
+        On hit devuelve una COPIA: generate_selection muta los
+        match_reason de los items seleccionados, y sin deepcopy esa
+        mutación corrompería el dict persistido en el cache.
+        """
+        key = get_cache_key(job_description, master_json, self.config, section)
+        cached = load_cached_selection(
+            self.cache_dir,
+            key,
+            self.config.get("selection_cache_ttl_hours", 24),
+        )
+        return deepcopy(cached) if cached is not None else None
+
+    def _save_to_cache(
+        self,
+        job_description: str,
+        master_json: str,
+        selection: dict[str, Any],
+        section: str = "",
+    ) -> None:
+        key = get_cache_key(job_description, master_json, self.config, section)
+        save_cached_selection(self.cache_dir, key, selection)
+
     def select(
         self,
         master_cv: dict[str, Any],
         job_description: str,
+        use_cache: bool = True,
     ) -> dict[str, Any]:
+        # Cache (P0.1): la selección IR es determinística para el mismo
+        # (JD, master, config) — los embeddings + cross-encoder son el paso
+        # más caro del pipeline y no tiene sentido recalcularlos al
+        # regenerar la misma oferta. On hit se devuelve la selección tal
+        # cual y la fase LLM estratégica corre igual que siempre.
+        master_json = json.dumps(master_cv, ensure_ascii=False, sort_keys=True)
+        if use_cache:
+            cached = self._load_from_cache(job_description, master_json)
+            if cached is not None:
+                return cached
+
         query_text = extract_requirements_section(job_description)
         query_chunks = chunk_text(query_text, max_tokens=200, overlap=50)
 
@@ -498,8 +554,6 @@ class SelectionEngine:
             normalize_embeddings=True,
             show_progress_bar=False,
         )
-
-        master_json = json.dumps(master_cv, ensure_ascii=False, sort_keys=True)
 
         reranker = self._get_reranker()
         score_mode = "cross_encoder" if reranker is not None else "positional_fallback"
@@ -632,7 +686,13 @@ class SelectionEngine:
             for b in final_ranking:
                 selection["bullet_scores"][b["id"]] = b["score"]
                 selection["jd_snippets"][b["id"]] = b["jd_snippet"]
-                eidx = b["entry_index"]
+                # Claves string a propósito: la selección viaja por JSON
+                # (cache en disco, API), y json.dumps convierte claves int a
+                # string silenciosamente — si acá fueran ints, una corrida
+                # fresca y una cacheada devolverían shapes distintos. Con
+                # str() el shape es idéntico en ambos caminos (el frontend
+                # accede por propiedad JS, donde 0 == "0").
+                eidx = str(b["entry_index"])
                 if eidx not in section_scores or b["score"] > section_scores[eidx]:
                     section_scores[eidx] = b["score"]
             if section_scores:
@@ -683,6 +743,7 @@ class SelectionEngine:
         if not self.store.is_fresh(master_json, self._index_params()):
             self.store.save_hash(master_json, self._index_params())
 
+        self._save_to_cache(job_description, master_json, selection)
         return selection
 
     def select_section(
@@ -690,6 +751,36 @@ class SelectionEngine:
         master_cv: dict[str, Any],
         job_description: str,
         section_name: str,
+        use_cache: bool = True,
+    ) -> dict[str, Any]:
+        """Selección acotada a una sección, con cache de selección (P0.1).
+
+        El wrapper chequea/guarda el cache; el cuerpo real vive en
+        `_select_section_uncached` (que tiene múltiples return paths según
+        el tipo de sección).
+        """
+        master_json = json.dumps(master_cv, ensure_ascii=False, sort_keys=True)
+        if use_cache:
+            cached = self._load_from_cache(
+                job_description, master_json, section=section_name
+            )
+            if cached is not None:
+                return cached
+
+        result = self._select_section_uncached(
+            master_cv, job_description, section_name, master_json
+        )
+        self._save_to_cache(
+            job_description, master_json, result, section=section_name
+        )
+        return result
+
+    def _select_section_uncached(
+        self,
+        master_cv: dict[str, Any],
+        job_description: str,
+        section_name: str,
+        master_json: str,
     ) -> dict[str, Any]:
         if section_name not in _RETRIEVAL_SECTIONS:
             raise ValueError(f"Sección no soportada: {section_name}")
@@ -705,7 +796,6 @@ class SelectionEngine:
             show_progress_bar=False,
         )
 
-        master_json = json.dumps(master_cv, ensure_ascii=False, sort_keys=True)
         bullets = _extract_bullets_from_section(master_cv, section_name)
 
         _jd_kws, _jd_freqs = extract_keywords(job_description)
@@ -875,22 +965,15 @@ def get_selection_engine(config: dict[str, Any] | None = None) -> SelectionEngin
     Esto evita recargar los modelos de embeddings y cross-encoder en cada
     request de FastAPI, reduciendo la latencia percibida de varios segundos
     a fracciones de segundo después del primer uso.
+
+    El set de claves "relevantes" vive en
+    `selection_config_fingerprint` (src/config.py): es la misma fuente de
+    verdad que usa la clave del cache de selección (P0.1), así que cualquier
+    knob nuevo de retrieval se propaga a ambos lados.
     """
     global _engine_singleton, _engine_singleton_hash
     config = config or load_config()
-    # Solo hasheamos las claves que afectan a los modelos o a la selección
-    hashable = json.dumps(
-        {k: config.get(k) for k in (
-            "dense_model", "cross_encoder_model", "use_reranker", "use_stemming",
-            "max_experience_entries", "max_project_entries",
-            "max_highlights_per_entry", "max_skill_categories",
-            "max_education_extra", "max_keywords",
-            "diversity_lambda", "keyword_boost_weight",
-            "rrf_k", "sparse_weight", "dense_weight",
-        )},
-        sort_keys=True,
-    )
-    config_hash = hashlib.sha256(hashable.encode("utf-8")).hexdigest()
+    config_hash = selection_config_fingerprint(config)
     if _engine_singleton is None or _engine_singleton_hash != config_hash:
         _engine_singleton = SelectionEngine(config)
         _engine_singleton_hash = config_hash

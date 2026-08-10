@@ -66,6 +66,10 @@
     <input type="text" id="ats-keywords" placeholder="ej: Kubernetes, Scrum, PostgreSQL (separadas por coma)">
     <div class="save-bar">
       <span id="generate-status" class="status"></span>
+      <label class="force-regenerate" title="Saltea el cache de selección y recalcula el ranking completo (más lento). Útil si cambiás knobs de retrieval en Configuración.">
+        <input type="checkbox" id="force-regenerate">
+        Forzar regeneración
+      </label>
       <button id="generate-btn" class="btn btn-primary">Generar CV para esta oferta</button>
     </div>
     <div class="progress-wrap" id="generate-progress" hidden>

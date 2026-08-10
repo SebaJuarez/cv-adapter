@@ -10,8 +10,9 @@ from src.selection import SelectionEngine, get_selection_engine
 @pytest.fixture
 def engine(master_cv, config, tmp_path):
     """Motor con store propio en tmp_path (los índices del master sintético
-    no deben pisar los índices reales de data/retrieval_index)."""
-    e = SelectionEngine(config)
+    no deben pisar los índices reales de data/retrieval_index ni el cache
+    de selección de data/selection_cache)."""
+    e = SelectionEngine(config, cache_dir=tmp_path / "sel_cache")
     e.store = IndexStore(tmp_path / "idx")
     return e
 

@@ -167,7 +167,10 @@ def extract_offer_title(job_description: str) -> str:
     return FALLBACK_OFFER_TITLE
 
 
-def _jd_hash(job_description: str) -> str:
+def jd_hash(job_description: str) -> str:
+    """Hash corto del texto de la oferta (8 hex). Identifica corridas con el
+    mismo JD en el historial y forma parte de la clave del cache de
+    selección (src/retrieval/selection_cache.py)."""
     return hashlib.sha1(job_description.encode("utf-8")).hexdigest()[:8]
 
 
@@ -218,13 +221,13 @@ def add_run(
     `src/services/generation.py`).
     """
     runs = load_runs(path)
-    jd_hash = _jd_hash(job_description)
+    jd_hash_value = jd_hash(job_description)
     run = {
-        "run_id": f"{int(time.time() * 1000)}-{jd_hash}",
+        "run_id": f"{int(time.time() * 1000)}-{jd_hash_value}",
         "created_at": datetime.now(timezone.utc).isoformat(),
         "offer_title": extract_offer_title(job_description),
         "offer_link": None,
-        "jd_hash": jd_hash,
+        "jd_hash": jd_hash_value,
         "job_description": job_description,
         "ats_score": keyword_report.get("ats_impact_score", 0),
         "keywords_detected": (

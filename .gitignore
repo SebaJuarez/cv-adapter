@@ -18,9 +18,14 @@ __pycache__
 
 /data/retrieval_index
 
+# Cache de selección IR por hash de JD (deriva del master + config)
+/data/selection_cache
+
 # Eval set real etiquetado (contiene ofertas y bullets personales)
 /data/eval
 
 /data/run_cvs
 
 /.opencode
+# Planes y tareas de sesión (no versionables)
+/tasks

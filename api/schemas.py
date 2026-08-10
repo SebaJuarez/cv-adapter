@@ -10,6 +10,9 @@ from src.merge import strip_internal_keys
 class JobDescriptionIn(BaseModel):
     job_description: str
     manual_keywords: list[str] = []
+    # Fuerza el recálculo completo de la fase IR, salteando el cache de
+    # selección (P0.1). Botón "Forzar regeneración" del frontend.
+    force: bool = False
 
 
 class RegenerateSectionIn(BaseModel):

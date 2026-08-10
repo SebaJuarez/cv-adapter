@@ -5,6 +5,7 @@ from typing import Any, Dict
 from fastapi import APIRouter, HTTPException
 
 from src.config import load_config
+from src.retrieval.selection_cache import clear_selection_cache
 from src.retrieval.store import IndexStore
 
 router = APIRouter(tags=["system"])
@@ -91,6 +92,10 @@ def clear_retrieval_index() -> Dict[str, Any]:
     try:
         store = IndexStore()
         store.clear()
+        # El cache de selección (P0.1) también deriva del master/config:
+        # si el usuario limpia los índices, espera resetear todo el estado
+        # derivado, no solo el corpus BM25/embeddings.
+        clear_selection_cache()
         return {
             "ok": True,
             "message": "Índices de retrieval eliminados. Se reconstruirán en la próxima generación.",
