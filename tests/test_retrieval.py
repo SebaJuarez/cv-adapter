@@ -4,7 +4,12 @@ import pytest
 
 from src.retrieval.jd_processor import extract_requirements_section
 from src.retrieval.keywords import build_keyword_ranking, build_keyword_report, extract_keywords
-from src.retrieval.sparse import get_synonym_variants, keyword_in_text, tokenize_with_synonyms
+from src.retrieval.sparse import (
+    get_synonym_variants,
+    keyword_in_text,
+    set_stemming,
+    tokenize_with_synonyms,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -17,9 +22,50 @@ def test_tokenize_ci_cd_se_mantiene_como_token():
 
 
 def test_tokenize_ci_cd_expande_sinonimos():
+    # Los sinónimos expandidos pasan por stemming Snowball ("continuous" ->
+    # "continu"), pero el token original con slash se preserva tal cual.
     tokens = tokenize_with_synonyms("manejo de CI/CD")
-    for esperado in ("ci/cd", "continuous", "integration", "delivery", "deployment"):
+    for esperado in ("ci/cd", "continu", "integr", "deliveri", "deploy"):
         assert esperado in tokens
+
+
+# ---------------------------------------------------------------------------
+# Stemming Snowball ES/EN (use_stemming): generaliza variantes morfológicas
+# en el canal BM25 sin tocar la verificación ATS literal (keyword_in_text).
+# ---------------------------------------------------------------------------
+def test_tokenize_stemming_es():
+    tokens = tokenize_with_synonyms("trabajé desarrollando APIs REST")
+    assert "trabaj" in tokens and "desarroll" in tokens
+
+
+def test_tokenize_stemming_en():
+    tokens = tokenize_with_synonyms("containerized deployments and testing")
+    assert "container" in tokens and "deploy" in tokens
+
+
+def test_tokenize_stemming_no_rompe_terminos_tecnicos():
+    # Los tokens con separadores son términos técnicos exactos: el stemmer
+    # de inglés mutila "next.js" -> "next.j", así que se excluyen del stemming.
+    tokens = tokenize_with_synonyms("pipelines de ci/cd con c++ y next.js")
+    for esperado in ("ci/cd", "c++", "next.js"):
+        assert esperado in tokens
+
+
+def test_tokenize_stemming_apagado_usa_forma_original():
+    set_stemming(False)
+    try:
+        tokens = tokenize_with_synonyms("trabajé desarrollando")
+        assert "trabajé" in tokens and "desarrollando" in tokens
+    finally:
+        set_stemming(True)
+
+
+def test_tokenize_stopwords_se_filtran_antes_del_stemming():
+    # Si se stemmea primero, "was" -> "wa" y se cuela como término vacío
+    # al índice. El filtro de stopwords debe correr ANTES del stemming.
+    tokens = tokenize_with_synonyms("was working with docker")
+    assert "was" not in tokens and "wa" not in tokens
+    assert "work" in tokens
 
 
 def test_get_synonym_variants_devuelve_grupo_completo():

@@ -7,9 +7,51 @@ Cada sección tiene su propio índice BM25 independiente.
 import re
 
 import numpy as np
+from nltk.stem.snowball import SnowballStemmer
 from rank_bm25 import BM25Okapi
 
 from .stopwords import is_stopword
+
+# Stemmers Snowball (ES + EN) para generalizar variantes morfológicas
+# ("trabajo/trabajé/trabajando" -> "trabaj", "containers/containerized" -> "container").
+# El corpus es ES/EN mezclado y no hay forma fiable de asignar idioma por
+# token: se toma el stem MÁS CORTO entre ambos idiomas, porque el stemmer
+# "equivocado" típicamente no modifica la palabra y entonces gana el que sí
+# la normalizó. El criterio es idéntico para query y documentos, así que el
+# matching siempre es consistente.
+_STEMMER_ES = SnowballStemmer("spanish")
+_STEMMER_EN = SnowballStemmer("english")
+
+# Flag de stemming a nivel de módulo: sparse.py es un módulo hoja sin acceso
+# a config, y SelectionEngine lo sincroniza desde config["use_stemming"] al
+# construirse (ver selection.py). El hash del índice persistido incluye este
+# flag, así que apagarlo/encenderlo reconstruye el corpus BM25.
+_STEMMING_ENABLED = True
+
+
+def set_stemming(enabled: bool) -> None:
+    """Activa o desactiva el stemming del tokenizador BM25 (config use_stemming)."""
+    global _STEMMING_ENABLED
+    _STEMMING_ENABLED = bool(enabled)
+
+
+def _stem_token(token: str) -> str:
+    """Stem de un token: el más corto entre ES y EN (ver _STEMMER_ES).
+
+    Solo tokens puramente alfabéticos: los que tienen separadores ("ci/cd",
+    "c++", "next.js") son términos técnicos exactos y el stemmer los mutila
+    ("next.js" -> "next.j" con el stemmer de inglés), así que se devuelven
+    tal cual.
+    """
+    if not re.fullmatch(r"[a-záéíóúñü]+", token):
+        return token
+    es_stem = _STEMMER_ES.stem(token)
+    en_stem = _STEMMER_EN.stem(token)
+    if len(es_stem) < len(en_stem):
+        return es_stem
+    if len(en_stem) < len(es_stem):
+        return en_stem
+    return en_stem  # empate: preferir el stem de inglés
 
 # Diccionario curado de sinónimos técnicos para expandir queries.
 # Se aplica tanto a la query (JD) como a los documentos (bullets).
@@ -117,7 +159,15 @@ def tokenize_with_synonyms(text: str) -> list[str]:
     # "gh actions" ya quedó armado antes de tocar nada). Con un corpus tan
     # chico por sección, el IDF de BM25 no diluye solo las palabras vacías
     # como lo haría en un corpus grande, así que conviene sacarlas a mano.
-    return [t for t in expanded if not is_stopword(t)]
+    filtered = [t for t in expanded if not is_stopword(t)]
+
+    # Stemming DESPUÉS de filtrar stopwords: si se stemmea antes, una
+    # stopword puede quedar en una forma que ya no está en la lista
+    # ("was" -> "wa") y colarse al índice de un corpus donde cada término
+    # vacío cuenta. Solo aplica si use_stemming está activo.
+    if _STEMMING_ENABLED:
+        return [_stem_token(t) for t in filtered]
+    return filtered
 
 
 class SparseIndex:

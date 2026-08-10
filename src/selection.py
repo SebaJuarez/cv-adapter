@@ -402,6 +402,11 @@ class SelectionEngine:
         self.store = IndexStore()
         self._dense_model: SentenceTransformer | None = None
         self._reranker: CrossEncoderReranker | None = None
+        # El tokenizador BM25 vive en sparse.py (módulo hoja sin config);
+        # acá se sincroniza su flag de stemming con el config.
+        from .retrieval.sparse import set_stemming
+
+        set_stemming(self.config.get("use_stemming", True))
 
     def _get_dense_model(self) -> SentenceTransformer:
         if self._dense_model is None:

@@ -27,6 +27,9 @@ rendercv[full]>=2.8
 # BM25 léxico + sinónimos (Python puro)
 rank-bm25>=0.2.2
 
+# Stemming Snowball ES/EN para el tokenizador BM25 (sin descargas de datos)
+nltk>=3.9.0
+
 # Embeddings densos locales (CPU-only)
 sentence-transformers>=3.0.0
 

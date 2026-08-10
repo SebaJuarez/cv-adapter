@@ -27,6 +27,7 @@ DEFAULTS: Dict[str, Any] = {
     "max_keywords": 10,
     # --- para motor de IR ---
     "use_reranker": True,
+    "use_stemming": True,  # stemming Snowball ES/EN en el tokenizador BM25
     "dense_model": "sentence-transformers/all-MiniLM-L6-v2",
     "cross_encoder_model": "cross-encoder/ms-marco-MiniLM-L-6-v2",
     "keyword_boost_weight": 0.5,
