@@ -1,6 +1,6 @@
 """Historial de corridas y seguimiento de aplicaciones.
 
-Persiste cada generación de CV (web y CLI) en `data/run_history.json` con la
+Persiste cada generación de CV (desde la web) en `data/run_history.json` con la
 metadata del análisis ATS (keywords detectadas, faltantes del master/target) y
 el estado del seguimiento de la aplicación. Todo determinístico: el LLM no
 participa acá. El historial es solo metadata — nunca toca el YAML del CV ni
@@ -14,8 +14,6 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-
-from .retrieval.keywords import build_keyword_report
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 RUNS_PATH = BASE_DIR / "data" / "run_history.json"
@@ -216,8 +214,8 @@ def add_run(
 ) -> Dict[str, Any]:
     """Crea y persiste un registro de corrida. Devuelve el run creado.
 
-    `keyword_report` es el resultado de `build_keyword_report` (la web ya lo
-    computa; el CLI lo construye con `build_keyword_report` antes de llamar).
+    `keyword_report` es el resultado de `build_keyword_report` (lo computa
+    `src/services/generation.py`).
     """
     runs = load_runs(path)
     jd_hash = _jd_hash(job_description)
@@ -406,27 +404,3 @@ def aggregate_missing_keywords(runs: List[Dict[str, Any]]) -> List[Dict[str, Any
         key=lambda e: (-e["count"], -e["total_frequency"], e["keyword"]),
     )
     return result
-
-
-def build_report_and_add_run(
-    master_cv: Dict[str, Any],
-    target_cv: Dict[str, Any],
-    job_description: str,
-    selection: Optional[Dict[str, Any]] = None,
-    pdf_path: Optional[str] = None,
-    manual_keywords: Optional[List[str]] = None,
-    path: Optional[Path] = None,
-) -> Dict[str, Any]:
-    """Conveniencia: computa el keyword_report y registra la corrida.
-
-    Es el hook compartido por la web (que ya tiene master/target) y el CLI.
-    """
-    keyword_report = build_keyword_report(master_cv, target_cv, job_description)
-    return add_run(
-        job_description,
-        keyword_report,
-        selection=selection,
-        pdf_path=pdf_path,
-        manual_keywords=manual_keywords,
-        path=path,
-    )

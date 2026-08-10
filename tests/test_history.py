@@ -15,7 +15,6 @@ from src.history import (
     VALID_STATUSES,
     add_run,
     aggregate_missing_keywords,
-    build_report_and_add_run,
     delete_run,
     delete_run_cv,
     extract_offer_title,
@@ -280,20 +279,6 @@ class TestAggregateMissingKeywords:
 
     def test_vacio(self):
         assert aggregate_missing_keywords([]) == []
-
-
-class TestBuildReportAndAddRun:
-    def test_computa_report_y_registra(self, history_path, master_cv, job_description):
-        target_cv = dict(master_cv)
-        run = build_report_and_add_run(
-            master_cv,
-            target_cv,
-            job_description,
-            path=history_path,
-        )
-        assert run["ats_score"] == 100
-        assert run["offer_title"].startswith("backend developer con experiencia")
-        assert len(load_runs(history_path)) == 1
 
 
 def test_estados_validos_estan_definidos():

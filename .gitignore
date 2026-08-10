@@ -21,4 +21,6 @@ __pycache__
 # Eval set real etiquetado (contiene ofertas y bullets personales)
 /data/eval
 
+/data/run_cvs
+
 /.opencode

@@ -1,9 +1,9 @@
 # cv-adapter — Adaptador de CV local ($0, 100% offline)
 
-Pipeline LangGraph que adapta tu `master_cv.yaml` a una oferta laboral usando
-un LLM local (Ollama), con una pausa humana obligatoria antes de compilar
-el PDF con RenderCV. Incluye una interfaz web local simple para no tener
-que editar YAML a mano.
+Pipeline que adapta tu `master_cv.yaml` a una oferta laboral usando un LLM
+local (Ollama) o una API remota, con revisión humana antes de compilar el PDF
+con RenderCV. Todo desde una interfaz web local — no hace falta tocar YAML a
+mano ni usar la línea de comandos.
 
 ## Por qué es seguro contra alucinaciones
 
@@ -12,8 +12,8 @@ que apuntan a experiencia/skills/bullets que ya existen en `master_cv.yaml`
 (ver `src/prompts.py`). El armado real del `target_cv.yaml` lo hace código
 Python determinístico (`src/merge.py`), que copia texto literal del maestro.
 Si el LLM devuelve un índice inválido, se ignora — nunca se inventa contenido
-de reemplazo. A esto se suma la revisión humana (en la web o por consola)
-antes de compilar el PDF.
+de reemplazo. A esto se suma la revisión humana en la web antes de compilar
+el PDF.
 
 ## Presupuesto de una página (forzado por código, no por prompt)
 
@@ -93,7 +93,7 @@ pip install -r requirements.txt
 > vez** (después queda cacheado localmente; el resto del pipeline sigue
 > siendo 100% local/offline).
 
-## 2. Uso — interfaz web (recomendado)
+## 2. Uso
 
 ```bash
 uvicorn app:app --reload
@@ -108,8 +108,8 @@ Abrí `http://127.0.0.1:8000` en el navegador. Cuatro pestañas:
   eligió, y tenés un desplegable "traer bullet del master" para recuperar
   contenido que el modelo dejó afuera pero vos querés incluir igual.
   "Generar PDF" compila y te deja descargarlo.
-- **Historial** — cada corrida queda registrada automáticamente (web y CLI)
-  con su análisis ATS, el PDF asociado y el seguimiento de la aplicación
+- **Historial** — cada corrida queda registrada automáticamente con su
+  análisis ATS, el PDF asociado y el seguimiento de la aplicación
   (estado, fecha, notas, link a la oferta). Además agrupa las keywords que
   las ofertas piden y no están en tu CV maestro, para ver cuáles se repiten
   en general y decidir agregarlas manualmente (nunca se toca el master solo).
@@ -118,39 +118,13 @@ Abrí `http://127.0.0.1:8000` en el navegador. Cuatro pestañas:
   (Ollama local o API remota) y su modelo, ya no hardcodeados: se guardan en
   `config.json`.
 
-La UI y el CLI comparten exactamente la misma lógica (`src/`), así que las
-garantías anti-alucinación son las mismas uses lo que uses.
-
-## 3. Uso — línea de comandos
-
-1. Reemplazá `data/master_cv.yaml` con tu CV real (mantené el schema de
-   RenderCV: `cv.sections.experience`, `cv.sections.skills`, etc. — o armalo
-   directamente desde la web, es más simple).
-2. Pegá la oferta laboral en `data/job_description.txt`.
-3. Corré:
-
-```bash
-python main.py --master data/master_cv.yaml --job data/job_description.txt
-```
-
-4. El script va a:
-   - Llamar al LLM (Ollama local o API remota según `config.json`) y generar
-     `target_cv.yaml`.
-   - **Pausar** y pedirte: `¿Deseás generar el PDF con RenderCV? (y/n)`
-   - Revisá `target_cv.yaml` a mano en ese momento (fechas, empresas, puestos).
-   - Si respondés `y`, compila el PDF final en `output/`.
-   - Si respondés `n`, corta ahí sin generar nada.
-   - Al terminar (con o sin PDF) registra la corrida en `data/run_history.json`,
-     igual que la web — podés seguirla y editarla desde la pestaña **Historial**.
-
-## 4. Estructura del proyecto
+## 3. Estructura del proyecto
 
 ```
 cv-adapter/
 ├── README.md
 ├── requirements.txt
 ├── config.json               # límites configurables (se crea al guardar desde la web)
-├── main.py                   # CLI: arma y corre el grafo LangGraph
 ├── app.py                    # entry point de uvicorn (re-exporta api.main:app)
 ├── api/                      # backend web (FastAPI)
 │   ├── main.py               # arma la app (routers + mount del frontend)
@@ -169,24 +143,23 @@ cv-adapter/
 │       └── views/            # master.js, apply.js, history.js, settings.js
 ├── data/
 │   ├── master_cv.yaml        # tu CV completo (reemplazar por el real)
-│   ├── job_description.txt   # oferta laboral (solo la usa el CLI)
+│   ├── job_description_example.txt   # ejemplo de oferta laboral
 │   └── run_history.json      # historial de corridas y seguimiento (se crea solo)
 ├── src/
 │   ├── config.py             # carga/guarda config.json
-│   ├── state.py              # TypedDict del estado del grafo (CLI)
 │   ├── storage.py            # persistencia YAML (master/target)
 │   ├── prompts.py            # system prompt + JSON Schema, dinámicos según config
-│   ├── llm_node.py           # llamada al LLM: Ollama local o API remota (función pelada + nodo del grafo)
+│   ├── llm_node.py           # llamada al LLM: Ollama local o API remota (función pelada)
 │   ├── merge.py              # fusión determinística + presupuesto de una página
 │   ├── history.py            # historial de corridas + agregación de keywords faltantes
-│   ├── render_node.py        # guardar YAML + render PDF (función pelada + nodos)
+│   ├── render_node.py        # guardar YAML + render PDF (funciones peladas)
 │   └── services/
-│       └── generation.py     # orquestación del pipeline (compartida web/CLI)
+│       └── generation.py     # orquestación del pipeline (web)
 ├── target_cv.yaml            # generado en cada corrida (revisar antes de aprobar)
 └── output/                   # PDFs finales generados por RenderCV
 ```
 
-## 5. Troubleshooting rápido
+## 4. Troubleshooting rápido
 
 - **"Error llamando a Ollama"** → confirmá que `ollama serve` está corriendo
   y que el modelo (pestaña Configuración, o `ollama_model` en `config.json`)

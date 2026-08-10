@@ -873,9 +873,8 @@ def get_selection_engine(config: dict[str, Any] | None = None) -> SelectionEngin
     en memoria si la configuración relevante no cambió.
 
     Esto evita recargar los modelos de embeddings y cross-encoder en cada
-    request de FastAPI (o cada corrida del CLI), reduciendo la latencia
-    percibida de varios segundos a fracciones de segundo después del
-    primer uso.
+    request de FastAPI, reduciendo la latencia percibida de varios segundos
+    a fracciones de segundo después del primer uso.
     """
     global _engine_singleton, _engine_singleton_hash
     config = config or load_config()

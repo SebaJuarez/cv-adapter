@@ -5,8 +5,7 @@ pipeline sin saber nada de HTTP. Los routers de api/ solo traducen requests
 en llamadas a estos servicios (y excepciones en HTTP errors).
 
 Reusadas por la web (api/routers/generate.py) para que el comportamiento sea
-idéntico al del CLI (main.py), que arma su propio grafo con las mismas
-funciones de src/.
+idéntico en todos los endpoints (generar, regenerar sección, renderizar).
 """
 
 from typing import Any, Dict, List, Optional

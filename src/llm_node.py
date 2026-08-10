@@ -23,7 +23,6 @@ from .prompts import build_selection_schema, build_system_prompt
 from .retrieval.keywords import _count_keyword_occurrences, extract_keywords
 from .retrieval.sparse import get_synonym_variants
 from .selection import get_selection_engine
-from .state import CVState
 
 
 def _verify_match_reason(llm_reason: str, bullet_text: str, jd_text: str) -> bool:
@@ -291,22 +290,3 @@ def generate_section_selection(
     # Fase IR para una sola sección (singleton, reutiliza modelos en memoria)
     engine = get_selection_engine(config)
     return engine.select_section(master_cv, job_description, section_name)
-
-
-def generate_selection_node(state: CVState) -> CVState:
-    """Wrapper para el grafo LangGraph (usado por main.py / CLI)."""
-    if state.get("error"):
-        return state
-    try:
-        state["llm_selection"] = generate_selection(
-            state["master_cv_raw"], state["job_description"]
-        )
-        state["error"] = None
-    except Exception as e:
-        # Exception (no solo RuntimeError): un error de descarga de modelos
-        # HF, torch, etc. no debe producir un traceback — se registra el
-        # error y los nodos siguientes (merge/save/review) se cortan solos
-        # por el check de state["error"].
-        state["error"] = str(e)
-        state["llm_selection"] = {}
-    return state

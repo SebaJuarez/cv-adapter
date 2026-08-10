@@ -1,8 +1,8 @@
-"""Guardar YAML, pausa humana (CLI) y ejecutar RenderCV.
+"""Guardar YAML y ejecutar RenderCV.
 
 `save_yaml()` y `run_rendercv()` son funciones "peladas" (sin LangGraph),
-reutilizadas tanto por los nodos del grafo (CLI) como por el endpoint
-/api/render de la app web.
+reutilizadas tanto por el endpoint /api/render de la app web como por
+`src/storage.py`.
 """
 import os
 import subprocess
@@ -13,7 +13,6 @@ from typing import Optional, Tuple
 import yaml
 
 from .merge import strip_internal_keys
-from .state import CVState
 
 
 def dump_yaml(data: dict) -> str:
@@ -69,7 +68,7 @@ def run_rendercv(target_path: str, output_dir: Path) -> Tuple[bool, str, Optiona
             env=env,
         )
         # RenderCV ya escribió el PDF cuando termina; devolvemos la ruta real
-        # del archivo (no del directorio) para que el CLI/web la usen directo.
+        # del archivo (no del directorio) para que la web la use directo.
         generated_pdf = _pdf_was_generated()
         pdf_path = str(generated_pdf) if generated_pdf else str(output_dir)
         return True, result.stdout, pdf_path
@@ -96,51 +95,3 @@ def run_rendercv(target_path: str, output_dir: Path) -> Tuple[bool, str, Optiona
             "No se encontró el comando 'rendercv'. ¿Está instalado en este entorno? "
             'Corré: pip install "rendercv[full]"'
         ), None
-
-
-# ---- Wrappers para el grafo LangGraph (usados por main.py / CLI) ----
-
-def save_target_cv_node(state: CVState) -> CVState:
-    if state.get("error"):
-        return state
-    target_path = Path(state.get("target_cv_path") or "target_cv.yaml")
-    try:
-        save_yaml(state["target_cv_dict"], target_path)
-    except yaml.YAMLError as e:
-        state["error"] = f"No se pudo serializar target_cv.yaml: {e}"
-        return state
-    state["target_cv_path"] = str(target_path)
-    return state
-
-
-def human_review_node(state: CVState) -> CVState:
-    """Pausa de seguridad: el humano revisa target_cv.yaml antes de gastar
-    tiempo de CPU compilando un PDF potencialmente con alucinaciones."""
-    if state.get("error"):
-        print(f"\n⚠️  Hubo un error antes de llegar a esta etapa: {state['error']}")
-        state["approved"] = False
-        return state
-
-    print("\n" + "=" * 60)
-    print(f"✅ Revisá el archivo generado: {state['target_cv_path']}")
-    print("   Confirmá que ninguna fecha, empresa o puesto fue alterado.")
-    print("=" * 60)
-    answer = input("¿Deseás generar el PDF con RenderCV? (y/n): ").strip().lower()
-    state["approved"] = answer in ("y", "yes", "s", "si", "sí")
-    return state
-
-
-def route_after_review(state: CVState) -> str:
-    return "render" if state.get("approved") else "end"
-
-
-def render_pdf_node(state: CVState) -> CVState:
-    ok, message, pdf_path = run_rendercv(state["target_cv_path"], Path("output"))
-    if ok:
-        print(message)
-        state["output_pdf_path"] = pdf_path
-        state["error"] = None
-    else:
-        state["error"] = message
-        state["output_pdf_path"] = None
-    return state
