@@ -66,6 +66,12 @@ DEFAULTS: Dict[str, Any] = {
     # detectadas del JD (afectan keywords_detected, el ranking por
     # keywords y el reporte ATS).
     "custom_keywords": [],
+    # HyDE (P3.1): con True, el LLM redacta un "CV hipotético" del candidato
+    # ideal para la oferta y ese texto se antepone a los chunks del JD en el
+    # canal denso (mejora el recall cuando el JD usa jerga que no aparece
+    # literal en el master). Opt-in ESTRICTO y experimental: solo se mergea
+    # si el eval harness (scripts/eval_retrieval.py --hyde) muestra mejora.
+    "use_hyde": False,
 }
 
 # Claves de config que cambian el resultado de SelectionEngine.select() /
@@ -95,6 +101,7 @@ _SELECTION_CONFIG_KEYS = (
     "negation_penalty",
     "max_global_coverage_swaps",
     "custom_keywords",
+    "use_hyde",
 )
 
 

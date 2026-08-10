@@ -119,3 +119,150 @@ def test_generate_selection_llm_no_puede_tocar_summary_ni_keywords(
     sel = generate_selection(master_cv, job_description, config)
     assert sel["summary_index"] != 999
     assert "php" not in sel["keywords_detected"]
+
+
+# ---------------------------------------------------------------------------
+# P3.1: HyDE — _generate_hyde_query es defensiva por diseño (degrade a None).
+# ---------------------------------------------------------------------------
+def test_hyde_query_devuelve_texto_si_llm_ok(monkeypatch):
+    from src.llm_node import _generate_hyde_query
+
+    monkeypatch.setattr(
+        "src.llm_node._call_llm",
+        lambda *a, **k: {"hypothetical_document": "  CV hipotético del ideal  "},
+    )
+    assert (
+        _generate_hyde_query("oferta", {"llm_provider": "ollama"})
+        == "CV hipotético del ideal"
+    )
+
+
+def test_hyde_query_degrada_a_none_si_llm_falla(monkeypatch):
+    from src.llm_node import _generate_hyde_query
+
+    def llm_roto(*a, **k):
+        raise RuntimeError("LLM caído")
+
+    monkeypatch.setattr("src.llm_node._call_llm", llm_roto)
+    assert _generate_hyde_query("oferta", {"llm_provider": "ollama"}) is None
+
+
+def test_hyde_query_degrada_a_none_si_timeout(monkeypatch):
+    from src.llm_node import _generate_hyde_query
+
+    def llm_lento(*a, **k):
+        import time
+
+        time.sleep(2)
+        return {"hypothetical_document": "tarde"}
+
+    monkeypatch.setattr("src.llm_node._call_llm", llm_lento)
+    assert _generate_hyde_query("oferta", {"llm_provider": "ollama"}, timeout=0.05) is None
+
+
+def test_hyde_query_vacio_degrada_a_none(monkeypatch):
+    from src.llm_node import _generate_hyde_query
+
+    monkeypatch.setattr(
+        "src.llm_node._call_llm",
+        lambda *a, **k: {"hypothetical_document": "   "},
+    )
+    assert _generate_hyde_query("oferta", {"llm_provider": "ollama"}) is None
+
+
+def test_use_hyde_invalida_fingerprint_de_seleccion():
+    from src.config import DEFAULTS, _SELECTION_CONFIG_KEYS, selection_config_fingerprint
+
+    base = {k: DEFAULTS[k] for k in _SELECTION_CONFIG_KEYS}
+    assert selection_config_fingerprint({**base, "use_hyde": False}) != (
+        selection_config_fingerprint({**base, "use_hyde": True})
+    )
+
+
+# ---------------------------------------------------------------------------
+# P3.1: threading — use_hyde antepone el CV hipotético en el canal denso.
+# ---------------------------------------------------------------------------
+def _master_mini():
+    return {
+        "cv": {
+            "name": "Test User",
+            "sections": {
+                "experience": [
+                    {
+                        "company": "Empresa A",
+                        "position": "Backend Developer",
+                        "start_date": "2021-01",
+                        "end_date": "2024-12",
+                        "highlights": [
+                            "Desarrollé APIs REST en python.",
+                            "Mantuve pipelines de CI/CD.",
+                        ],
+                    }
+                ],
+                "skills": [],
+                "projects": [],
+                "education": [],
+            },
+        },
+        "design": {"theme": "engineeringresumes"},
+    }
+
+
+def test_select_con_use_hyde_antepone_query_hipotetica(
+    monkeypatch, config, tmp_path
+):
+    import numpy as np
+
+    from src.retrieval.store import IndexStore
+    from src.selection import SelectionEngine
+
+    class FakeDenseRecorder:
+        def __init__(self):
+            self.calls = []
+
+        def encode(self, texts, **kwargs):
+            self.calls.append(list(texts))
+            return np.zeros((len(texts), 4))
+
+    recorder = FakeDenseRecorder()
+    engine = SelectionEngine(
+        {**config, "use_reranker": False, "use_hyde": True},
+        cache_dir=tmp_path / "sel_cache",
+    )
+    engine.store = IndexStore(tmp_path / "idx")
+    engine._get_dense_model = lambda: recorder
+    # El import es lazy dentro de select(); se parchea en llm_node.
+    monkeypatch.setattr(
+        "src.llm_node._generate_hyde_query",
+        lambda jd, cfg: "CV hipotético del candidato ideal",
+    )
+
+    engine.select(_master_mini(), "Buscamos dev con python.")
+
+    # La primera consulta del canal denso es la query HyDE (prefijo E5 query:).
+    assert recorder.calls
+    assert recorder.calls[0][0].startswith("query: CV hipotético del candidato ideal")
+
+
+def test_select_sin_use_hyde_no_llama_al_llm(monkeypatch, config, tmp_path):
+    import numpy as np
+
+    from src.retrieval.store import IndexStore
+    from src.selection import SelectionEngine
+
+    class FakeDense:
+        def encode(self, texts, **kwargs):
+            return np.zeros((len(texts), 4))
+
+    engine = SelectionEngine(
+        {**config, "use_reranker": False, "use_hyde": False},
+        cache_dir=tmp_path / "sel_cache",
+    )
+    engine.store = IndexStore(tmp_path / "idx")
+    engine._get_dense_model = lambda: FakeDense()
+
+    def no_debe_llamarse(*a, **k):
+        raise AssertionError("use_hyde=False no debe generar query HyDE")
+
+    monkeypatch.setattr("src.llm_node._generate_hyde_query", no_debe_llamarse)
+    engine.select(_master_mini(), "Buscamos dev con python.")

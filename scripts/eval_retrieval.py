@@ -117,11 +117,20 @@ def main() -> None:
         default=ROOT / "data" / "master_cv_example.yaml",
         help="Master YAML del que salen los bullets (default: example).",
     )
+    parser.add_argument(
+        "--hyde",
+        action="store_true",
+        help="Antepone el CV hipotético del LLM (HyDE, P3.1) a los chunks "
+        "densos de cada caso. El gate del plan: correr con y sin el flag y "
+        "NO mergear use_hyde=True si recall@10/MRR@10 no mejora.",
+    )
     args = parser.parse_args()
 
     config = load_config()
     model_name = config.get("dense_model", "")
     use_reranker = config.get("use_reranker", True)
+    # El sufijo marca las configs evaluadas con HyDE para comparar on/off.
+    suffix = " (HyDE)" if args.hyde else ""
 
     from sentence_transformers import CrossEncoder, SentenceTransformer
 
@@ -180,20 +189,28 @@ def main() -> None:
 
     # Acumuladores: (label) -> [recall, mrr] por caso
     results: dict[str, list[tuple[float, float]]] = {
-        "sparse (stem on)": [],
-        "sparse (sin stem)": [],
-        "dense": [],
-        "keywords": [],
-        "reranker (pipeline default)": [],
+        f"sparse (stem on){suffix}": [],
+        f"sparse (sin stem){suffix}": [],
+        f"dense{suffix}": [],
+        f"keywords{suffix}": [],
+        f"reranker (pipeline default){suffix}": [],
     }
     for label, _ in fusion_configs:
-        results[label] = []
+        results[f"{label}{suffix}"] = []
 
     for case in cases:
         jd = case["job_description"]
         relevant = set(case["relevant_bullets"])
         query_text = extract_requirements_section(jd)
         query_chunks = chunk_text(query_text, max_tokens=200, overlap=50)
+        # P3.1: HyDE on/off — con --hyde el CV hipotético del candidato ideal
+        # va primero en los chunks densos (defensivo: None si el LLM falla).
+        if args.hyde:
+            from src.llm_node import _generate_hyde_query
+
+            hyde_query = _generate_hyde_query(jd, config)
+            if hyde_query:
+                query_chunks = [hyde_query] + query_chunks
         chunk_embs = dense_model.encode(
             prefixed_texts(query_chunks, "query", model_name),
             convert_to_numpy=True,
@@ -214,16 +231,16 @@ def main() -> None:
             master_corpus=" ".join(b["text"] for b in corpus).lower(),
         )
 
-        results["sparse (stem on)"].append(
+        results[f"sparse (stem on){suffix}"].append(
             (recall_at_k(sparse_stem_ranking, relevant), mrr_at_k(sparse_stem_ranking, relevant))
         )
-        results["sparse (sin stem)"].append(
+        results[f"sparse (sin stem){suffix}"].append(
             (recall_at_k(sparse_nostem_ranking, relevant), mrr_at_k(sparse_nostem_ranking, relevant))
         )
-        results["dense"].append(
+        results[f"dense{suffix}"].append(
             (recall_at_k(dense_ranking, relevant), mrr_at_k(dense_ranking, relevant))
         )
-        results["keywords"].append(
+        results[f"keywords{suffix}"].append(
             (recall_at_k(kw_ranking, relevant), mrr_at_k(kw_ranking, relevant))
         )
 
@@ -239,7 +256,7 @@ def main() -> None:
                 sparse_weight=fcfg["sparse_weight"],
                 dense_weight=fcfg["dense_weight"],
             )
-            results[label].append(
+            results[f"{label}{suffix}"].append(
                 (recall_at_k(ranking, relevant), mrr_at_k(ranking, relevant))
             )
 
@@ -256,7 +273,7 @@ def main() -> None:
             candidates = [b for b in corpus if b["id"] in hybrid_default[:30]]
             reranked = reranker.rerank(query_text, candidates, top_k=10)
             reranked_ids = [bid for bid, _ in reranked]
-            results["reranker (pipeline default)"].append(
+            results[f"reranker (pipeline default){suffix}"].append(
                 (recall_at_k(reranked_ids, relevant), mrr_at_k(reranked_ids, relevant))
             )
 
@@ -273,12 +290,17 @@ def main() -> None:
 
     # Mejor config de fusión por MRR
     fusion_ranked = sorted(
-        ((label, sum(m for _, m in results[label]) / n) for label, _ in fusion_configs),
+        ((f"{label}{suffix}", sum(m for _, m in results[f"{label}{suffix}"]) / n)
+         for label, _ in fusion_configs),
         key=lambda x: x[1],
         reverse=True,
     )
     print(f"\nMejor config de fusión por MRR@10: {fusion_ranked[0][0]} "
           f"({fusion_ranked[0][1]:.3f})")
+
+    if args.hyde:
+        print("\n[gate P3.1] Comparar contra la corrida sin --hyde: si "
+              "recall@10/MRR@10 no mejora, NO activar use_hyde en config.")
 
 
 if __name__ == "__main__":

@@ -738,6 +738,17 @@ class SelectionEngine:
         query_text = extract_requirements_section(job_description)
         query_chunks = chunk_text(query_text, max_tokens=200, overlap=50)
 
+        # P3.1: HyDE — si está activo, el CV hipotético del candidato ideal
+        # (redactado por el LLM) se antepone a los chunks del JD en el canal
+        # denso. Defensivo: si el LLM falla o tarda, se sigue con el JD real.
+        # (Import lazy: llm_node importa selection.py, sería circular.)
+        if self.config.get("use_hyde", False):
+            from .llm_node import _generate_hyde_query
+
+            hyde_query = _generate_hyde_query(job_description, self.config)
+            if hyde_query:
+                query_chunks = [hyde_query] + query_chunks
+
         # P0.2: términos que el JD excluye explícitamente. Se escanea el JD
         # COMPLETO (no la sección de requisitos): la cláusula de exclusión
         # ("No se requiere experiencia en X") suele estar fuera de esa
@@ -1018,6 +1029,14 @@ class SelectionEngine:
 
         query_text = extract_requirements_section(job_description)
         query_chunks = chunk_text(query_text, max_tokens=200, overlap=50)
+
+        # P3.1: HyDE — ver comentario en select().
+        if self.config.get("use_hyde", False):
+            from .llm_node import _generate_hyde_query
+
+            hyde_query = _generate_hyde_query(job_description, self.config)
+            if hyde_query:
+                query_chunks = [hyde_query] + query_chunks
 
         negated_terms = extract_negated_terms(job_description, _corpus_text(master_cv))
 

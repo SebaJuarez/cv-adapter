@@ -16,6 +16,7 @@ El proveedor se elige con config["llm_provider"]: "ollama" (modelo local) u
 "openai" (cualquier API compatible con OpenAI: OpenAI, OpenRouter, Groq, etc.).
 """
 import json
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, Optional
 
 from .config import load_config
@@ -155,6 +156,56 @@ def _call_llm(system_prompt: str, user_prompt: str, schema: Dict[str, Any], conf
     if provider == "openai":
         return _call_openai(system_prompt, user_prompt, schema, config)
     return _call_ollama(system_prompt, user_prompt, schema, config)
+
+
+# Schema mínimo para HyDE (P3.1): un solo campo de texto libre.
+_HYDE_SCHEMA: Dict[str, Any] = {
+    "type": "object",
+    "properties": {"hypothetical_document": {"type": "string"}},
+    "required": ["hypothetical_document"],
+}
+
+
+def _generate_hyde_query(job_description: str, config: Dict[str, Any], timeout: float = 15.0) -> Optional[str]:
+    """Redacta el CV hipotético del candidato ideal (HyDE, P3.1).
+
+    El LLM escribe cómo sería el CV del candidato perfecto para la oferta:
+    un texto con el vocabulario del JD que el canal denso puede comparar
+    contra los bullets reales del master (que suelen decir lo mismo con
+    otras palabras).
+
+    Defensivo por diseño: cualquier fallo (proveedor caído, timeout, JSON
+    inválido, campo vacío) devuelve None y el pipeline sigue con el JD real
+    como única query. El timeout se aplica con un ThreadPoolExecutor porque
+    ni Ollama ni OpenAI exponen timeout por llamada de forma portable.
+    """
+    system_prompt = (
+        "Sos un redactor de CVs experto en ATS. Dada la oferta laboral, redactá "
+        "el CV HIPOÉTICO del candidato ideal para ella: entre 6 y 10 bullets de "
+        "experiencia y una lista de skills, usando exactamente el vocabulario y "
+        "la jerga técnica de la oferta. No inventes nombres de empresas ni "
+        "personas: solo habilidades y logros genéricos pero plausibles."
+    )
+    user_prompt = (
+        "### oferta laboral ###\n"
+        f"{job_description}\n\n"
+        "Devolvé SOLO el JSON con el campo hypothetical_document: el texto del "
+        "CV hipotético en texto plano (sin markdown ni listas con guiones)."
+    )
+    pool = None
+    try:
+        pool = ThreadPoolExecutor(max_workers=1)
+        future = pool.submit(_call_llm, system_prompt, user_prompt, _HYDE_SCHEMA, config)
+        result = future.result(timeout=timeout)
+        text = (result or {}).get("hypothetical_document", "")
+        return text.strip() or None
+    except Exception:
+        # Timeout, RuntimeError del proveedor, JSON inválido… todo degrada
+        # con gracia: sin HyDE la selección es la de siempre.
+        return None
+    finally:
+        if pool is not None:
+            pool.shutdown(wait=False, cancel_futures=True)
 
 
 def _build_strategic_prompt(
