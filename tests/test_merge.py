@@ -6,6 +6,7 @@ from src.merge import (
     _build_verified_keywords,
     _reorder_skill_details,
     build_target_cv,
+    estimate_page_overflow,
     strip_internal_keys,
     validate_master_cv_structure,
 )
@@ -190,3 +191,58 @@ def test_validate_master_cv_structure_detecta_bullet_dict():
 
 def test_validate_master_cv_structure_master_valido_no_reporta(master_cv):
     assert validate_master_cv_structure(master_cv) == []
+
+
+# ---------------------------------------------------------------------------
+# P1.4: estimación de una página (heurística NO bloqueante).
+# ---------------------------------------------------------------------------
+def _cv_con_entrada(titulo, highlights):
+    return {
+        "cv": {
+            "sections": {
+                "experience": [{"company": titulo, "highlights": highlights}],
+            }
+        }
+    }
+
+
+def test_estimate_overflow_cv_corto_no_excede(master_cv):
+    target = _cv_con_entrada("Empresa A", ["Hice cosas útiles."])
+    est = estimate_page_overflow(target)
+    assert est["estimated_lines"] == 5
+    assert est["page_budget_lines"] == 45
+    assert not est["overflow"]
+    assert est["overflow_lines"] == 0
+
+
+def test_estimate_overflow_exceso_detectado():
+    highlights = ["Línea " + "x" * 89] * 60
+    target = _cv_con_entrada("Empresa A", highlights)
+    est = estimate_page_overflow(target)
+    assert est["overflow"] is True
+    assert est["overflow_lines"] == est["estimated_lines"] - 45
+    assert est["estimated_lines"] > 45
+
+
+def test_estimate_overflow_texto_largo_ocupa_varias_lineas():
+    target = _cv_con_entrada("Empresa A", ["A" * 200])
+    est = estimate_page_overflow(target)
+    # encabezado (2) + título sección (1) + entrada (1) + 200/90 -> 3 líneas
+    assert est["estimated_lines"] == 7
+
+
+def test_estimate_overflow_al_limite_exacto_no_excede():
+    # 1 + 2 (encabezado) + 42 entradas = 45 líneas exactas: NO desborda.
+    target = _cv_con_entrada(
+        "Empresa A", ["Bullet corto." for _ in range(41)]
+    )
+    est = estimate_page_overflow(target)
+    assert est["estimated_lines"] == 45
+    assert not est["overflow"]
+
+
+def test_estimate_overflow_respeta_lines_per_page_config(master_cv):
+    target = _cv_con_entrada("Empresa A", ["Hice cosas útiles."])
+    est = estimate_page_overflow(target, {"lines_per_page": 4})
+    assert est["overflow"] is True
+    assert est["overflow_lines"] == 1

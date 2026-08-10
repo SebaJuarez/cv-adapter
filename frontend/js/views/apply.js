@@ -7,7 +7,7 @@ import { blankEntryFor, deriveSectionTypes } from "../labels.js";
 import { confirmAction, promptAddSection } from "../modals.js";
 import { hideProgress, setGlobalStatus, setStatus, showProgress, toast } from "../notify.js";
 import { markDirty, snapshotView, state } from "../state.js";
-import { refreshKeywordWidgets } from "../widgets.js";
+import { refreshKeywordWidgets, renderPageEstimate } from "../widgets.js";
 
 // ---------------------------------------------------------- vista: apply
 
@@ -43,6 +43,7 @@ $("#generate-btn").addEventListener("click", async () => {
     state.selection = result.selection;
     state.masterDocSnapshot = result.master_cv;
     state.keywordReport = result.keyword_report;
+    state.pageEstimate = result.page_estimate;
     state.currentRunId = result.run_id;
     snapshotView("apply");
     setStatus(statusEl, "Listo. Revisá la selección abajo.", "ok");
@@ -64,6 +65,7 @@ function drawTargetView() {
   renderHeader($("#target-header"), state.targetDoc, () => markDirty("apply"));
 
   refreshKeywordWidgets();
+  renderPageEstimate();
 
   const ctx = {
     doc: state.targetDoc,

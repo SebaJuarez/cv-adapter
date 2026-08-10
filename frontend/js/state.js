@@ -12,6 +12,7 @@ const state = {
   masterSectionTypes: {},
   targetSectionTypes: {},
   keywordReport: null,
+  pageEstimate: null,
   currentRunId: null,
   masterFilter: "",
   collapsedMaster: {},

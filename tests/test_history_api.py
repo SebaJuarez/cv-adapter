@@ -268,6 +268,12 @@ class TestGenerateHook:
         assert body["run_id"]
         assert client.get("/api/history/runs").json()["runs"][0]["run_id"] == body["run_id"]
 
+        # P1.4: la respuesta incluye la estimación de página (aviso no bloqueante).
+        assert isinstance(body["page_estimate"], dict)
+        assert "estimated_lines" in body["page_estimate"]
+        assert "page_budget_lines" in body["page_estimate"]
+        assert isinstance(body["page_estimate"]["overflow"], bool)
+
     def test_generate_sin_jd_400(self, client):
         res = client.post("/api/generate", json={"job_description": "   "})
         assert res.status_code == 400

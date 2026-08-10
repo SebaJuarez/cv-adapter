@@ -613,4 +613,30 @@ function recalcKeywordReport() {
 }
 
 
-export { addBulletToTarget, addEntryToTarget, buildDocCorpus, countExcluded, effectiveKeywordList, getBulletScore, getEntryScore, getJDSnippet, getManualKeywords, getScoreMode, handleMissingKeywordClick, recalcKeywordReport, refreshKeywordWidgets, renderBulletScore, renderEntryHeatBorder, renderExcludedPanel, renderKeywordReport, renderOpportunities, renderResultSummary, updateNotIncludedPanel };
+// --------------------------------------------------- estimación de página (P1.4)
+
+// Aviso NO bloqueante: la estimación del backend (merge.estimate_page_overflow)
+// es una heurística a ojo; el layout real lo decide Typst según el tema.
+function renderPageEstimate() {
+  const el = $("#page-estimate-banner");
+  if (!el) return;
+  const est = state.pageEstimate;
+  if (!est) {
+    el.hidden = true;
+    el.textContent = "";
+    return;
+  }
+  const budget = est.page_budget_lines || 0;
+  const used = est.estimated_lines || 0;
+  el.classList.toggle("overflow", !!est.overflow);
+  el.hidden = false;
+  if (est.overflow) {
+    const extra = est.overflow_lines || 0;
+    el.textContent = `Aviso: la estimación da ${extra} línea(s) de más para una página (${used} de ${budget} presupuestadas). Es solo una estimación: el render final lo decide Typst.`;
+  } else {
+    el.textContent = `Estimación: ${used} líneas de ${budget} — alcanza para una página.`;
+  }
+}
+
+
+export { addBulletToTarget, addEntryToTarget, buildDocCorpus, countExcluded, effectiveKeywordList, getBulletScore, getEntryScore, getJDSnippet, getManualKeywords, getScoreMode, handleMissingKeywordClick, recalcKeywordReport, refreshKeywordWidgets, renderBulletScore, renderEntryHeatBorder, renderExcludedPanel, renderKeywordReport, renderOpportunities, renderPageEstimate, renderResultSummary, updateNotIncludedPanel };

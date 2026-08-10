@@ -589,6 +589,24 @@ textarea.highlight-text { min-height: 1.6em; resize: none; overflow: hidden; }
   margin-top: 1.75rem;
 }
 
+/* Aviso NO bloqueante de página estimada (P1.4) */
+.page-estimate-banner {
+  background: var(--paper-raised);
+  border: 1px solid var(--rule);
+  border-left: 4px solid var(--accent);
+  border-radius: var(--radius);
+  padding: 0.7rem 1rem;
+  margin-bottom: 1.25rem;
+  font-size: 0.92rem;
+  color: var(--text-muted);
+}
+
+.page-estimate-banner.overflow {
+  border-left-color: var(--danger, #d64545);
+  color: var(--danger, #d64545);
+  background: color-mix(in srgb, var(--danger, #d64545) 6%, var(--paper-raised));
+}
+
 .result-summary {
   display: flex;
   align-items: center;

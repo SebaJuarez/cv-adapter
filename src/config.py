@@ -44,6 +44,10 @@ DEFAULTS: Dict[str, Any] = {
     "keyword_boost_weight": 0.5,
     "show_keywords_line": True,
     "diversity_lambda": 0.7,
+    # Líneas estimadas que caben en una página A4 (P1.4): presupuesto de la
+    # heurística estimate_page_overflow en merge.py — un AVISO no bloqueante,
+    # el render real lo hace Typst y varía por tema.
+    "lines_per_page": 45,
     # Cache de selección (P0.1): evita recalculcar embeddings + reranker
     # cuando se regenera la misma oferta. TTL en horas; la clave se deriva
     # de selection_config_fingerprint (ver abajo).

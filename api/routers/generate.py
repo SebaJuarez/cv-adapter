@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException
 
 from src.config import load_config
 from src.history import add_run
+from src.merge import estimate_page_overflow
 from src.services.generation import generate_cv, regenerate_section
 from src.storage import load_master_cv
 
@@ -59,6 +60,7 @@ def generate(payload: JobDescriptionIn) -> Dict[str, Any]:
         "selection": selection,
         "master_cv": master_cv,
         "keyword_report": keyword_report,
+        "page_estimate": estimate_page_overflow(target_cv, config),
         "run_id": run["run_id"],
     }
 

@@ -367,3 +367,57 @@ def build_target_cv(
         "rendercv_theme", target.get("design", {}).get("theme", "engineeringresumes")
     )
     return target
+
+
+# ~Caracteres de texto corrido por línea a 10-11pt en A4 con márgenes estándar.
+# Es una cota gruesa para la heurística de P1.4: sirve para avisar, jamás
+# para bloquear (el render real es Typst y varía por tema).
+_CHARS_PER_LINE = 90
+
+
+def _text_lines(text: str) -> int:
+    """Líneas estimadas para un texto corrido (summary, bullet, etc.)."""
+    if not text or not str(text).strip():
+        return 0
+    return max(1, -(-len(str(text)) // _CHARS_PER_LINE))
+
+
+def estimate_page_overflow(target_cv: Dict[str, Any], config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Estima si el target_cv cabe en una página (heurística NO bloqueante, P1.4).
+
+    Cuenta líneas aproximadas del documento final: encabezado + una línea por
+    entrada + texto corrido partido cada ~90 caracteres. El presupuesto por
+    página sale de `config.json` (`lines_per_page`, default 45).
+
+    Es una estimación a ojo: el layout real lo decide Typst según el tema.
+    Por eso el resultado es informativo (banner en la web), nunca un filtro
+    que descarte contenido.
+    """
+    config = config or {}
+    budget = int(config.get("lines_per_page", 45))
+    lines = 2  # nombre + ubicación/contacto
+    sections = target_cv.get("cv", {}).get("sections", {})
+    for section, entries in sections.items():
+        if not isinstance(entries, list) or not entries:
+            continue
+        lines += 1  # título de sección
+        if section == "summary":
+            for text in entries:
+                lines += _text_lines(text)
+        elif section in ("experience", "projects"):
+            for entry in entries:
+                lines += 1  # encabezado de la entrada
+                for highlight in entry.get("highlights", []):
+                    lines += _text_lines(highlight)
+        elif section == "skills":
+            lines += len(entries)  # una línea por categoría
+        else:
+            # keywords (una línea) y secciones passthrough (1 línea/entrada)
+            lines += len(entries)
+    overflow_lines = max(0, lines - budget)
+    return {
+        "estimated_lines": lines,
+        "page_budget_lines": budget,
+        "overflow": lines > budget,
+        "overflow_lines": overflow_lines,
+    }
