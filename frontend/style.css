@@ -462,6 +462,67 @@ textarea.highlight-text { min-height: 1.6em; resize: none; overflow: hidden; }
   flex: 0 0 auto;
 }
 
+/* Comparar corridas (P2.2) */
+.history-compare-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.45rem 0.8rem;
+  margin-bottom: 0.6rem;
+  background: var(--paper-raised);
+  border: 1px dashed var(--rule);
+  border-radius: var(--radius);
+  font-size: 0.88rem;
+}
+
+.history-compare-bar span { color: var(--text-muted); flex: 1; }
+
+.history-compare-cell { width: 2.2rem; text-align: center; }
+
+.compare-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.9rem;
+  margin-top: 0.6rem;
+}
+
+.compare-col {
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  padding: 0.7rem 0.85rem;
+}
+
+.compare-col-head { margin-bottom: 0.5rem; }
+
+.compare-title { font-weight: 600; }
+
+.compare-meta {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-top: 0.15rem;
+}
+
+.compare-stale {
+  font-size: 0.82rem;
+  color: var(--warn);
+  border: 1px solid color-mix(in srgb, var(--warn) 40%, var(--rule));
+  border-radius: var(--radius);
+  padding: 0.4rem 0.6rem;
+  margin: 0 0 0.6rem;
+}
+
+.compare-block { margin-bottom: 0.6rem; }
+
+.compare-hint {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  margin: 0.15rem 0 0;
+}
+
+@media (max-width: 720px) {
+  .compare-grid { grid-template-columns: 1fr; }
+}
+
 .filter-count {
   font-family: var(--font-mono);
   font-size: 0.74rem;

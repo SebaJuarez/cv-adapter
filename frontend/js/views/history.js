@@ -78,6 +78,8 @@ async function fetchPage(reset) {
       statusCounts: body.status_counts || {},
       loaded: true,
     };
+    pruneCompareSelection();
+    updateCompareBar();
     renderRuns();
     renderStatusChips();
   } catch (e) {
@@ -116,6 +118,7 @@ function renderRuns() {
 
   const table = h("table", { class: "history-table" }, [
     h("thead", {}, h("tr", {}, [
+      h("th", { scope: "col", "aria-label": "Seleccionar para comparar" }, ""),
       h("th", { scope: "col" }, "Fecha"),
       h("th", { scope: "col" }, "Oferta"),
       h("th", { scope: "col", title: ATS_TOOLTIP }, "ATS"),
@@ -236,6 +239,13 @@ function buildRow(run) {
   }, "Borrar"));
 
   return h("tr", {}, [
+    h("td", { class: "history-compare-cell" }, h("input", {
+      type: "checkbox",
+      class: "history-compare-check",
+      "aria-label": "Seleccionar para comparar: " + (run.offer_title || run.run_id),
+      checked: compareSelection.includes(run.run_id) ? "checked" : null,
+      onchange: (e) => toggleCompare(run, e.target.checked),
+    })),
     h("td", { class: "history-date" }, formatDate(run.created_at)),
     h("td", {}, titleCell),
     h("td", { class: "history-num", title: ATS_TOOLTIP }, String(run.ats_score)),
@@ -243,6 +253,117 @@ function buildRow(run) {
     h("td", { class: "history-status-cell" }, statusCell),
     h("td", {}, h("div", { class: "history-actions" }, actions)),
   ]);
+}
+
+// ------------------------------------------------------- comparar corridas (P2.2)
+
+// Máximo de corridas seleccionadas para comparar.
+const MAX_COMPARE = 2;
+const compareSelection = [];
+
+function pruneCompareSelection() {
+  const ids = new Set(page.runs.map((r) => r.run_id));
+  for (let i = compareSelection.length - 1; i >= 0; i--) {
+    if (!ids.has(compareSelection[i])) compareSelection.splice(i, 1);
+  }
+}
+
+function updateCompareBar() {
+  const bar = $("#history-compare-bar");
+  if (!bar) return;
+  const count = compareSelection.length;
+  const label = $("#history-compare-label");
+  const btn = $("#history-compare-btn");
+  if (count === 0) {
+    bar.hidden = true;
+    return;
+  }
+  bar.hidden = false;
+  label.textContent = count === 1
+    ? "1 corrida seleccionada — elegí otra para comparar."
+    : "2 corridas seleccionadas.";
+  btn.disabled = count < 2;
+}
+
+function toggleCompare(run, checked) {
+  const idx = compareSelection.indexOf(run.run_id);
+  if (checked && idx === -1) {
+    if (compareSelection.length >= MAX_COMPARE) {
+      toast("No se pueden comparar más de 2 corridas.");
+      return;
+    }
+    compareSelection.push(run.run_id);
+    if (compareSelection.length === MAX_COMPARE) {
+      renderRuns();
+      openCompareModal();
+      return;
+    }
+  } else if (!checked && idx !== -1) {
+    compareSelection.splice(idx, 1);
+  }
+  updateCompareBar();
+}
+
+function openCompareModal() {
+  const runs = compareSelection
+    .map((id) => page.runs.find((r) => r.run_id === id))
+    .filter(Boolean);
+  if (runs.length !== 2) return;
+
+  const [runA, runB] = runs;
+  const kwsA = new Set(runA.keywords_detected || []);
+  const kwsB = new Set(runB.keywords_detected || []);
+  const common = [...kwsA].filter((k) => kwsB.has(k)).sort();
+  const onlyA = [...kwsA].filter((k) => !kwsB.has(k)).sort();
+  const onlyB = [...kwsB].filter((k) => !kwsA.has(k)).sort();
+
+  const kwBlock = (title, kws, empty) =>
+    kws.length
+      ? h("div", { class: "compare-block" }, [
+          h("h4", { class: "detail-h4" }, title),
+          h("div", { class: "detail-kws" }, kws.map((kw) => h("span", { class: "detail-kw" }, kw))),
+        ])
+      : h("div", { class: "compare-block" }, [
+          h("h4", { class: "detail-h4" }, title),
+          h("p", { class: "compare-hint" }, empty),
+        ]);
+
+  const col = (run, onlyKws, sideLabel) => {
+    const kws = run.keywords_detected || [];
+    // Corridas anteriores a P0.1 no guardan keyword report: aviso por columna.
+    const stale = !run.ats_score && !kws.length;
+    return h("div", { class: "compare-col" }, [
+      h("div", { class: "compare-col-head" }, [
+        h("div", { class: "compare-title" }, run.offer_title || "—"),
+        h("div", { class: "compare-meta" }, [
+          formatDate(run.created_at),
+          " · ATS " + String(run.ats_score ?? 0) + "%",
+          " · " + (STATUS_LABELS[(run.application || {}).status] || "Pendiente"),
+        ]),
+      ]),
+      stale
+        ? h("p", { class: "compare-stale" },
+            "Corrida vieja: sin keyword report guardado — solo se compara metadata.")
+        : null,
+      kwBlock("Solo en " + sideLabel, onlyKws, "Ninguna keyword exclusiva."),
+      kwBlock("Faltan en el CV generado", run.missing_in_target || [], "No hay recortadas."),
+      kwBlock("No están en tu CV maestro", run.not_in_master || [], "Ninguna nueva."),
+    ]);
+  };
+
+  openModal((close) => {
+    return h("div", {}, [
+      h("h3", {}, "Comparar corridas"),
+      kwBlock("En ambas ofertas", common, "Sin keywords en común."),
+      h("div", { class: "compare-grid" }, [
+        col(runA, onlyA, "A"),
+        col(runB, onlyB, "B"),
+      ]),
+      h("div", { class: "modal-actions" }, [
+        h("button", { class: "btn btn-ghost", onclick: () => close(false) }, "Cerrar"),
+      ]),
+    ]);
+  }, { boxClass: "modal-wide" });
 }
 
 // ------------------------------------------------------------- PDF/borrado
@@ -601,6 +722,15 @@ $("#history-min-score").addEventListener("input", scheduleScoreFilter);
 $("#history-max-score").addEventListener("input", scheduleScoreFilter);
 
 $("#history-load-more").addEventListener("click", () => fetchPage(false));
+
+// ------------------------------------------------- comparar: barra de acciones
+
+$("#history-compare-btn").addEventListener("click", openCompareModal);
+$("#history-compare-clear").addEventListener("click", () => {
+  compareSelection.length = 0;
+  updateCompareBar();
+  renderRuns();
+});
 
 
 export { loadHistoryView };
