@@ -543,6 +543,177 @@ class SelectionEngine:
             )
         return score
 
+    # -----------------------------------------------------------------
+    # P0.3: cobertura global de keywords críticas entre entradas
+    # -----------------------------------------------------------------
+    def _selected_entries_cover(
+        self,
+        master_cv: dict[str, Any],
+        selection: dict[str, Any],
+        variants: set[str],
+    ) -> bool:
+        """True si alguna entrada seleccionada tiene un bullet que cubre
+        alguna variante de la keyword (misma verificación que el ajuste
+        local: texto crudo + variantes, ver _select_highlights_with_coverage)."""
+        sections = master_cv.get("cv", {}).get("sections", {})
+        for section in ("experience", "projects"):
+            for entry in selection.get(f"selected_{section}", []):
+                highlights = sections.get(section, [])[entry["index"]].get(
+                    "highlights", []
+                )
+                for bi in entry.get("highlight_order", []):
+                    if 0 <= bi < len(highlights) and any(
+                        _count_keyword_occurrences(highlights[bi], v) > 0
+                        for v in variants
+                    ):
+                        return True
+        return False
+
+    def _best_excluded_covering(
+        self,
+        master_cv: dict[str, Any],
+        selection: dict[str, Any],
+        variants: set[str],
+    ) -> tuple[str, dict[str, Any]] | None:
+        """Entrada excluida con el bullet de mayor score que cubre la keyword.
+
+        Los bullets de entradas excluidas están en bullet_scores (la cobertura
+        del dict se arma ANTES de agrupar), así que el score global sirve de
+        criterio de elección sin recalcular nada.
+        """
+        sections = master_cv.get("cv", {}).get("sections", {})
+        best: tuple[str, dict[str, Any]] | None = None
+        best_score = -1.0
+        for section in ("experience", "projects"):
+            for entry in selection.get(f"excluded_{section}", []):
+                highlights = sections.get(section, [])[entry["index"]].get(
+                    "highlights", []
+                )
+                for bi in entry.get("highlight_order", []):
+                    if not (0 <= bi < len(highlights)):
+                        continue
+                    if not any(
+                        _count_keyword_occurrences(highlights[bi], v) > 0
+                        for v in variants
+                    ):
+                        continue
+                    score = selection["bullet_scores"].get(
+                        f"{section}_{entry['index']}_bullet_{bi}", 0.0
+                    )
+                    if score > best_score:
+                        best_score, best = score, (section, entry)
+        return best
+
+    def _highlights_for_swap(
+        self,
+        master_cv: dict[str, Any],
+        selection: dict[str, Any],
+        section: str,
+        entry: dict[str, Any],
+        max_highlights: int,
+        diversity_lambda: float,
+        swap_variants: dict[str, set[str]],
+    ) -> list[int]:
+        """Highlight_order de la entrada que entra por un swap: recorte al
+        presupuesto de max_highlights con la misma lógica local de
+        cobertura, acotada a la keyword por la que se swapea — como la
+        entrada fue elegida por cubrirla, la cobertura queda garantizada
+        (y una keyword negada nunca se fuerza)."""
+        highlights = master_cv["cv"]["sections"][section][entry["index"]].get(
+            "highlights", []
+        )
+        bullets = []
+        for bi, text in enumerate(highlights):
+            bid = f"{section}_{entry['index']}_bullet_{bi}"
+            if bid in selection["bullet_scores"]:
+                bullets.append(
+                    {
+                        "id": bid,
+                        "text": text,
+                        "bullet_index": bi,
+                        "score": selection["bullet_scores"][bid],
+                    }
+                )
+        if not bullets:
+            return []
+        bullets.sort(key=lambda b: b["score"], reverse=True)
+        return _select_highlights_with_coverage(
+            bullets, max_highlights, swap_variants, diversity_lambda
+        )
+
+    def _ensure_global_keyword_coverage(
+        self,
+        master_cv: dict[str, Any],
+        selection: dict[str, Any],
+        critical_keyword_variants: dict[str, set[str]],
+    ) -> None:
+        """Swaps entre entradas para cubrir keywords críticas del JD.
+
+        El ajuste local (_select_highlights_with_coverage) solo reacomoda
+        bullets DENTRO de una entrada: si la keyword crítica vive en una
+        entrada que el presupuesto excluyó completa, ninguna pasada local
+        la rescata. Esta pasada global, por cada keyword crítica sin
+        cobertura en las entradas seleccionadas, reemplaza la entrada
+        seleccionada de menor score de la sección por la entrada excluida
+        cuyo bullet cubriente tiene mejor score.
+
+        Límites, a propósito (no desarmar la selección por score):
+        - Budget `max_global_coverage_swaps` (default 3) en TOTAL.
+        - Un swap por keyword; keywords negadas en el JD (P0.2) se saltan
+          (no se fuerza cobertura de lo que la oferta excluye).
+        - La entrada que entra respeta max_highlights_per_entry y el swap
+          nunca agrega contenido que no exista en el master.
+        """
+        max_swaps = int(self.config.get("max_global_coverage_swaps", 3))
+        if max_swaps <= 0 or not critical_keyword_variants:
+            return
+
+        negated = set(selection.get("negated_terms", []))
+        max_highlights = int(self.config.get("max_highlights_per_entry", 4))
+        diversity_lambda = float(self.config.get("diversity_lambda", 0.7))
+
+        swaps_done = 0
+        swapped_sections: set[str] = set()
+
+        for kw, variants in critical_keyword_variants.items():
+            if swaps_done >= max_swaps:
+                break
+            if any(v in negated for v in variants):
+                continue
+            if self._selected_entries_cover(master_cv, selection, variants):
+                continue
+
+            candidate = self._best_excluded_covering(master_cv, selection, variants)
+            if candidate is None:
+                continue
+            section, candidate_entry = candidate
+
+            selected = selection.get(f"selected_{section}", [])
+            if not selected:
+                continue
+            removed = min(selected, key=lambda e: e.get("entry_score", 0.0))
+            selected.remove(removed)
+            candidate_entry["highlight_order"] = self._highlights_for_swap(
+                master_cv,
+                selection,
+                section,
+                candidate_entry,
+                max_highlights,
+                diversity_lambda,
+                {kw: variants},
+            )
+            selected.append(candidate_entry)
+            selection.setdefault(f"excluded_{section}", []).append(removed)
+            swapped_sections.add(section)
+            swaps_done += 1
+
+        # El swap puede romper el orden cronológico de la sección.
+        for section in swapped_sections:
+            key = f"selected_{section}"
+            selection[key] = _reorder_entries_chronologically(
+                master_cv, section, selection[key]
+            )
+
     def select(
         self,
         master_cv: dict[str, Any],
@@ -766,6 +937,16 @@ class SelectionEngine:
                     selection[key] = _reorder_entries_chronologically(
                         master_cv, section, selection[key]
                     )
+
+        # P0.3: cobertura global de keywords críticas entre entradas — el
+        # ajuste local no rescata keywords que viven en entradas excluidas
+        # por presupuesto. Corre después de la sección completa para que
+        # bullet_scores (que incluye los bullets de entradas excluidas)
+        # ya esté poblado. Determinístico: mismo JD+master+config → misma
+        # selección (el cache lo devuelve tal cual).
+        self._ensure_global_keyword_coverage(
+            master_cv, selection, critical_keyword_variants
+        )
 
         if not self.store.is_fresh(master_json, self._index_params()):
             self.store.save_hash(master_json, self._index_params())

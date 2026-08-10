@@ -171,3 +171,116 @@ def test_select_penaliza_bullet_de_termino_negado(config, tmp_path):
         sel_pen_pos["bullet_scores"][soporte_id]
         == sel_base_pos["bullet_scores"][soporte_id]
     )
+
+
+# ---------------------------------------------------------------------------
+# P0.3: cobertura GLOBAL de keywords críticas (frecuencia >= 2 en el JD).
+# El ajuste local solo reacomoda bullets dentro de una entrada: si la
+# keyword crítica vive en una entrada excluida completa, solo un swap entre
+# entradas la rescata. Escenario con canal de keywords puro (sparse/dense
+# con peso 0): el orden de los bullets es la suma de frecuencias de
+# keywords del JD que contienen, determinístico y sin modelos reales.
+# ---------------------------------------------------------------------------
+COVERAGE_JD = "Buscamos python, docker y kubernetes. Requerimos kubernetes para el despliegue."
+COVERAGE_JD_NEGADO = "Buscamos python y docker. No se requiere kubernetes ni kubernetes avanzado."
+COVERAGE_MASTER = {
+    "cv": {
+        "name": "Test User",
+        "sections": {
+            # Entry 0 y 1 cubren python+docker (freq 1 cada una); la keyword
+            # crítica (kubernetes, freq 2) solo vive en la entry 2, que el
+            # presupuesto de 2 entradas excluye por score.
+            "experience": [
+                {
+                    "company": "Empresa A",
+                    "position": "Backend Developer",
+                    "highlights": ["Desarrollé APIs REST con python y docker."],
+                },
+                {
+                    "company": "Empresa B",
+                    "position": "DevOps Engineer",
+                    "highlights": ["Automaticé pipelines con python y docker."],
+                },
+                {
+                    "company": "Empresa C",
+                    "position": "SRE",
+                    "highlights": [
+                        "Operé clústeres de kubernetes.",
+                        "Diseñé dashboards con python.",
+                    ],
+                },
+            ],
+            "skills": [],
+            "projects": [],
+            "education": [],
+        },
+    },
+    "design": {"theme": "engineeringresumes"},
+}
+
+
+@pytest.fixture
+def coverage_engine(config, tmp_path):
+    """Motor determinístico para P0.3: sin reranker, canal de keywords puro
+    y presupuesto de 2 entradas / 1 highlight para forzar la exclusión."""
+
+    def build(max_swaps, tag):
+        import numpy as np
+
+        e = SelectionEngine(
+            {
+                **config,
+                "use_reranker": False,
+                "sparse_weight": 0.0,
+                "dense_weight": 0.0,
+                "max_experience_entries": 2,
+                "max_highlights_per_entry": 1,
+                "max_global_coverage_swaps": max_swaps,
+            },
+            cache_dir=tmp_path / f"cov_cache_{tag}",
+        )
+        e.store = IndexStore(tmp_path / f"cov_idx_{tag}")
+
+        class FakeDense:
+            def encode(self, texts, **kwargs):
+                return np.zeros((len(texts), 4))
+
+        e._get_dense_model = lambda: FakeDense()
+        return e
+
+    return build
+
+
+def test_global_coverage_swapa_entrada_excluida(coverage_engine):
+    sel = coverage_engine(3, "swap").select(COVERAGE_MASTER, COVERAGE_JD)
+    indices = [e["index"] for e in sel["selected_experience"]]
+    # La entrada B (menor score) sale; entra C, que cubre kubernetes.
+    assert indices == [0, 2]
+    assert [e["index"] for e in sel["excluded_experience"]] == [2, 1]
+    # La entrada que entra respeta el presupuesto de highlights y mantiene
+    # el bullet que cubre la keyword crítica.
+    entered = sel["selected_experience"][1]
+    assert entered["highlight_order"] == [0]
+    # Cobertura efectiva: el bullet de kubernetes quedó seleccionado.
+    sel_texts = [
+        COVERAGE_MASTER["cv"]["sections"]["experience"][e["index"]]["highlights"][bi]
+        for e in sel["selected_experience"]
+        for bi in e["highlight_order"]
+    ]
+    assert any("kubernetes" in t for t in sel_texts)
+
+
+def test_global_coverage_sin_budget_no_rompe(coverage_engine):
+    # max_global_coverage_swaps=0 desactiva la pasada: selección intacta.
+    sel = coverage_engine(0, "no_swap").select(COVERAGE_MASTER, COVERAGE_JD)
+    assert [e["index"] for e in sel["selected_experience"]] == [0, 1]
+    assert [e["index"] for e in sel["excluded_experience"]] == [2]
+
+
+def test_global_coverage_no_fuerza_keyword_negada(coverage_engine):
+    # P0.2 manda: kubernetes es crítica (freq 2) pero el JD la excluye
+    # explícitamente — forzar cobertura contradeciría la negación.
+    sel = coverage_engine(3, "negado").select(COVERAGE_MASTER, COVERAGE_JD_NEGADO)
+    assert "kubernetes" in sel["negated_terms"]
+    assert [e["index"] for e in sel["selected_experience"]] == [0, 1]
+    assert [e["index"] for e in sel["excluded_experience"]] == [2]

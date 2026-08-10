@@ -52,6 +52,11 @@ DEFAULTS: Dict[str, Any] = {
     # bullets que matchean algo que el JD excluye explícitamente ("no se
     # requiere X"). < 1 baja el rank; 1.0 desactiva la penalización.
     "negation_penalty": 0.3,
+    # Swaps de cobertura global (P0.3): cantidad máxima de intercambios
+    # entre entradas que puede hacer _ensure_global_keyword_coverage para
+    # que las keywords críticas del JD (frecuencia >= 2) queden cubiertas
+    # por alguna entrada seleccionada. 0 desactiva la pasada.
+    "max_global_coverage_swaps": 3,
 }
 
 # Claves de config que cambian el resultado de SelectionEngine.select() /
@@ -79,6 +84,7 @@ _SELECTION_CONFIG_KEYS = (
     "sparse_weight",
     "dense_weight",
     "negation_penalty",
+    "max_global_coverage_swaps",
 )
 
 
