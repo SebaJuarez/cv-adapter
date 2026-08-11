@@ -19,6 +19,9 @@ PyYAML>=6.0.2
 # --- Renderizado CV YAML -> PDF ---
 rendercv[full]>=2.8
 
+# --- Importación de CVs (F5): extracción de texto de PDFs viejos ---
+pypdf>=6.0.0
+
 # --- Motor de Information Retrieval  ---
 # BM25 léxico + sinónimos (Python puro)
 rank-bm25>=0.2.2

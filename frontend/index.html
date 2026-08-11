@@ -14,6 +14,7 @@
   <nav class="tabs" id="tabs" role="tablist" aria-label="Vistas principales">
     <button class="tab is-active" role="tab" aria-selected="true" aria-controls="view-master" data-view="master">CV maestro</button>
     <button class="tab" role="tab" aria-selected="false" aria-controls="view-apply" data-view="apply">Nueva aplicación</button>
+    <button class="tab" role="tab" aria-selected="false" aria-controls="view-imports" data-view="imports">Importar</button>
     <button class="tab" role="tab" aria-selected="false" aria-controls="view-history" data-view="history">Historial</button>
     <button class="tab" role="tab" aria-selected="false" aria-controls="view-settings" data-view="settings">Configuración</button>
   </nav>
@@ -133,6 +134,14 @@
       <button id="render-btn" class="btn btn-primary">Generar PDF</button>
     </div>
   </section>
+</main>
+
+<main id="view-imports" class="view">
+  <div class="view-head">
+    <h1 tabindex="-1">Importar</h1>
+    <p class="lede">Subí tus CVs viejos (PDF, texto o archivos de RenderCV). Los agrupamos por logros probablemente repetidos y vos decidís cuáles entran al CV maestro — nada se importa sin tu confirmación.</p>
+  </div>
+  <div id="imports-root" aria-live="polite"></div>
 </main>
 
 <main id="view-history" class="view">

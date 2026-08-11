@@ -6,6 +6,7 @@ import { confirmAction } from "./modals.js";
 import { setGlobalStatus } from "./notify.js";
 import { loadSettingsView } from "./views/settings.js";
 import { loadHistoryView } from "./views/history.js";
+import { loadImportsView } from "./views/imports.js";
 import { dirty, hasUnsavedChanges, state, updateUndoButton } from "./state.js";
 
 "use strict";
@@ -37,6 +38,7 @@ window.addEventListener("resize", syncTopbarHeight);
 function viewNameFor(id) {
   return id === "view-master" ? "master"
     : id === "view-apply" ? "apply"
+    : id === "view-imports" ? "imports"
     : id === "view-history" ? "history"
     : "settings";
 }
@@ -88,10 +90,10 @@ $("#tabs").addEventListener("keydown", (e) => {
 
 (async function init() {
   syncTopbarHeight();
-  const [master, settings, history] = await Promise.allSettled([
-    loadMasterView(), loadSettingsView(), loadHistoryView(),
+  const [master, settings, history, imports] = await Promise.allSettled([
+    loadMasterView(), loadSettingsView(), loadHistoryView(), loadImportsView(),
   ]);
-  const failures = [master, settings, history].filter((x) => x.status === "rejected");
+  const failures = [master, settings, history, imports].filter((x) => x.status === "rejected");
   if (failures.length > 0) {
     const detail = failures.map((f) => f.reason && f.reason.message ? f.reason.message : String(f.reason)).join(" | ");
     setGlobalStatus("No se pudo cargar toda la app: " + detail, "error");

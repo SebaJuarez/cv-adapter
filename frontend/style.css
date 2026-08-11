@@ -1699,3 +1699,98 @@ mark.jd-mark:hover { background: #f5b942; }
 .onb-thinking { color: var(--ink-soft); font-style: italic; }
 
 .onb-ctas { display: flex; gap: 0.75rem; align-items: center; margin-top: 1.5rem; }
+
+
+/* Bandeja de importacion (F5): carga de CVs, clusters y confirmacion */
+.imports-upload { display: flex; flex-direction: column; gap: 0.8rem; max-width: 40rem; }
+
+.imports-hint { font-size: 0.85rem; color: var(--ink-soft); margin: 0; line-height: 1.5; }
+
+.imports-file-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.88rem;
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius);
+  background: var(--paper-raised);
+  padding: 0.5rem 0.95rem;
+  cursor: pointer;
+  width: fit-content;
+}
+
+.imports-file-label input { max-width: 260px; }
+
+.imports-actions { display: flex; gap: 0.5rem; align-items: center; }
+
+.imports-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 1.1rem;
+}
+
+.imports-progress {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--accent);
+  margin: 0;
+}
+
+.imports-h2 { font-size: 1rem; margin: 1.2rem 0 0.6rem; }
+
+.imports-done { color: var(--ink-faint); font-style: italic; }
+
+.imp-cluster { margin-bottom: 0.8rem; }
+
+.imp-cluster-head { display: flex; align-items: baseline; gap: 0.6rem; margin-bottom: 0.5rem; }
+.imp-cluster-head strong { font-size: 0.9rem; }
+
+.imp-cluster-hint { font-size: 0.78rem; color: var(--ink-faint); }
+
+.imp-cluster-rows { display: flex; flex-direction: column; gap: 0.35rem; margin-bottom: 0.6rem; }
+
+.imp-cluster-row { display: flex; gap: 0.6rem; align-items: flex-start; }
+
+.imp-file {
+  flex-shrink: 0;
+  font-size: 0.7rem;
+  font-family: var(--font-mono);
+  color: var(--ink-faint);
+  border: 1px solid var(--rule);
+  border-radius: 0.25rem;
+  padding: 0.06rem 0.4rem;
+  max-width: 9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.imp-cluster-text { font-size: 0.86rem; line-height: 1.45; color: var(--ink); }
+
+.imp-diff { font-weight: 700; background: var(--warn-soft); border-radius: 0.2rem; padding: 0 0.1rem; }
+
+.imp-cluster-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+
+.imp-awaiting {
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  padding: 0.7rem;
+  margin-top: 0.6rem;
+}
+
+.imp-awaiting-hint { font-size: 0.82rem; color: var(--ink-soft); margin: 0 0 0.6rem; }
+
+.imp-awaiting-cards { display: flex; flex-direction: column; gap: 0.6rem; margin-bottom: 0.6rem; }
+
+.imp-candidates { margin: 0.5rem 0 1rem; }
+
+.imp-candidate-actions { display: flex; gap: 0.5rem; margin-top: 0.9rem; }
+
+.imp-orphans {
+  margin-top: 1.4rem;
+  border: 1px dashed var(--rule-strong);
+  border-radius: var(--radius);
+  padding: 0.8rem;
+}

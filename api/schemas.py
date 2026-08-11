@@ -52,3 +52,28 @@ class OnboardingAnswersIn(BaseModel):
     work: str = ""
     tools: str = ""
     outcomes: str = ""
+
+
+class ImportFileIn(BaseModel):
+    # Un CV a importar (F5): kind es "text" | "yaml" | "json" | "pdf".
+    # Para pdf, `content` es el archivo en base64.
+    name: str
+    kind: str
+    content: str
+
+
+class ImportClusterizeIn(BaseModel):
+    files: list[ImportFileIn]
+
+
+class ImportResolveIn(BaseModel):
+    cluster_id: str
+    action: str  # "merge" | "split" | "discard"
+
+
+class ImportOrphansIn(BaseModel):
+    accept: bool = True
+
+
+class ImportConfirmIn(BaseModel):
+    cluster_id: str
