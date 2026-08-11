@@ -7,14 +7,57 @@ import { blankEntryFor, deriveSectionTypes } from "../labels.js";
 import { promptAddSection } from "../modals.js";
 import { setGlobalStatus, setStatus, toast } from "../notify.js";
 import { markDirty, snapshotView, state } from "../state.js";
+import { mountOnboarding } from "./onboarding.js";
 
 // --------------------------------------------------------- vista: master
+
+// F4: el master está vacío cuando no hay nombre y ninguna sección tiene
+// entradas — es la señal de "usuario nuevo sin CV" que dispara el
+// onboarding conversacional.
+function isMasterEmpty(doc) {
+  const cv = doc?.cv;
+  if (!cv) return true;
+  if ((cv.name || "").trim()) return false;
+  return Object.values(cv.sections || {}).every(
+    (entries) => !Array.isArray(entries) || entries.length === 0
+  );
+}
+
+const EDITOR_PANES = [
+  "#master-header",
+  "#master-nav",
+  ".master-tools",
+  "#add-section-master",
+  "#view-master .save-bar",
+];
+
+function setEditorPanesVisible(visible) {
+  EDITOR_PANES.forEach((sel) => {
+    const el = $(sel);
+    if (el) el.hidden = !visible;
+  });
+}
 
 async function loadMasterView() {
   state.masterDoc = await api("/api/master-cv");
   state.masterSectionTypes = deriveSectionTypes(state.masterDoc);
   snapshotView("master");
-  drawMasterView();
+  if (isMasterEmpty(state.masterDoc) && !localStorage.getItem("onboardingSeen")) {
+    setEditorPanesVisible(false);
+    drawOnboarding();
+  } else {
+    drawMasterView();
+  }
+}
+
+function drawOnboarding() {
+  const container = $("#master-sections");
+  container.innerHTML = "";
+  mountOnboarding(container, () => {
+    localStorage.setItem("onboardingSeen", "1");
+    setEditorPanesVisible(true);
+    drawMasterView();
+  });
 }
 
 function drawMasterView() {

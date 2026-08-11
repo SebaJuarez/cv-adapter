@@ -1666,3 +1666,36 @@ mark.jd-mark:hover { background: #f5b942; }
   font-size: 0.8rem;
   color: var(--ink-soft);
 }
+
+/* Onboarding conversacional (F4): primera pantalla con master vacío */
+.onboarding {
+  max-width: 44rem;
+  padding: 1rem 0 2rem;
+}
+
+.onb-title { font-size: 1.15rem; margin: 0 0 0.4rem; }
+
+.onb-lede { color: var(--ink-soft); margin: 0 0 1rem; line-height: 1.5; }
+
+.onb-progress {
+  font-size: 0.85rem;
+  color: var(--accent);
+  font-weight: 600;
+  margin-bottom: 1.2rem;
+}
+
+.onb-chat { margin-bottom: 1.2rem; }
+
+.onb-question { font-weight: 600; margin: 0 0 0.4rem; }
+
+.onb-textarea { min-height: 4.5rem; }
+
+.onb-chat-actions { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
+
+.onb-candidate-title { font-size: 0.85rem; color: var(--ink-soft); margin: 0 0 0.6rem; }
+
+.onb-candidate-actions { display: flex; gap: 0.5rem; margin-top: 0.8rem; }
+
+.onb-thinking { color: var(--ink-soft); font-style: italic; }
+
+.onb-ctas { display: flex; gap: 0.75rem; align-items: center; margin-top: 1.5rem; }

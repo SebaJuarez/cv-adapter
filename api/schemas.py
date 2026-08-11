@@ -43,3 +43,12 @@ class ExtractFactsIn(BaseModel):
     # real en memoria, no un índice: el master del disco puede diferir de
     # lo que el usuario está editando sin guardar).
     text: str
+
+
+class OnboardingAnswersIn(BaseModel):
+    # Respuestas libres del onboarding conversacional (F4): qué hiciste,
+    # herramientas, resultados. Cada una puede venir vacía ("no sé / paso
+    # esta pregunta" es válido) salvo work, que el router exige no vacío.
+    work: str = ""
+    tools: str = ""
+    outcomes: str = ""

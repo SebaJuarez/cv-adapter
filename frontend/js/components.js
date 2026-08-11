@@ -1145,4 +1145,4 @@ function renderHeader(container, doc, onDirty) {
 }
 
 
-export { clearAchDirty, commitAllDrafts, getMatchReason, humanizeSectionName, renderEntriesList, renderEntryCard, renderHeader, renderHighlights, renderLabelDetailsList, renderPullback, renderSectionBlock, renderSectionNav, renderSections, renderTextList };
+export { clearAchDirty, commitAchDraft, commitAllDrafts, getMatchReason, humanizeSectionName, renderAchievementCard, renderEntriesList, renderEntryCard, renderHeader, renderHighlights, renderLabelDetailsList, renderPullback, renderSectionBlock, renderSectionNav, renderSections, renderTextList };
