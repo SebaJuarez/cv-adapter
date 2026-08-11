@@ -659,3 +659,27 @@ def test_build_target_cv_sin_usage_no_cambia_comportamiento(master_achievements,
     selection = _selection([0, 1, 2])
     target = build_target_cv(master_achievements, selection, config, job_description="")
     assert "highlights" in target["cv"]["sections"]["experience"][0]
+
+
+def test_build_target_cv_usa_preferred_angle_del_item(master_achievements, config):
+    # ach_1 tiene var_1a (impacto_tecnico, usada 7) y var_1b (liderazgo,
+    # usada 3): con ángulo preferido "liderazgo" el target emite var_1b.
+    selection = _selection([0, 1, 2])
+    selection["selected_experience"][0]["preferred_angles"] = {"0": "liderazgo"}
+    target = build_target_cv(master_achievements, selection, config, job_description="")
+    highlights = target["cv"]["sections"]["experience"][0]["highlights"]
+    assert "Lideré el diseño" in highlights[0]
+    assert "Diseñé un sistema de facturación con Java" not in highlights[0]
+
+
+def test_build_target_cv_angulo_sin_match_cae_a_representativa(master_achievements, config):
+    # Sin variante con ese ángulo -> fallback a la representativa (D4).
+    usage: dict = {}
+    selection = _selection([0, 1, 2])
+    selection["selected_experience"][0]["preferred_angles"] = {"0": "vision_producto"}
+    target = build_target_cv(
+        master_achievements, selection, config, job_description="", variant_usage=usage
+    )
+    highlights = target["cv"]["sections"]["experience"][0]["highlights"]
+    assert "Diseñé un sistema de facturación con Java" in highlights[0]
+    assert usage["var_1a"] == 1  # el fallback también registra el id emitido

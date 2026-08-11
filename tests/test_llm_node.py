@@ -403,3 +403,122 @@ def test_extract_achievement_facts_texto_vacio_no_llama_al_llm(monkeypatch):
         "scope": "",
         "outcomes": [],
     }
+
+
+# ---------------------------------------------------------------------------
+# F2: ángulo preferido por logro (el LLM lo sugiere, merge lo usa).
+# ---------------------------------------------------------------------------
+def _master_mini_achievements():
+    return {
+        "cv": {
+            "name": "Test User",
+            "sections": {
+                "experience": [
+                    {
+                        "company": "Empresa A",
+                        "position": "Backend Developer",
+                        "achievements": [
+                            {
+                                "id": "ach_1",
+                                "facts": {},
+                                "variants": [
+                                    {"id": "v_tecnico", "text": "Sistema de facturación en Java.", "angle": "impacto_tecnico", "used_count": 7},
+                                    {"id": "v_lider", "text": "Lideré el sistema de facturación con un equipo de 4.", "angle": "liderazgo", "used_count": 1},
+                                    {"id": "v_pend", "text": "sin verificar", "status": "pending"},
+                                ],
+                            },
+                            {
+                                "id": "ach_2",
+                                "facts": {},
+                                "variants": [
+                                    {"id": "v_ci", "text": "Desarrollé pipelines de CI/CD.", "used_count": 2},
+                                ],
+                            },
+                        ],
+                    },
+                ],
+                "projects": [],
+                "skills": [],
+                "education": [],
+            },
+        },
+        "design": {"theme": "engineeringresumes"},
+    }
+
+
+def _ir_sel_con_entrada_0():
+    return {
+        "selected_experience": [{"index": 0, "highlight_order": [0, 1], "match_reason": "x"}],
+        "selected_projects": [],
+        "selected_skills_indices": [],
+        "summary_index": 0,
+        "keywords_detected": [],
+    }
+
+
+def test_generate_selection_mergea_preferred_angles_validos(
+    monkeypatch, config, engine_con_store_tmp
+):
+    from src.llm_node import generate_selection
+
+    master = _master_mini_achievements()
+
+    def llm_con_angulos(*a, **k):
+        return {
+            "selected_experience": [
+                {"index": 0, "preferred_angles": [{"slot_index": 0, "angle": "liderazgo"}]}
+            ],
+            "selected_projects": [],
+        }
+
+    monkeypatch.setattr("src.llm_node._call_llm", llm_con_angulos)
+    monkeypatch.setattr(
+        "src.llm_node.get_selection_engine", lambda cfg: engine_con_store_tmp
+    )
+    sel = generate_selection(master, "Buscamos liderazgo.", config)
+    item = next(i for i in sel["selected_experience"] if i["index"] == 0)
+    assert item["preferred_angles"] == {"0": "liderazgo"}
+
+
+def test_generate_selection_descarta_angulos_invalidos_y_no_logros(
+    monkeypatch, config, engine_con_store_tmp
+):
+    from src.llm_node import generate_selection
+
+    master = _master_mini_achievements()
+    master["cv"]["sections"]["experience"][0]["highlights"] = ["bullet legacy extra"]
+
+    def llm_con_angulos(*a, **k):
+        return {
+            "selected_experience": [
+                {
+                    "index": 0,
+                    "preferred_angles": [
+                        {"slot_index": 0, "angle": "cualquiera_inventado"},  # ángulo inválido
+                        {"slot_index": 999, "angle": "liderazgo"},  # slot inexistente
+                    ],
+                }
+            ],
+            "selected_projects": [],
+        }
+
+    monkeypatch.setattr("src.llm_node._call_llm", llm_con_angulos)
+    monkeypatch.setattr(
+        "src.llm_node.get_selection_engine", lambda cfg: engine_con_store_tmp
+    )
+    sel = generate_selection(master, "Buscamos liderazgo.", config)
+    item = next(i for i in sel["selected_experience"] if i["index"] == 0)
+    assert "preferred_angles" not in item
+
+
+def test_strategic_prompt_lista_angulos_validos(monkeypatch):
+    from src.llm_node import _build_strategic_prompt
+    from src.achievements import VALID_ANGLES
+
+    ir = dict(_ir_sel_con_entrada_0())
+    prompt = _build_strategic_prompt(
+        _master_mini_achievements(), "Buscamos liderazgo.", ir, {"llm_provider": "ollama"}
+    )
+    assert "preferred_angles" in prompt
+    assert "liderazgo" in prompt
+    assert any(a in prompt for a in VALID_ANGLES)

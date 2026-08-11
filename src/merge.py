@@ -175,13 +175,19 @@ def _apply_entry_selection(
         entry = deepcopy(original)
         slots = entry_bullet_slots(original)
         order = item.get("highlight_order") or list(range(len(slots)))
+        # Ángulos preferidos por logro (F2): dict {slot_index(str): ángulo}.
+        # Solo matchean variantes con ese ángulo; si ninguna, el slot cae a
+        # la variante representativa (misma regla de resolve_variant).
+        preferred_angles = item.get("preferred_angles") or {}
 
         filtered_highlights = []
         for s_idx in order:
             slot = _safe_get(slots, s_idx)
             if slot is None:
                 continue
-            text, variant = resolve_slot_with_variant(slot)
+            text, variant = resolve_slot_with_variant(
+                slot, preferred_angle=preferred_angles.get(str(s_idx))
+            )
             if text is not None and text not in filtered_highlights:
                 filtered_highlights.append(text)
                 _record_variant_usage(variant, variant_usage)

@@ -19,7 +19,7 @@ import json
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, Optional
 
-from .achievements import entry_bullet_slots
+from .achievements import VALID_ANGLES, entry_bullet_slots
 from .config import load_config
 from .prompts import build_selection_schema, build_system_prompt
 from .retrieval.keywords import _count_keyword_occurrences, extract_keywords
@@ -351,6 +351,21 @@ def _build_strategic_prompt(
     # Extraer bullets seleccionados para mostrar al LLM
     sections = master_cv.get("cv", {}).get("sections", {})
 
+    def _format_entry_slots(entry: Dict[str, Any]) -> str:
+        """Slots unificados con su índice (mismo orden que indexa IR y que
+        resuelve merge). Los logros se marcan con su id para que el LLM
+        pueda referir ángulos precisos (F2, preferred_angles)."""
+        lines = []
+        for slot_index, slot in enumerate(entry_bullet_slots(entry)):
+            if not slot["text"]:
+                continue
+            if slot.get("kind") == "achievement":
+                ach_id = (slot.get("achievement") or {}).get("id", "?")
+                lines.append(f"    slot[{slot_index}] (logro {ach_id}) {slot['text']}")
+            else:
+                lines.append(f"    slot[{slot_index}] {slot['text']}")
+        return "\n".join(lines)
+
     selected_experience = []
     for item in ir_selection.get("selected_experience", []):
         idx = item.get("index")
@@ -358,11 +373,9 @@ def _build_strategic_prompt(
             entry = sections["experience"][idx]
             # Bullets unificados: highlights legacy o variante representativa
             # de cada achievement (mismo texto que indexa IR — D4).
-            h_text = "\n    - ".join(
-                s["text"] for s in entry_bullet_slots(entry) if s["text"]
-            )
             selected_experience.append(
-                f"  [{idx}] {entry.get('company', '')} - {entry.get('position', '')}\n    - {h_text}"
+                f"  [{idx}] {entry.get('company', '')} - {entry.get('position', '')}\n"
+                + _format_entry_slots(entry)
             )
 
     selected_projects = []
@@ -370,11 +383,8 @@ def _build_strategic_prompt(
         idx = item.get("index")
         if idx is not None and 0 <= idx < len(sections.get("projects", [])):
             entry = sections["projects"][idx]
-            h_text = "\n    - ".join(
-                s["text"] for s in entry_bullet_slots(entry) if s["text"]
-            )
             selected_projects.append(
-                f"  [{idx}] {entry.get('name', '')}\n    - {h_text}"
+                f"  [{idx}] {entry.get('name', '')}\n" + _format_entry_slots(entry)
             )
 
     selected_skills = []
@@ -392,6 +402,8 @@ def _build_strategic_prompt(
         f"{'\n'.join(selected_projects)}\n\n"
         "### skills seleccionadas por el motor de búsqueda ###\n"
         f"{'\n'.join(selected_skills)}\n\n"
+        "### ángulos válidos de logro (para preferred_angles) ###\n"
+        f"{', '.join(VALID_ANGLES)}\n\n"
         "Devolvé SOLO el JSON de ajustes estratégicos según el schema."
     )
 
@@ -444,19 +456,43 @@ def generate_selection(
         ("selected_experience", "experience"),
         ("selected_projects", "projects"),
     ]:
-        llm_reasons = {item["index"]: item.get("match_reason", "")
-                       for item in llm_output.get(section_key, [])
-                       if "index" in item}
+        llm_items = {item["index"]: item for item in llm_output.get(section_key, [])
+                     if "index" in item}
         entries = sections_by_key.get(entries_key, [])
         for item in final_selection.get(section_key, []):
             idx = item["index"]
-            if idx not in llm_reasons or not llm_reasons[idx]:
+            llm_item = llm_items.get(idx)
+            if not llm_item:
                 continue
+            llm_reason = llm_item.get("match_reason", "")
             highlights = entries[idx].get("highlights", []) if 0 <= idx < len(entries) else []
             bullet_text = " ".join(h for h in highlights if isinstance(h, str))
-            if _verify_match_reason(llm_reasons[idx], bullet_text, job_description):
-                item["match_reason"] = llm_reasons[idx]
+            if llm_reason and _verify_match_reason(llm_reason, bullet_text, job_description):
+                item["match_reason"] = llm_reason
             # si no pasa el guardarail, se deja el match_reason de IR intacto
+
+            # Ángulos preferidos por logro (F2): merge determinístico, el
+            # LLM no puede elegir qué texto ver — solo el ángulo. Ángulos
+            # inválidos o slots que no sean logros se descartan en silencio
+            # (merge total: si nada sobrevive, no se setea la clave).
+            preferred_angles = {}
+            entry = entries[idx] if 0 <= idx < len(entries) else None
+            for proposed in llm_item.get("preferred_angles") or []:
+                if not isinstance(proposed, dict):
+                    continue
+                slot_index = proposed.get("slot_index")
+                angle = proposed.get("angle")
+                if (
+                    isinstance(slot_index, int)
+                    and isinstance(angle, str)
+                    and angle in VALID_ANGLES
+                    and entry is not None
+                ):
+                    slots = entry_bullet_slots(entry)
+                    if 0 <= slot_index < len(slots) and slots[slot_index].get("kind") == "achievement":
+                        preferred_angles[str(slot_index)] = angle
+            if preferred_angles:
+                item["preferred_angles"] = preferred_angles
 
     return final_selection
 
