@@ -5,9 +5,9 @@
 //haya visto y aceptado.
 
 import { api } from "../api.js";
-import { commitAchDraft, renderAchievementCard } from "../components.js";
+import { blankAchievement, commitAchDraft, renderAchievementCard } from "../components.js";
 import { h } from "../dom.js";
-import { blankAchievement, blankEntryFor } from "../labels.js";
+import { blankEntryFor } from "../labels.js";
 import { toast } from "../notify.js";
 import { markDirty, snapshotView, state } from "../state.js";
 
