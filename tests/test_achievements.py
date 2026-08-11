@@ -385,6 +385,71 @@ def test_build_target_cv_preserva_orden_de_slots(master_achievements, config):
     ]
 
 
+def test_build_target_cv_metadata_variantes_por_bullet(master_achievements, config):
+    target = build_target_cv(master_achievements, _selection([0, 1, 2]), config, job_description="")
+    entrada = target["cv"]["sections"]["experience"][0]
+    assert entrada["_src_slot_map"] == [0, 1, 2]
+    assert entrada["_src_variant_map"] == {
+        "0": {"ach_id": "ach_1", "variant_id": "var_1a"},
+        "1": {"ach_id": "ach_2", "variant_id": "var_2a"},
+        "2": {"ach_id": "ach_3", "variant_id": "var_3a"},
+    }
+
+
+def test_build_target_cv_metadata_respeta_orden_reordenado(master_achievements, config):
+    target = build_target_cv(master_achievements, _selection([2, 0, 1]), config, job_description="")
+    entrada = target["cv"]["sections"]["experience"][0]
+    assert entrada["_src_slot_map"] == [2, 0, 1]
+    assert entrada["_src_variant_map"]["2"]["ach_id"] == "ach_3"
+    assert entrada["_src_variant_map"]["2"]["variant_id"] == "var_3a"
+    assert entrada["_src_variant_map"]["0"]["variant_id"] == "var_1a"
+
+
+def test_build_target_cv_metadata_omite_slots_sin_emitir(config):
+    # El ach pending no emite texto -> no entra ni al slot_map ni al variant_map.
+    master = {
+        "cv": {
+            "sections": {
+                "experience": [
+                    {
+                        "company": "X",
+                        "achievements": [
+                            _achievement("ach_A", [_variant("var_a", "Aprobada.")]),
+                            _achievement(
+                                "ach_B",
+                                [_variant("var_b", "No aprobada.", status="pending")],
+                            ),
+                        ],
+                    }
+                ]
+            }
+        }
+    }
+    target = build_target_cv(master, _selection([0, 1]), config, job_description="")
+    entrada = target["cv"]["sections"]["experience"][0]
+    assert entrada["highlights"] == ["Aprobada."]
+    assert entrada["_src_slot_map"] == [0]
+    assert entrada["_src_variant_map"] == {
+        "0": {"ach_id": "ach_A", "variant_id": "var_a"}
+    }
+
+
+def test_build_target_cv_entrada_legacy_sin_metadata(master_achievements, config):
+    target = build_target_cv(master_achievements, _selection([0, 1, 2]), config, job_description="")
+    entrada_legacy = target["cv"]["sections"]["experience"][1]
+    assert "_src_slot_map" not in entrada_legacy
+    assert "_src_variant_map" not in entrada_legacy
+
+
+def test_strip_internal_keys_limpia_metadata_de_variantes(master_achievements, config, tmp_path):
+    target = build_target_cv(master_achievements, _selection([0, 1, 2]), config, job_description="")
+    path = tmp_path / "target.yaml"
+    save_yaml(target, path)
+    recargado = yaml.safe_load(path.read_text(encoding="utf-8"))
+    assert "_src_slot_map" not in str(recargado)
+    assert "_src_variant_map" not in str(recargado)
+
+
 def test_build_target_cv_entrada_legacy_no_cambia(master_achievements, config):
     target = build_target_cv(master_achievements, _selection([0]), config, job_description="")
     entrada_legacy = target["cv"]["sections"]["experience"][1]

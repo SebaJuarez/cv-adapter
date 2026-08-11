@@ -393,6 +393,13 @@ function renderHighlights(entry, ctx, sectionName, entryIndex) {
           "aria-label": "Enriquecer este bullet",
           onclick: () => enrichBullet(entry, i, ctx),
         }, "✎") : null,
+        ctx.isTarget && variantSwitchOptions(entry, i, ctx) ? h("button", {
+          class: "btn-icon ach-switch",
+          title: "Cambiar redacción",
+          "aria-label": "Cambiar redacción",
+          "aria-haspopup": "menu",
+          onclick: () => toggleVariantPopover(row, entry, i, ctx),
+        }, "⇄") : null,
         moveUp,
         moveDown,
         del,
@@ -549,6 +556,93 @@ function normalizeFacts(f) {
 function variantStatus(v) {
   return v && typeof v.status === "string" && STATUS_OPTIONS.includes(v.status) ? v.status : "approved";
 }
+
+// Fase 3 — selector de variante en "Nueva aplicación" (doc §6.5): un ícono
+// discreto junto al bullet del target abre un popover con las redacciones
+// approved del logro. Override manual en memoria — el match automático
+// por ángulo (preferred_angles) sigue siendo el camino principal.
+const ANGLE_LABELS = {
+  liderazgo: "Liderazgo",
+  ownership: "Ownership",
+  escala: "Escala",
+  reduccion_costo: "Reducción de costos",
+  velocidad_entrega: "Velocidad de entrega",
+  impacto_tecnico: "Impacto técnico",
+  calidad_testing: "Calidad y testing",
+  cross_funcional: "Cross-funcional",
+  vision_producto: "Visión de producto",
+};
+
+let activeVariantPopover = null;
+
+function closeVariantPopover() {
+  if (activeVariantPopover) {
+    activeVariantPopover.remove();
+    activeVariantPopover = null;
+  }
+}
+
+function variantSwitchOptions(entry, i, ctx) {
+  if (!ctx.isTarget || entry._src_section === undefined || entry._src_index === undefined) return null;
+  const slotIdx = Array.isArray(entry._src_slot_map) ? entry._src_slot_map[i] : i;
+  const meta = entry._src_variant_map && entry._src_variant_map[String(slotIdx)];
+  if (!meta || !meta.ach_id || !meta.variant_id) return null;
+  const sections = ctx.masterDoc && ctx.masterDoc.cv && ctx.masterDoc.cv.sections;
+  const original = sections && sections[entry._src_section] && sections[entry._src_section][entry._src_index];
+  if (!original) return null;
+  const ach = (original.achievements || []).find((a) => a && a.id === meta.ach_id);
+  if (!ach) return null;
+  const variants = (ach.variants || []).filter((v) => v && variantStatus(v) === "approved");
+  if (variants.length <= 1) return null;
+  return { slotIdx, meta, variants };
+}
+
+function variantAngleText(v) {
+  const angles = Array.isArray(v.angle) ? v.angle : (v.angle ? [v.angle] : []);
+  return angles.length ? angles.map((a) => ANGLE_LABELS[a] || a).join(" · ") : "genérica";
+}
+
+function toggleVariantPopover(row, entry, i, ctx) {
+  if (activeVariantPopover && activeVariantPopover._row === row) {
+    closeVariantPopover();
+    return;
+  }
+  closeVariantPopover();
+  const opts = variantSwitchOptions(entry, i, ctx);
+  if (!opts) return;
+  const pop = h("div", { class: "ach-switch-popover", role: "menu" });
+  pop._row = row;
+  opts.variants.forEach((v) => {
+    const current = v.id === opts.meta.variant_id;
+    const option = h("button", {
+      class: "ach-switch-option" + (current ? " current" : ""),
+      role: "menuitemradio",
+      "aria-checked": current ? "true" : "false",
+      onclick: () => {
+        entry.highlights[i] = v.text;
+        if (entry._src_variant_map) entry._src_variant_map[String(opts.slotIdx)].variant_id = v.id;
+        closeVariantPopover();
+        ctx.onRerender();
+      },
+    }, [
+      h("span", { class: "ach-switch-angle" }, variantAngleText(v)),
+      h("span", { class: "ach-switch-text" }, v.text),
+    ]);
+    pop.appendChild(option);
+  });
+  row.appendChild(pop);
+  activeVariantPopover = pop;
+}
+
+document.addEventListener("pointerdown", (ev) => {
+  if (!activeVariantPopover) return;
+  if (activeVariantPopover.contains(ev.target)) return;
+  if (ev.target.closest && ev.target.closest(".ach-switch")) return;
+  closeVariantPopover();
+}, true);
+document.addEventListener("keydown", (ev) => {
+  if (ev.key === "Escape") closeVariantPopover();
+});
 
 function renderAchievements(entry, ctx) {
   const wrap = h("div", { class: "achievements" });

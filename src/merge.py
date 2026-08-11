@@ -181,6 +181,8 @@ def _apply_entry_selection(
         preferred_angles = item.get("preferred_angles") or {}
 
         filtered_highlights = []
+        emitted_slots: List[int] = []
+        variant_meta: Dict[str, Dict[str, str]] = {}
         for s_idx in order:
             slot = _safe_get(slots, s_idx)
             if slot is None:
@@ -190,17 +192,33 @@ def _apply_entry_selection(
             )
             if text is not None and text not in filtered_highlights:
                 filtered_highlights.append(text)
+                emitted_slots.append(s_idx)
                 _record_variant_usage(variant, variant_usage)
+                ach_id = (slot.get("achievement") or {}).get("id")
+                variant_id = (variant or {}).get("id")
+                if ach_id and variant_id:
+                    variant_meta[str(s_idx)] = {
+                        "ach_id": ach_id,
+                        "variant_id": variant_id,
+                    }
             if len(filtered_highlights) >= max_highlights:
                 break
 
         if not filtered_highlights:
             # order inválido/vacío -> caen los primeros slots resolubles del master
-            for slot in slots:
+            for s_idx, slot in enumerate(slots):
                 text, variant = resolve_slot_with_variant(slot)
                 if text is not None and text not in filtered_highlights:
                     filtered_highlights.append(text)
+                    emitted_slots.append(s_idx)
                     _record_variant_usage(variant, variant_usage)
+                    ach_id = (slot.get("achievement") or {}).get("id")
+                    variant_id = (variant or {}).get("id")
+                    if ach_id and variant_id:
+                        variant_meta[str(s_idx)] = {
+                            "ach_id": ach_id,
+                            "variant_id": variant_id,
+                        }
                 if len(filtered_highlights) >= max_highlights:
                     break
 
@@ -209,6 +227,13 @@ def _apply_entry_selection(
         if source_section is not None:
             entry["_src_section"] = source_section
             entry["_src_index"] = idx
+            # Metadata por bullet (Fase 3, selector de variante): el orden
+            # efectivo de slots y la variante emitida por cada logro, para
+            # que el frontend pueda ofrecer el cambio de redacción. Solo en
+            # memoria: strip_internal_keys las limpia al guardar.
+            if variant_meta:
+                entry["_src_slot_map"] = emitted_slots
+                entry["_src_variant_map"] = variant_meta
         result.append(entry)
 
     return result

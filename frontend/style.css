@@ -280,6 +280,7 @@ mark.jd-mark:hover { background: #f5b942; }
   gap: 0.5rem;
   margin-bottom: 0.4rem;
   flex-wrap: wrap;
+  position: relative;
 }
 
 .highlight-row .bullet-mark {
@@ -1530,3 +1531,47 @@ mark.jd-mark:hover { background: #f5b942; }
 }
 
 .ach-note { font-size: 0.78rem; color: var(--ink-faint); font-style: italic; margin: 0; }
+
+/* Fase 3 — selector de variante en "Nueva aplicación" (doc §6.5) */
+.ach-switch-popover {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 50;
+  min-width: 280px;
+  max-width: 440px;
+  background: var(--paper-raised);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
+  padding: 0.4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.ach-switch-option {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  text-align: left;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+}
+
+.ach-switch-option:hover { background: var(--accent-soft); }
+
+.ach-switch-option.current { border-color: var(--accent); }
+
+.ach-switch-angle {
+  font-size: 0.7rem;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.ach-switch-text { font-size: 0.85rem; color: var(--ink); line-height: 1.35; }
