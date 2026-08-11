@@ -19,10 +19,11 @@ import json
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, Optional
 
+from .achievements import entry_bullet_slots
 from .config import load_config
 from .prompts import build_selection_schema, build_system_prompt
 from .retrieval.keywords import _count_keyword_occurrences, extract_keywords
-from .retrieval.sparse import get_synonym_variants
+from .retrieval.sparse import get_synonym_variants, keyword_in_text
 from .selection import get_selection_engine
 
 
@@ -208,6 +209,133 @@ def _generate_hyde_query(job_description: str, config: Dict[str, Any], timeout: 
             pool.shutdown(wait=False, cancel_futures=True)
 
 
+# Schema de extracción de hechos (botón "enriquecer este bullet", F2):
+# facts estructurados a partir de un bullet legacy, con verificación
+# contra el texto fuente (ver _verify_facts).
+_FACTS_SCHEMA: Dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "action": {"type": "string"},
+        "tools": {"type": "array", "items": {"type": "string"}},
+        "scope": {"type": "string"},
+        "outcomes": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {"metric": {"type": "string"}, "value": {"type": "string"}},
+                "required": ["metric", "value"],
+            },
+        },
+    },
+    "required": ["action", "tools", "scope", "outcomes"],
+}
+
+_EMPTY_FACTS: Dict[str, Any] = {"action": "", "tools": [], "scope": "", "outcomes": []}
+
+
+def _verify_facts(facts: Dict[str, Any], bullet_text: str) -> Dict[str, Any]:
+    """Guardarail anti-alucinación de la extracción de facts (doc funcional §1):
+
+    cada tecnología propuesta debe aparecer en el texto fuente del bullet
+    (o una variante sinónima), y cada outcome debe tener su métrica o su
+    valor presentes en el texto. Lo que no se puede verificar se descarta
+    en silencio — el LLM estructura, jamás aporta hechos nuevos.
+
+    `action` y `scope` son prosa y quedan como el LLM las redactó: el
+    usuario las ve y edita antes de guardar (nunca se auto-guarda).
+    """
+    clean: Dict[str, Any] = {
+        "action": "",
+        "tools": [],
+        "scope": "",
+        "outcomes": [],
+    }
+    if not isinstance(facts, dict):
+        return clean
+
+    text = bullet_text or ""
+    action = facts.get("action")
+    if isinstance(action, str) and action.strip():
+        clean["action"] = action.strip()
+    scope = facts.get("scope")
+    if isinstance(scope, str) and scope.strip():
+        clean["scope"] = scope.strip()
+
+    for tool in facts.get("tools", []):
+        if isinstance(tool, str) and tool.strip() and keyword_in_text(tool.strip(), text):
+            clean["tools"].append(tool.strip())
+
+    text_low = text.lower()
+    for outcome in facts.get("outcomes", []):
+        if not isinstance(outcome, dict):
+            continue
+        metric = outcome.get("metric")
+        value = outcome.get("value")
+        metric_ok = (
+            isinstance(metric, str) and metric.strip() and metric.strip().lower() in text_low
+        )
+        # El LLM suele normalizar el signo ("-60%" vs "en un 60%"): se
+        # verifica el valor sin el signo inicial y se conserva el original.
+        value_norm = (
+            value.strip().lower().lstrip("+-") if isinstance(value, str) else ""
+        )
+        value_ok = bool(value_norm) and value_norm in text_low
+        if metric_ok or value_ok:
+            clean["outcomes"].append(
+                {
+                    "metric": metric.strip() if metric_ok else "",
+                    "value": value.strip() if value_ok else "",
+                }
+            )
+
+    return clean
+
+
+def extract_achievement_facts(
+    bullet_text: str, config: Dict[str, Any], timeout: float = 10.0
+) -> Dict[str, Any]:
+    """Estructura un bullet legacy en `facts` (acción, herramientas, alcance,
+    resultados medibles) para el botón "enriquecer este bullet" (F2).
+
+    Defensivo por diseño: cualquier fallo (proveedor caído, timeout, JSON
+    inválido) devuelve facts vacíos y el usuario completa los campos a mano
+    — nunca se inventa contenido, y nunca se bloquea el editor.
+    """
+    if not bullet_text or not bullet_text.strip():
+        return dict(_EMPTY_FACTS)
+
+    system_prompt = (
+        "Sos un estructurador de logros de CV. Dado un bullet, separás los "
+        "HECHOS verificables: qué se hizo, con qué herramientas, a qué "
+        "alcance y qué resultados medibles. Regla inquebrantable: SOLO podés "
+        "usar información que aparezca textualmente en el bullet. NUNCA "
+        "inventes tecnologías, métricas, equipos ni clientes. Si algo no "
+        "aparece en el texto, dejalo vacío."
+    )
+    user_prompt = (
+        "### bullet ###\n"
+        f"{bullet_text}\n\n"
+        "Devolvé SOLO el JSON con: action = qué hiciste en una frase (verbo + "
+        "objeto); tools = tecnologías/herramientas mencionadas en el texto; "
+        "scope = alcance (personas, clientes, sistema, proceso); outcomes = "
+        "resultados medibles del texto como lista de {metric, value} (metric = "
+        "qué se midió, value = el número/unidad tal cual aparece)."
+    )
+    pool = None
+    try:
+        pool = ThreadPoolExecutor(max_workers=1)
+        future = pool.submit(_call_llm, system_prompt, user_prompt, _FACTS_SCHEMA, config)
+        result = future.result(timeout=timeout)
+        return _verify_facts(result or {}, bullet_text)
+    except Exception:
+        # Timeout, RuntimeError del proveedor, JSON inválido… todo degrada
+        # con gracia: el editor queda con los campos vacíos para completar.
+        return dict(_EMPTY_FACTS)
+    finally:
+        if pool is not None:
+            pool.shutdown(wait=False, cancel_futures=True)
+
+
 def _build_strategic_prompt(
     master_cv: Dict[str, Any],
     job_description: str,
@@ -228,8 +356,11 @@ def _build_strategic_prompt(
         idx = item.get("index")
         if idx is not None and 0 <= idx < len(sections.get("experience", [])):
             entry = sections["experience"][idx]
-            highlights = entry.get("highlights", [])
-            h_text = "\n    - ".join(h for h in highlights if isinstance(h, str))
+            # Bullets unificados: highlights legacy o variante representativa
+            # de cada achievement (mismo texto que indexa IR — D4).
+            h_text = "\n    - ".join(
+                s["text"] for s in entry_bullet_slots(entry) if s["text"]
+            )
             selected_experience.append(
                 f"  [{idx}] {entry.get('company', '')} - {entry.get('position', '')}\n    - {h_text}"
             )
@@ -239,8 +370,9 @@ def _build_strategic_prompt(
         idx = item.get("index")
         if idx is not None and 0 <= idx < len(sections.get("projects", [])):
             entry = sections["projects"][idx]
-            highlights = entry.get("highlights", [])
-            h_text = "\n    - ".join(h for h in highlights if isinstance(h, str))
+            h_text = "\n    - ".join(
+                s["text"] for s in entry_bullet_slots(entry) if s["text"]
+            )
             selected_projects.append(
                 f"  [{idx}] {entry.get('name', '')}\n    - {h_text}"
             )

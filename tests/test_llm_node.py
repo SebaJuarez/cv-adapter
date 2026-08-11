@@ -266,3 +266,140 @@ def test_select_sin_use_hyde_no_llama_al_llm(monkeypatch, config, tmp_path):
 
     monkeypatch.setattr("src.llm_node._generate_hyde_query", no_debe_llamarse)
     engine.select(_master_mini(), "Buscamos dev con python.")
+
+
+# ---------------------------------------------------------------------------
+# F2: extracción de facts (botón "enriquecer este bullet").
+# ---------------------------------------------------------------------------
+def test_verify_facts_descarta_tools_inventadas():
+    from src.llm_node import _verify_facts
+
+    bullet = "Desarrollé APIs REST con python y docker en un equipo de 4."
+    llm_facts = {
+        "action": "Desarrollé APIs REST",
+        "tools": ["python", "docker", "kubernetes", "terraform"],
+        "scope": "equipo de 4",
+        "outcomes": [],
+    }
+    facts = _verify_facts(llm_facts, bullet)
+    assert facts["tools"] == ["python", "docker"]
+    assert facts["action"] == "Desarrollé APIs REST"
+    assert facts["scope"] == "equipo de 4"
+
+
+def test_verify_facts_acepta_sinonimo_de_tool():
+    from src.llm_node import _verify_facts
+
+    bullet = "Modelé esquemas en postgresql."
+    facts = _verify_facts(
+        {"action": "Modelé esquemas", "tools": ["postgres"], "scope": "", "outcomes": []},
+        bullet,
+    )
+    assert facts["tools"] == ["postgres"]
+
+
+def test_verify_facts_quita_outcomes_no_verificables():
+    from src.llm_node import _verify_facts
+
+    bullet = "Reduje el tiempo de respuesta de reportes en un 60%."
+    llm_facts = {
+        "action": "Reduje el tiempo de respuesta",
+        "tools": [],
+        "scope": "",
+        "outcomes": [
+            {"metric": "tiempo de respuesta", "value": "-60%"},
+            {"metric": "incidentes", "value": "-30%"},  # inventado: no está en el texto
+            {"metric": "costo mensual", "value": "$1000"},  # inventado
+        ],
+    }
+    facts = _verify_facts(llm_facts, bullet)
+    assert facts["outcomes"] == [{"metric": "tiempo de respuesta", "value": "-60%"}]
+
+
+def test_verify_facts_acepta_outcome_con_solo_valor_verificable():
+    from src.llm_node import _verify_facts
+
+    bullet = "El downtime bajó a 30 minutos por mes."
+    llm_facts = {
+        "action": "Reduje el downtime",
+        "tools": [],
+        "scope": "",
+        "outcomes": [{"metric": "downtime", "value": "30 minutos"}],
+    }
+    facts = _verify_facts(llm_facts, bullet)
+    assert facts["outcomes"] == [{"metric": "downtime", "value": "30 minutos"}]
+
+
+def test_verify_facts_no_dict_devuelve_vacio():
+    from src.llm_node import _verify_facts
+
+    assert _verify_facts("no soy un dict", "texto") == {
+        "action": "",
+        "tools": [],
+        "scope": "",
+        "outcomes": [],
+    }
+
+
+def test_extract_achievement_facts_con_llm_ok(monkeypatch):
+    from src.llm_node import extract_achievement_facts
+
+    bullet = "Desarrollé un sistema de facturación en Java con un equipo de 4."
+    monkeypatch.setattr(
+        "src.llm_node._call_llm",
+        lambda *a, **k: {
+            "action": "Desarrollé un sistema de facturación en Java",
+            "tools": ["Java", "Spring Boot"],  # Spring Boot NO está en el texto
+            "scope": "equipo de 4 personas",
+            "outcomes": [],
+        },
+    )
+    facts = extract_achievement_facts(bullet, {"llm_provider": "ollama"})
+    assert facts["tools"] == ["Java"]
+    assert facts["action"].startswith("Desarrollé")
+    assert "equipo" in facts["scope"]
+
+
+def test_extract_achievement_facts_degrada_a_vacio_si_llm_falla(monkeypatch):
+    from src.llm_node import extract_achievement_facts
+
+    def llm_roto(*a, **k):
+        raise RuntimeError("LLM caído")
+
+    monkeypatch.setattr("src.llm_node._call_llm", llm_roto)
+    assert extract_achievement_facts("bullet cualquiera", {"llm_provider": "ollama"}) == {
+        "action": "",
+        "tools": [],
+        "scope": "",
+        "outcomes": [],
+    }
+
+
+def test_extract_achievement_facts_degrada_a_vacio_si_timeout(monkeypatch):
+    from src.llm_node import extract_achievement_facts
+
+    def llm_lento(*a, **k):
+        import time
+
+        time.sleep(2)
+        return {"action": "tarde"}
+
+    monkeypatch.setattr("src.llm_node._call_llm", llm_lento)
+    assert extract_achievement_facts(
+        "bullet", {"llm_provider": "ollama"}, timeout=0.05
+    ) == {"action": "", "tools": [], "scope": "", "outcomes": []}
+
+
+def test_extract_achievement_facts_texto_vacio_no_llama_al_llm(monkeypatch):
+    from src.llm_node import extract_achievement_facts
+
+    def no_debe_llamarse(*a, **k):
+        raise AssertionError("texto vacío no debe llamar al LLM")
+
+    monkeypatch.setattr("src.llm_node._call_llm", no_debe_llamarse)
+    assert extract_achievement_facts("   ", {"llm_provider": "ollama"}) == {
+        "action": "",
+        "tools": [],
+        "scope": "",
+        "outcomes": [],
+    }

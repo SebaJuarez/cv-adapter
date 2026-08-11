@@ -36,3 +36,10 @@ class RunUpdateIn(BaseModel):
     offer_title: Optional[str] = None
     offer_link: Optional[str] = None
     application: Optional[Dict[str, Any]] = None
+
+
+class ExtractFactsIn(BaseModel):
+    # Texto del bullet legacy a estructurar (el frontend manda el texto
+    # real en memoria, no un índice: el master del disco puede diferir de
+    # lo que el usuario está editando sin guardar).
+    text: str
