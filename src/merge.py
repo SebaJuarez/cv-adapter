@@ -14,10 +14,12 @@ from copy import deepcopy
 from typing import Any, Dict, List, Optional
 
 from .achievements import (
+    apply_variant_usage,
     approved_variant_texts,
     entry_bullet_slots,
     facts_corpus_parts,
     resolve_slot_text,
+    resolve_slot_with_variant,
     validate_achievements_structure,
 )
 from .config import load_config
@@ -119,12 +121,27 @@ def _safe_get(lst: List[Any], idx: Optional[int]) -> Any:
     return lst[idx] if 0 <= idx < len(lst) else None
 
 
+def _record_variant_usage(
+    variant: Optional[Dict[str, Any]],
+    variant_usage: Optional[Dict[str, int]],
+) -> None:
+    """Suma un uso a la variante emitida (F2, used_count). Solo cuenta lo
+    que REALMENTE entró al target: este helper se llama tras un append
+    exitoso (los duplicados descartados no suman)."""
+    if variant is None or variant_usage is None:
+        return
+    variant_id = variant.get("id")
+    if variant_id:
+        variant_usage[variant_id] = variant_usage.get(variant_id, 0) + 1
+
+
 def _apply_entry_selection(
     master_list: List[Dict[str, Any]],
     selection_items: List[Dict[str, Any]],
     max_entries: int,
     max_highlights: int,
     source_section: Optional[str] = None,
+    variant_usage: Optional[Dict[str, int]] = None,
 ) -> List[Dict[str, Any]]:
     """Lógica compartida por 'experience' y 'projects': para cada entrada
     elegida (por índice), copia la entrada original y le aplica el reorder/filtro
@@ -164,18 +181,20 @@ def _apply_entry_selection(
             slot = _safe_get(slots, s_idx)
             if slot is None:
                 continue
-            text = resolve_slot_text(slot)
+            text, variant = resolve_slot_with_variant(slot)
             if text is not None and text not in filtered_highlights:
                 filtered_highlights.append(text)
+                _record_variant_usage(variant, variant_usage)
             if len(filtered_highlights) >= max_highlights:
                 break
 
         if not filtered_highlights:
             # order inválido/vacío -> caen los primeros slots resolubles del master
             for slot in slots:
-                text = resolve_slot_text(slot)
+                text, variant = resolve_slot_with_variant(slot)
                 if text is not None and text not in filtered_highlights:
                     filtered_highlights.append(text)
+                    _record_variant_usage(variant, variant_usage)
                 if len(filtered_highlights) >= max_highlights:
                     break
 
@@ -262,10 +281,14 @@ def build_section_entries(
     section_name: str,
     section_selection: Dict[str, Any],
     config: Optional[Dict[str, Any]] = None,
+    variant_usage: Optional[Dict[str, int]] = None,
 ) -> List[Any]:
     """Arma el contenido de UNA sola sección a partir de una selección scoped.
     La usa tanto build_target_cv (CV completo) como el endpoint de 'regenerar esta
-    sección' (re-seleccionar solo una parte sin tocar el resto del CV)."""
+    sección' (re-seleccionar solo una parte sin tocar el resto del CV).
+
+    `variant_usage` (opcional) es un dict compartido donde se acumulan los
+    `id` de las variantes emitidas (F2, para incrementar used_count)."""
     config = config or load_config()
     master_sections = master_cv.get("cv", {}).get("sections", {})
 
@@ -281,6 +304,7 @@ def build_section_entries(
             max_entries,
             config["max_highlights_per_entry"],
             source_section=section_name,
+            variant_usage=variant_usage,
         )
 
     if section_name == "skills":
@@ -306,13 +330,16 @@ def build_target_cv(
     config: Optional[Dict[str, Any]] = None,
     job_description: str = "",
     manual_keywords: Optional[List[str]] = None,
+    variant_usage: Optional[Dict[str, int]] = None,
 ) -> Dict[str, Any]:
     """Arma el target_cv a partir del master_cv + la selección del pipeline.
 
     La selección puede venir del pipeline IR (SelectionEngine) o del LLM
     estratégico (o ambos mergeados). El formato es el mismo para mantener
     compatibilidad con el resto del sistema.
-    """
+
+    `variant_usage` (opcional): dict compartido donde se acumulan los
+    `id` de las variantes emitidas (F2, para incrementar used_count)."""
     config = config or load_config()
     master_sections = master_cv.get("cv", {}).get("sections", {})
     new_sections: Dict[str, Any] = {}
@@ -353,11 +380,15 @@ def build_target_cv(
         new_sections["keywords"] = ["Palabras clave: " + ", ".join(verified_keywords)]
 
     # --- Experiencia y proyectos ---
-    new_experience = build_section_entries(master_cv, "experience", selection, config)
+    new_experience = build_section_entries(
+        master_cv, "experience", selection, config, variant_usage=variant_usage
+    )
     if new_experience:
         new_sections["experience"] = new_experience
 
-    new_projects = build_section_entries(master_cv, "projects", selection, config)
+    new_projects = build_section_entries(
+        master_cv, "projects", selection, config, variant_usage=variant_usage
+    )
     if new_projects:
         new_sections["projects"] = new_projects
 

@@ -36,7 +36,7 @@ def generate(payload: JobDescriptionIn) -> Dict[str, Any]:
     master_cv = _require_master()
     config = load_config()
     try:
-        target_cv, selection, keyword_report = generate_cv(
+        target_cv, selection, keyword_report, variant_usage = generate_cv(
             master_cv,
             payload.job_description,
             manual_keywords=payload.manual_keywords,
@@ -54,6 +54,7 @@ def generate(payload: JobDescriptionIn) -> Dict[str, Any]:
         keyword_report,
         selection=selection,
         manual_keywords=payload.manual_keywords,
+        variant_usage=variant_usage,
         path=RUNS_PATH,
     )
 

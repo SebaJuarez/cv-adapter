@@ -35,7 +35,7 @@ def _fake_generate_cv(master_cv, job_description, manual_keywords=None, config=N
         "summary_index": None,
         "keywords_detected": report["all_keywords"],
     }
-    return target_cv, selection, report
+    return target_cv, selection, report, {}
 
 
 class TestHistoryRuns:

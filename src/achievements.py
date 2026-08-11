@@ -106,13 +106,15 @@ def approved_variant_texts(achievement: Dict[str, Any]) -> List[str]:
     return texts
 
 
-def resolve_variant_text(
+def resolve_variant(
     achievement: Dict[str, Any], preferred_angle: Optional[str] = None
-) -> Optional[str]:
-    """Texto final de un logro para el target: variante `approved` cuyo
-    ángulo coincide con `preferred_angle` (primera en orden de array), o
-    la representativa si no hay match de ángulo. None si no hay variantes
+) -> Optional[Dict[str, Any]]:
+    """Variante final de un logro para el target: `approved` cuyo ángulo
+    coincide con `preferred_angle` (primera en orden de array), o la
+    representativa si no hay match de ángulo. None si no hay variantes
     `approved` → el slot se ignora en silencio (regla de `pending`).
+    Devuelve la variante completa para poder registrar su `id` en
+    `used_count` (F2); `resolve_variant_text` es su proyección a texto.
     """
     approved = [
         v for v in achievement.get("variants", []) if variant_status(v) == "approved"
@@ -124,13 +126,24 @@ def resolve_variant_text(
             if preferred_angle in normalize_angles(v):
                 text = v.get("text")
                 if isinstance(text, str) and text:
-                    return text
+                    return v
     rep = representative_variant(achievement)
     if rep is not None:
         text = rep.get("text")
         if isinstance(text, str) and text:
-            return text
+            return rep
     return None
+
+
+def resolve_variant_text(
+    achievement: Dict[str, Any], preferred_angle: Optional[str] = None
+) -> Optional[str]:
+    """Texto final de un logro para el target (ver `resolve_variant`)."""
+    variant = resolve_variant(achievement, preferred_angle)
+    if variant is None:
+        return None
+    text = variant.get("text")
+    return text if isinstance(text, str) else None
 
 
 def entry_bullet_slots(entry: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -161,9 +174,63 @@ def resolve_slot_text(
     no se puede emitir (logro sin variantes `approved`) → se ignora en
     silencio, jamás se inventa contenido de reemplazo.
     """
+    text, _ = resolve_slot_with_variant(slot, preferred_angle)
+    return text
+
+
+def resolve_slot_with_variant(
+    slot: Dict[str, Any], preferred_angle: Optional[str] = None
+) -> tuple:
+    """(texto emitido, variante usada o None). Igual regla que
+    `resolve_slot_text`, pero devuelve además la variante `approved` que
+    merge emitió — la necesita para incrementar `used_count` (F2). Para
+    slots legacy la variante es siempre None.
+    """
     if slot.get("kind") == "achievement":
-        return resolve_variant_text(slot.get("achievement") or {}, preferred_angle)
-    return slot.get("text")
+        variant = resolve_variant(slot.get("achievement") or {}, preferred_angle)
+        if variant is None:
+            return None, None
+        text = variant.get("text")
+        return (text if isinstance(text, str) else None), variant
+    return slot.get("text"), None
+
+
+def apply_variant_usage(
+    master_cv: Dict[str, Any], usage_counts: Dict[str, int]
+) -> int:
+    """Suma `used_count` de las variantes existentes (match por `id`) en
+    todo el master. Devuelve cuántas variantes se actualizaron.
+
+    Nunca crea variantes: los ids ausentes (borrados o renombrados) se
+    ignoran en silencio — el dato de uso se pierde, nunca se inventa.
+    """
+    if not usage_counts:
+        return 0
+    updated = 0
+    sections = master_cv.get("cv", {}).get("sections", {})
+    for entries in sections.values():
+        if not isinstance(entries, list):
+            continue
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            achievements = entry.get("achievements")
+            if not isinstance(achievements, list):
+                continue
+            for ach in achievements:
+                variants = ach.get("variants") if isinstance(ach, dict) else None
+                if not isinstance(variants, list):
+                    continue
+                for variant in variants:
+                    if not isinstance(variant, dict):
+                        continue
+                    times = usage_counts.get(variant.get("id"))
+                    if times:
+                        variant["used_count"] = (
+                            int(variant.get("used_count", 0) or 0) + times
+                        )
+                        updated += 1
+    return updated
 
 
 def facts_corpus_parts(achievement: Dict[str, Any]) -> List[str]:

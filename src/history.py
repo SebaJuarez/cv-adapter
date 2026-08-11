@@ -213,12 +213,15 @@ def add_run(
     selection: Optional[Dict[str, Any]] = None,
     pdf_path: Optional[str] = None,
     manual_keywords: Optional[List[str]] = None,
+    variant_usage: Optional[Dict[str, int]] = None,
     path: Optional[Path] = None,
 ) -> Dict[str, Any]:
     """Crea y persiste un registro de corrida. Devuelve el run creado.
 
     `keyword_report` es el resultado de `build_keyword_report` (lo computa
-    `src/services/generation.py`).
+    `src/services/generation.py`). `variant_usage` (F2) mapea `id` de
+    variante a usos en este run; se aplica al guardar el máster
+    (`POST /api/master-cv`) y el run se marca `variant_usage_applied`.
     """
     runs = load_runs(path)
     jd_hash_value = jd_hash(job_description)
@@ -250,6 +253,9 @@ def add_run(
             "notes": "",
         },
     }
+    if variant_usage:
+        # Solo se persiste si hay usos reales (los runs legacy no tienen clave).
+        run["variant_usage"] = dict(variant_usage)
     runs.append(run)
     save_runs(runs, path)
     return run

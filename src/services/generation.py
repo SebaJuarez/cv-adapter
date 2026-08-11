@@ -26,12 +26,15 @@ def generate_cv(
     """Genera el CV target completo para una oferta.
 
     Encadena: selección (IR + LLM estratégico) -> merge determinístico ->
-    keyword report ATS. Devuelve (target_cv, selection, keyword_report).
+    keyword report ATS. Devuelve (target_cv, selection, keyword_report,
+    variant_usage) — `variant_usage` mapea `id` de variante a cantidad de
+    veces que merge la emitió en el target (F2, para used_count).
 
     Con `force=True` se saltea el cache de selección (P0.1) y se
     recalcula la fase IR completa.
     """
     config = config or load_config()
+    variant_usage: Dict[str, int] = {}
     selection = generate_selection(master_cv, job_description, config, force=force)
     target_cv = build_target_cv(
         master_cv,
@@ -39,6 +42,7 @@ def generate_cv(
         config,
         job_description=job_description,
         manual_keywords=manual_keywords or [],
+        variant_usage=variant_usage,
     )
     keyword_report = build_keyword_report(
         master_cv,
@@ -47,7 +51,7 @@ def generate_cv(
         custom_keywords=config.get("custom_keywords"),
         master_corpus=_corpus_text(master_cv),
     )
-    return target_cv, selection, keyword_report
+    return target_cv, selection, keyword_report, variant_usage
 
 
 def regenerate_section(

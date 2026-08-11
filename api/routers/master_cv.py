@@ -4,12 +4,14 @@ from typing import Any, Dict
 
 from fastapi import APIRouter, HTTPException
 
+from src.achievements import apply_variant_usage
 from src.config import load_config
+from src.history import load_runs, save_runs
 from src.llm_node import extract_achievement_facts
 from src.merge import validate_master_cv_structure
 from src.storage import load_master_cv, save_master_cv
 
-from ..deps import MASTER_CV_PATH
+from ..deps import MASTER_CV_PATH, RUNS_PATH
 from ..schemas import CVDocumentIn, ExtractFactsIn
 
 router = APIRouter(tags=["master-cv"])
@@ -46,8 +48,29 @@ def save_master_cv_route(payload: CVDocumentIn) -> Dict[str, Any]:
     errors = validate_master_cv_structure(data)
     if errors:
         raise HTTPException(status_code=400, detail=errors)
+
+    # F2 (used_count): los usos de variantes registrados en las corridas
+    # pendientes se aplican al máster que recién se guarda (match por id;
+    # nunca crea variantes). Idempotente: un run solo se aplica una vez.
+    runs = load_runs(RUNS_PATH)
+    pending = [
+        r
+        for r in runs
+        if r.get("variant_usage") and not r.get("variant_usage_applied")
+    ]
+    variants_updated = 0
+    if pending:
+        total: Dict[str, int] = {}
+        for run in pending:
+            for variant_id, times in (run.get("variant_usage") or {}).items():
+                total[variant_id] = total.get(variant_id, 0) + max(int(times or 0), 0)
+        variants_updated = apply_variant_usage(data, total)
+        for run in pending:
+            run["variant_usage_applied"] = True
+        save_runs(runs, RUNS_PATH)
+
     save_master_cv(data, MASTER_CV_PATH)
-    return {"ok": True}
+    return {"ok": True, "variants_updated": variants_updated}
 
 
 @router.post("/api/master/extract-facts")

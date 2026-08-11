@@ -11,6 +11,7 @@ import pytest
 import yaml
 
 from src.achievements import (
+    apply_variant_usage,
     approved_variant_texts,
     entry_bullet_slots,
     facts_corpus_parts,
@@ -18,6 +19,8 @@ from src.achievements import (
     normalize_angles,
     representative_variant,
     resolve_slot_text,
+    resolve_slot_with_variant,
+    resolve_variant,
     resolve_variant_text,
     validate_achievements_structure,
     variant_status,
@@ -584,3 +587,75 @@ def test_extract_bullets_legacy_sin_achievements_no_cambia(master_cv):
         "experience_1_bullet_0",
         "experience_1_bullet_1",
     ]
+
+
+# ---------------------------------------------------------------------------
+# used_count: la variante que merge emite se registra (F2)
+# ---------------------------------------------------------------------------
+def test_resolve_variant_es_la_misma_eleccion_que_resolve_variant_text():
+    ach = _achievement(
+        "a",
+        [
+            _variant("v0", "texto técnico", used_count=1, angle="impacto_tecnico"),
+            _variant("v1", "texto liderazgo", used_count=5, angle="liderazgo"),
+        ],
+    )
+    # Sin ángulo preferido → representativa (mayor used_count).
+    assert resolve_variant(ach)["id"] == "v1"
+    assert resolve_variant_text(ach) == "texto liderazgo"
+    # Con ángulo preferido → la que matchea, aunque no sea la representativa.
+    assert resolve_variant(ach, "impacto_tecnico")["id"] == "v0"
+    assert resolve_variant_text(ach, "impacto_tecnico") == "texto técnico"
+    # Sin approved → None.
+    solo_pending = _achievement("b", [_variant("v2", "sin revisar", status="pending")])
+    assert resolve_variant(solo_pending) is None
+    assert resolve_slot_text({"kind": "achievement", "achievement": solo_pending}) is None
+
+
+def test_resolve_slot_with_variant_reporta_el_id_emitido():
+    ach = _achievement("a", [_variant("v1", "texto", used_count=1), _variant("v2", "otro", used_count=9)])
+    texto, variante = resolve_slot_with_variant({"kind": "achievement", "achievement": ach})
+    assert texto == "otro"
+    assert variante["id"] == "v2"
+    # Legacy: nunca reporta variante.
+    texto2, variante2 = resolve_slot_with_variant({"kind": "legacy", "text": "bullet"})
+    assert texto2 == "bullet"
+    assert variante2 is None
+
+
+def test_apply_variant_usage_suma_solo_variantes_existentes():
+    master = {
+        "cv": {
+            "sections": {
+                "experience": [
+                    {
+                        "company": "X",
+                        "achievements": [
+                            _achievement("a", [_variant("v_activa", "texto", used_count=2)]),
+                        ],
+                    }
+                ]
+            }
+        }
+    }
+    actualizadas = apply_variant_usage(master, {"v_activa": 3, "v_borrada": 5})
+    variant = master["cv"]["sections"]["experience"][0]["achievements"][0]["variants"][0]
+    assert variant["used_count"] == 5
+    assert actualizadas == 1
+
+
+def test_build_target_cv_registra_variantes_emitidas(master_achievements, config):
+    usage: dict = {}
+    selection = _selection([0, 1, 2])
+    target = build_target_cv(
+        master_achievements, selection, config, job_description="", variant_usage=usage
+    )
+    # Cada achievement de la entrada 0 emite su variante representativa.
+    assert usage == {"var_1a": 1, "var_2a": 1, "var_3a": 1}
+    assert target["cv"]["sections"]["experience"][1]["highlights"] == ["Bullet legacy uno."]
+
+
+def test_build_target_cv_sin_usage_no_cambia_comportamiento(master_achievements, config):
+    selection = _selection([0, 1, 2])
+    target = build_target_cv(master_achievements, selection, config, job_description="")
+    assert "highlights" in target["cv"]["sections"]["experience"][0]
