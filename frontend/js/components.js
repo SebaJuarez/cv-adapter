@@ -274,7 +274,7 @@ function renderEntriesList(sectionName, entries, ctx) {
 }
 
 function renderEntryCard(sectionName, entries, entry, index, ctx) {
-  const fieldKeys = Object.keys(entry).filter((k) => k !== "highlights" && !k.startsWith("_"));
+  const fieldKeys = Object.keys(entry).filter((k) => k !== "highlights" && k !== "achievements" && !k.startsWith("_"));
   const fieldsWrap = h("div", { class: "entry-fields" });
   fieldKeys.forEach((key) => {
     const input = h("input", { type: "text", value: entry[key] ?? "" });

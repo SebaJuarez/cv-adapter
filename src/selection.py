@@ -19,6 +19,7 @@ from typing import Any
 import numpy as np
 from sentence_transformers import SentenceTransformer
 
+from .achievements import entry_bullet_slots
 from .config import load_config, selection_config_fingerprint
 from .retrieval import (
     BulletDoc,
@@ -92,18 +93,25 @@ def _extract_bullets_from_section(
                     )
                 )
         else:
-            for bullet_idx, highlight in enumerate(entry.get("highlights", [])):
-                if isinstance(highlight, str) and highlight.strip():
-                    bullets.append(
-                        BulletDoc(
-                            id=f"{section_name}_{entry_idx}_bullet_{bullet_idx}",
-                            text=highlight.strip(),
-                            section=section_name,
-                            entry_index=entry_idx,
-                            bullet_index=bullet_idx,
-                            entry_label=label,
-                        )
+            # Cada bullet es un slot unificado de la entrada (highlight
+            # legacy o achievement). Para los achievements se indexa el
+            # texto de la variante representativa (mayor used_count de las
+            # aprobadas); el índice del slot es el mismo que usa merge
+            # para resolver el texto final del target.
+            for bullet_idx, slot in enumerate(entry_bullet_slots(entry)):
+                text = slot["text"].strip()
+                if not text:
+                    continue
+                bullets.append(
+                    BulletDoc(
+                        id=f"{section_name}_{entry_idx}_bullet_{bullet_idx}",
+                        text=text,
+                        section=section_name,
+                        entry_index=entry_idx,
+                        bullet_index=bullet_idx,
+                        entry_label=label,
                     )
+                )
     return bullets
 
 

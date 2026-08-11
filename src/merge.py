@@ -13,6 +13,13 @@ siempre, sin importar cuánto contenido pida devolver el LLM.
 from copy import deepcopy
 from typing import Any, Dict, List, Optional
 
+from .achievements import (
+    approved_variant_texts,
+    entry_bullet_slots,
+    facts_corpus_parts,
+    resolve_slot_text,
+    validate_achievements_structure,
+)
 from .config import load_config
 from .retrieval.sparse import keyword_in_text as _keyword_in_text
 
@@ -58,7 +65,7 @@ def validate_master_cv_structure(master_cv: Dict[str, Any]) -> List[str]:
     texto, y el 'highlight' termina siendo un dict en vez de un string.
     Devuelve una lista de mensajes de error (vacía si todo está OK).
     """
-    errors: List[str] = []
+    errors: List[str] = validate_achievements_structure(master_cv)
     sections = master_cv.get("cv", {}).get("sections", {})
 
     for section_name, entries in sections.items():
@@ -121,8 +128,15 @@ def _apply_entry_selection(
 ) -> List[Dict[str, Any]]:
     """Lógica compartida por 'experience' y 'projects': para cada entrada
     elegida (por índice), copia la entrada original y le aplica el reorder/filtro
-    de highlights — SIEMPRE recortado a `max_highlights`, sin importar cuántos
+    de bullets — SIEMPRE recortado a `max_highlights`, sin importar cuántos
     haya pedido el modelo. También recorta la cantidad de entradas a `max_entries`.
+
+    Cada bullet es un slot de la entrada (ver `entry_bullet_slots`): un
+    highlight legacy o un achievement. El texto final del slot lo resuelve
+    `resolve_slot_text` — un achievement sin variantes `approved` devuelve
+    None y se ignora en silencio, jamás se inventa una variante. El bloque
+    `achievements` nunca llega al target (RenderCV no lo conoce): solo
+    queda su texto resuelto en `highlights`.
 
     Si `source_section` viene seteado, cada entrada devuelta lleva además
     '_src_section'/'_src_index' (metadata interna, ver strip_internal_keys)
@@ -142,20 +156,31 @@ def _apply_entry_selection(
             continue  # índice inválido -> se ignora, jamás se inventa una entrada
 
         entry = deepcopy(original)
-        original_highlights = original.get("highlights", [])
-        order = item.get("highlight_order") or list(range(len(original_highlights)))
+        slots = entry_bullet_slots(original)
+        order = item.get("highlight_order") or list(range(len(slots)))
 
         filtered_highlights = []
-        for h_idx in order:
-            h = _safe_get(original_highlights, h_idx)
-            if h is not None and h not in filtered_highlights:
-                filtered_highlights.append(h)
+        for s_idx in order:
+            slot = _safe_get(slots, s_idx)
+            if slot is None:
+                continue
+            text = resolve_slot_text(slot)
+            if text is not None and text not in filtered_highlights:
+                filtered_highlights.append(text)
             if len(filtered_highlights) >= max_highlights:
                 break
 
-        entry["highlights"] = (
-            filtered_highlights or original_highlights[:max_highlights]
-        )
+        if not filtered_highlights:
+            # order inválido/vacío -> caen los primeros slots resolubles del master
+            for slot in slots:
+                text = resolve_slot_text(slot)
+                if text is not None and text not in filtered_highlights:
+                    filtered_highlights.append(text)
+                if len(filtered_highlights) >= max_highlights:
+                    break
+
+        entry["highlights"] = filtered_highlights
+        entry.pop("achievements", None)
         if source_section is not None:
             entry["_src_section"] = source_section
             entry["_src_index"] = idx
@@ -180,6 +205,19 @@ def _master_cv_corpus(master_cv: Dict[str, Any]) -> str:
                 parts.extend(
                     str(h) for h in entry.get("highlights", []) if isinstance(h, str)
                 )
+                # D6: el corpus ATS suma los hechos (action/tools) y TODAS
+                # las variantes aprobadas de los achievements — si una
+                # keyword está aprobada en el banco de redacciones, "existe
+                # en el master" aunque la variante emitida en esta corrida
+                # no la mencione (el keyword_report ya verifica el texto
+                # emitido con `in_target`).
+                achievements = entry.get("achievements")
+                if isinstance(achievements, list):
+                    for ach in achievements:
+                        if not isinstance(ach, dict):
+                            continue
+                        parts.extend(facts_corpus_parts(ach))
+                        parts.extend(approved_variant_texts(ach))
     return " \n ".join(parts).lower()
 
 
@@ -334,6 +372,9 @@ def build_target_cv(
         ]
         for i in extra_indices[: config["max_education_extra"]]:
             new_education.append(deepcopy(master_education[i]))
+        for edu in new_education:
+            if isinstance(edu, dict):
+                edu.pop("achievements", None)
         new_sections["education"] = new_education
 
     # --- Skills ---
