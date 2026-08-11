@@ -1,7 +1,7 @@
 //módulo: master — vista master: carga, filtro, guardado
 
 import { api } from "../api.js";
-import { clearAchDirty, renderHeader, renderSectionNav, renderSections } from "../components.js";
+import { commitAllDrafts, renderHeader, renderSectionNav, renderSections } from "../components.js";
 import { $ } from "../dom.js";
 import { blankEntryFor, deriveSectionTypes } from "../labels.js";
 import { promptAddSection } from "../modals.js";
@@ -115,9 +115,9 @@ $("#save-master").addEventListener("click", async () => {
   const btn = $("#save-master");
   btn.disabled = true;
   try {
+    commitAllDrafts();
     await api("/api/master-cv", { method: "POST", body: JSON.stringify(state.masterDoc) });
     snapshotView("master");
-    clearAchDirty();
     setStatus(statusEl, "Guardado.", "ok");
     toast("CV maestro guardado.");
   } catch (e) {

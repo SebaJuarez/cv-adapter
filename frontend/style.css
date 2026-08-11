@@ -1617,3 +1617,52 @@ mark.jd-mark:hover { background: #f5b942; }
 .ach-dirty-badge.show { display: inline-block; }
 
 .modal-hint { font-size: 0.85rem; color: var(--ink-soft); margin: 0.4rem 0 1rem; }
+
+/* Guardado atómico por logro: acciones por tarjeta y barra de pendientes */
+.ach-actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  margin-bottom: 0.6rem;
+}
+
+.ach-pending {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  margin-top: 0.5rem;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--warn);
+  border-radius: 0.4rem;
+}
+
+.ach-pending-count {
+  flex: 1;
+  font-size: 0.8rem;
+  color: var(--warn);
+}
+
+.ach-preview-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--ink-strong);
+  margin-bottom: 0.3rem;
+}
+
+.ach-preview-box {
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  padding: 0.6rem 0.8rem;
+  font-size: 0.9rem;
+  line-height: 1.45;
+  background: var(--bg-soft);
+}
+
+.ach-preview-meta {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  margin-top: 0.5rem;
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+}

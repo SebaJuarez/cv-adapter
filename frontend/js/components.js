@@ -602,13 +602,108 @@ function variantAngleText(v) {
   return angles.length ? angles.map((a) => ANGLE_LABELS[a] || a).join(" · ") : "genérica";
 }
 
-// Colapso y estado de guardado por logro: viven fuera del doc (Sets por
+// Colapso y borradores por logro: viven fuera del doc (Sets/Map keyed por
 // ach.id) para que el re-render no los pierda y no contaminen el YAML.
+// Editar un logro nunca muta el documento: escribe en un borrador y el
+// usuario decide si lo aplica (guardar uno / todos / ninguno) y puede
+// previsualizar el bullet final antes de decidir.
 const collapsedAch = new Set();
 const dirtyAch = new Set();
+const achDrafts = new Map(); // ach.id -> { entry, draft }
+
+function cloneAch(ach) {
+  return JSON.parse(JSON.stringify(ach));
+}
+
+function draftOf(entry, ach) {
+  const rec = achDrafts.get(ach.id);
+  if (rec) return rec.draft;
+  const draft = cloneAch(ach);
+  achDrafts.set(ach.id, { entry, draft });
+  return draft;
+}
+
+function commitAchDraft(entry, i, ctx) {
+  const rec = achDrafts.get(entry.achievements[i].id);
+  if (!rec) return;
+  const prev = entry.achievements[i];
+  entry.achievements[i] = rec.draft;
+  achDrafts.delete(rec.draft.id);
+  dirtyAch.delete(rec.draft.id);
+  rememberUndo("master", "Guardar logro", () => { entry.achievements[i] = prev; ctx.onRerender(); });
+  ctx.onRerender();
+  toast("Logro guardado en el CV maestro. Pulsá Guardar para persistirlo.");
+}
+
+function discardAchDraft(ach, ctx) {
+  achDrafts.delete(ach.id);
+  dirtyAch.delete(ach.id);
+  ctx.onRerender();
+}
+
+function commitAllAchDrafts(entry, ctx) {
+  const prev = entry.achievements.slice();
+  let changed = false;
+  entry.achievements.forEach((a, i) => {
+    const rec = achDrafts.get(a.id);
+    if (!rec) return;
+    entry.achievements[i] = rec.draft;
+    achDrafts.delete(rec.draft.id);
+    dirtyAch.delete(rec.draft.id);
+    changed = true;
+  });
+  if (!changed) return;
+  rememberUndo("master", "Guardar logros", () => { entry.achievements = prev; ctx.onRerender(); });
+  ctx.onRerender();
+  toast("Logros guardados en el CV maestro. Pulsá Guardar para persistirlos.");
+}
+
+function discardAllAchDrafts(entry, ctx) {
+  entry.achievements.forEach((a) => {
+    achDrafts.delete(a.id);
+    dirtyAch.delete(a.id);
+  });
+  ctx.onRerender();
+}
+
+// Aplica TODOS los borradores pendientes al documento (sin undo por logro):
+// lo usa la vista master antes de persistir, para que el guardado global
+// nunca deje trabajo visible sin persistir.
+function commitAllDrafts() {
+  achDrafts.forEach((rec) => {
+    const i = rec.entry.achievements.findIndex((a) => a.id === rec.draft.id);
+    if (i !== -1) rec.entry.achievements[i] = rec.draft;
+  });
+  achDrafts.clear();
+  dirtyAch.clear();
+}
 
 function clearAchDirty() {
   dirtyAch.clear();
+}
+
+async function previewAchievement(entry, i, ctx) {
+  const rec = achDrafts.get(entry.achievements[i].id);
+  const ach = rec ? rec.draft : entry.achievements[i];
+  const rep = representativeText(ach);
+  const confirmed = await openModal((close) => h("div", {}, [
+    h("h3", {}, "Previsualización"),
+    rep
+      ? [
+          h("p", { class: "ach-preview-label" }, "Así quedará en tu CV:"),
+          h("div", { class: "ach-preview-box" }, rep.text),
+          h("p", { class: "ach-preview-meta" }, [
+            h("span", { class: "ach-head-angles" }, rep.angleText),
+            ` · usada en ${rep.used_count} CVs`,
+          ]),
+        ]
+      : h("p", { class: "modal-hint" }, "Sin variantes aprobadas: este logro no aparecerá en el CV."),
+    h("div", { class: "modal-actions" }, [
+      h("button", { class: "btn btn-ghost", onclick: () => close(null) }, "Cerrar"),
+      rec ? h("button", { class: "btn btn-primary", onclick: () => close(true) }, "Guardar este logro") : null,
+    ]),
+  ]));
+  if (confirmed && rec) commitAchDraft(entry, i, ctx);
 }
 
 // Texto que el merge emitiría por defecto (D4): la variante approved con
@@ -711,6 +806,20 @@ function renderAchievements(entry, ctx) {
       ctx.onRerender();
     },
   }, "+ Agregar logro"));
+  const pending = entry.achievements.filter((a) => achDrafts.has(a.id)).length;
+  if (pending > 0) {
+    wrap.appendChild(h("div", { class: "ach-pending" }, [
+      h("span", { class: "ach-pending-count" }, `${pending} logro(s) con cambios sin guardar`),
+      h("button", {
+        class: "btn btn-primary btn-sm",
+        onclick: () => commitAllAchDrafts(entry, ctx),
+      }, "Guardar todos"),
+      h("button", {
+        class: "btn btn-ghost btn-sm",
+        onclick: () => discardAllAchDrafts(entry, ctx),
+      }, "Descartar todos"),
+    ]));
+  }
   wrap.appendChild(h("button", {
     class: "btn btn-ghost",
     onclick: () => convertEntryToLegacy(entry, ctx),
@@ -733,8 +842,9 @@ async function convertEntryToLegacy(entry, ctx) {
   if (!confirm) return;
   const achievements = entry.achievements;
   const texts = achievements
-    .map((ach) => { const rep = representativeText(ach); return rep ? rep.text : null; })
+    .map((a) => { const rec = achDrafts.get(a.id); const rep = representativeText(rec ? rec.draft : a); return rep ? rep.text : null; })
     .filter((t) => typeof t === "string" && t.trim());
+  achievements.forEach((a) => { achDrafts.delete(a.id); dirtyAch.delete(a.id); });
   rememberUndo("master", "Volver a bullets", () => {
     entry.achievements = achievements;
     delete entry.highlights;
@@ -745,7 +855,9 @@ async function convertEntryToLegacy(entry, ctx) {
   ctx.onRerender();
 }
 
-function renderAchievementCard(entry, ach, i, ctx) {
+function renderAchievementCard(entry, realAch, i, ctx) {
+  const rec = achDrafts.get(realAch.id);
+  const ach = rec ? rec.draft : realAch;
   ach.facts = normalizeFacts(ach.facts);
   if (!Array.isArray(ach.variants)) ach.variants = [];
 
@@ -766,7 +878,9 @@ function renderAchievementCard(entry, ach, i, ctx) {
   const del = h("button", {
     class: "btn-icon danger", title: "Sacar logro", "aria-label": "Sacar logro",
     onclick: () => {
-      rememberUndo("master", "Eliminar logro", () => { entry.achievements.splice(i, 0, ach); ctx.onRerender(); });
+      rememberUndo("master", "Eliminar logro", () => { entry.achievements.splice(i, 0, realAch); ctx.onRerender(); });
+      achDrafts.delete(realAch.id);
+      dirtyAch.delete(realAch.id);
       entry.achievements.splice(i, 1);
       ctx.onRerender();
     },
@@ -803,6 +917,13 @@ function renderAchievementCard(entry, ach, i, ctx) {
     dirty ? h("span", { class: "ach-dirty-badge show" }, "● sin guardar") : null,
     h("div", { class: "row-controls" }, [moveUp, moveDown, del]),
   ]));
+  if (dirty) {
+    card.appendChild(h("div", { class: "ach-actions" }, [
+      h("button", { class: "btn btn-ghost btn-sm", onclick: () => previewAchievement(entry, i, ctx) }, "Previsualizar"),
+      h("button", { class: "btn btn-primary btn-sm", onclick: () => commitAchDraft(entry, i, ctx) }, "Guardar"),
+      h("button", { class: "btn btn-ghost btn-sm", onclick: () => discardAchDraft(realAch, ctx) }, "Descartar"),
+    ]));
+  }
 
   // Columna de hechos (verificables, fuente de verdad de la validación)
   const factsCol = h("div", { class: "ach-facts" });
@@ -811,7 +932,7 @@ function renderAchievementCard(entry, ach, i, ctx) {
   const actionTa = h("textarea", { class: "highlight-text" });
   actionTa.value = ach.facts.action;
   setTimeout(() => autoResize(actionTa), 0);
-  actionTa.addEventListener("input", () => { ach.facts.action = actionTa.value; autoResize(actionTa); });
+  actionTa.addEventListener("input", () => { const w = draftOf(entry, realAch); w.facts.action = actionTa.value; autoResize(actionTa); });
   factsCol.appendChild(actionTa);
 
   factsCol.appendChild(h("div", { class: "ach-field-label" }, "Herramientas"));
@@ -820,10 +941,10 @@ function renderAchievementCard(entry, ach, i, ctx) {
     toolsList.innerHTML = "";
     ach.facts.tools.forEach((tool, j) => {
       const input = h("input", { type: "text", value: tool, placeholder: "tecnología" });
-      input.addEventListener("input", () => { ach.facts.tools[j] = input.value; });
+      input.addEventListener("input", () => { draftOf(entry, realAch).facts.tools[j] = input.value; });
       const delTool = h("button", {
         class: "btn-icon danger", title: "Quitar herramienta", "aria-label": "Quitar herramienta",
-        onclick: () => { ach.facts.tools.splice(j, 1); drawTools(); },
+        onclick: () => { draftOf(entry, realAch).facts.tools.splice(j, 1); drawTools(); },
       }, "×");
       toolsList.appendChild(h("div", { class: "ach-tool-row" }, [input, delTool]));
     });
@@ -832,14 +953,14 @@ function renderAchievementCard(entry, ach, i, ctx) {
   factsCol.appendChild(toolsList);
   factsCol.appendChild(h("button", {
     class: "btn btn-ghost",
-    onclick: () => { ach.facts.tools.push(""); drawTools(); },
+    onclick: () => { draftOf(entry, realAch).facts.tools.push(""); drawTools(); },
   }, "+ herramienta"));
 
   factsCol.appendChild(h("div", { class: "ach-field-label" }, "Alcance (contexto, equipo, módulo)"));
   const scopeTa = h("textarea", { class: "highlight-text" });
   scopeTa.value = ach.facts.scope;
   setTimeout(() => autoResize(scopeTa), 0);
-  scopeTa.addEventListener("input", () => { ach.facts.scope = scopeTa.value; autoResize(scopeTa); });
+  scopeTa.addEventListener("input", () => { draftOf(entry, realAch).facts.scope = scopeTa.value; autoResize(scopeTa); });
   factsCol.appendChild(scopeTa);
 
   factsCol.appendChild(h("div", { class: "ach-field-label" }, "Resultados medibles"));
@@ -848,12 +969,12 @@ function renderAchievementCard(entry, ach, i, ctx) {
     outcomesList.innerHTML = "";
     ach.facts.outcomes.forEach((o, j) => {
       const metric = h("input", { type: "text", value: o.metric, placeholder: "métrica" });
-      metric.addEventListener("input", () => { o.metric = metric.value; });
+      metric.addEventListener("input", () => { draftOf(entry, realAch).facts.outcomes[j].metric = metric.value; });
       const value = h("input", { type: "text", value: o.value, placeholder: "valor (ej. -30%)" });
-      value.addEventListener("input", () => { o.value = value.value; });
+      value.addEventListener("input", () => { draftOf(entry, realAch).facts.outcomes[j].value = value.value; });
       const delOutcome = h("button", {
         class: "btn-icon danger", title: "Quitar resultado", "aria-label": "Quitar resultado",
-        onclick: () => { ach.facts.outcomes.splice(j, 1); drawOutcomes(); },
+        onclick: () => { draftOf(entry, realAch).facts.outcomes.splice(j, 1); drawOutcomes(); },
       }, "×");
       outcomesList.appendChild(h("div", { class: "ach-outcome-row" }, [metric, value, delOutcome]));
     });
@@ -862,7 +983,7 @@ function renderAchievementCard(entry, ach, i, ctx) {
   factsCol.appendChild(outcomesList);
   factsCol.appendChild(h("button", {
     class: "btn btn-ghost",
-    onclick: () => { ach.facts.outcomes.push({ metric: "", value: "" }); drawOutcomes(); },
+    onclick: () => { draftOf(entry, realAch).facts.outcomes.push({ metric: "", value: "" }); drawOutcomes(); },
   }, "+ resultado"));
 
   // Columna de variantes (redacciones, una por ángulo)
@@ -877,17 +998,18 @@ function renderAchievementCard(entry, ach, i, ctx) {
     ach.variants.forEach((v, j) => {
       const angleSel = h("select", { "aria-label": "Ángulo" }, ANGLE_OPTIONS.map((a) => h("option", { value: a }, a ? a : "sin ángulo")));
       angleSel.value = typeof v.angle === "string" ? v.angle : (Array.isArray(v.angle) ? (v.angle[0] || "") : "");
-      angleSel.addEventListener("change", () => { v.angle = angleSel.value; });
+      angleSel.addEventListener("change", () => { draftOf(entry, realAch).variants[j].angle = angleSel.value; });
 
       const statusSel = h("select", { "aria-label": "Estado" }, STATUS_OPTIONS.map((s) => h("option", { value: s }, s)));
       statusSel.value = variantStatus(v);
-      statusSel.addEventListener("change", () => { v.status = statusSel.value; });
+      statusSel.addEventListener("change", () => { draftOf(entry, realAch).variants[j].status = statusSel.value; });
 
       const delVariant = h("button", {
         class: "btn-icon danger", title: "Eliminar variante", "aria-label": "Eliminar variante",
         onclick: () => {
-          rememberUndo("master", "Eliminar variante", () => { ach.variants.splice(j, 0, v); ctx.onRerender(); });
-          ach.variants.splice(j, 1);
+          const w = draftOf(entry, realAch);
+          rememberUndo("master", "Eliminar variante", () => { w.variants.splice(j, 0, v); ctx.onRerender(); });
+          w.variants.splice(j, 1);
           ctx.onRerender();
         },
       }, "×");
@@ -895,7 +1017,7 @@ function renderAchievementCard(entry, ach, i, ctx) {
       const variantTa = h("textarea", { class: "highlight-text" });
       variantTa.value = typeof v.text === "string" ? v.text : "";
       setTimeout(() => autoResize(variantTa), 0);
-      variantTa.addEventListener("input", () => { v.text = variantTa.value; autoResize(variantTa); });
+      variantTa.addEventListener("input", () => { draftOf(entry, realAch).variants[j].text = variantTa.value; autoResize(variantTa); });
 
       const cardVariant = h("div", { class: "ach-variant" });
       cardVariant.appendChild(h("div", { class: "ach-variant-head" }, [
@@ -914,12 +1036,13 @@ function renderAchievementCard(entry, ach, i, ctx) {
     class: "btn btn-ghost",
     onclick: () => {
       const newV = blankVariant();
+      const w = draftOf(entry, realAch);
       rememberUndo("master", "Agregar variante", () => {
-        const j = ach.variants.indexOf(newV);
-        if (j !== -1) ach.variants.splice(j, 1);
+        const j = w.variants.indexOf(newV);
+        if (j !== -1) w.variants.splice(j, 1);
         ctx.onRerender();
       });
-      ach.variants.push(newV);
+      w.variants.push(newV);
       ctx.onRerender();
     },
   }, "+ Nueva variante"));
@@ -950,7 +1073,7 @@ async function enrichBullet(entry, i, ctx) {
   const achievements = source.map((t, j) => {
     const ach = blankAchievement();
     ach.variants[0].text = t;
-    ach.variants[0].source = "last_bullet";
+    ach.variants[0].source = "manual";
     if (j === i && facts) ach.facts = facts;
     return ach;
   });
@@ -1022,4 +1145,4 @@ function renderHeader(container, doc, onDirty) {
 }
 
 
-export { clearAchDirty, getMatchReason, humanizeSectionName, renderEntriesList, renderEntryCard, renderHeader, renderHighlights, renderLabelDetailsList, renderPullback, renderSectionBlock, renderSectionNav, renderSections, renderTextList };
+export { clearAchDirty, commitAllDrafts, getMatchReason, humanizeSectionName, renderEntriesList, renderEntryCard, renderHeader, renderHighlights, renderLabelDetailsList, renderPullback, renderSectionBlock, renderSectionNav, renderSections, renderTextList };
