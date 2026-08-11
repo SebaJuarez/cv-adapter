@@ -1479,3 +1479,54 @@ mark.jd-mark:hover { background: #f5b942; }
   .pdf-preview { height: 320px; }
   #modal-box.modal-wide { width: 100%; }
 }
+/* ------------------------------------------------- logros (F2) */
+
+.achievements { display: flex; flex-direction: column; gap: 0.6rem; margin-top: 0.4rem; }
+
+.ach-card {
+  background: var(--paper-raised);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  padding: 0.8rem 0.9rem;
+}
+
+.ach-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.6rem; }
+.ach-title { font-size: 0.8rem; font-weight: 600; color: var(--ink-strong); }
+
+.ach-columns { display: grid; grid-template-columns: 1fr 1.1fr; gap: 1rem; }
+@media (max-width: 860px) { .ach-columns { grid-template-columns: 1fr; } }
+
+.ach-facts, .ach-variants { display: flex; flex-direction: column; gap: 0.4rem; min-width: 0; }
+
+.ach-field-label {
+  font-size: 0.72rem;
+  color: var(--ink-faint);
+  font-family: var(--font-mono);
+}
+
+.ach-tools, .ach-outcomes { display: flex; flex-direction: column; gap: 0.35rem; }
+.ach-tool-row, .ach-outcome-row { display: flex; gap: 0.4rem; align-items: center; }
+.ach-tool-row input, .ach-outcome-row input { flex: 1; }
+
+.ach-variant-list { display: flex; flex-direction: column; gap: 0.5rem; }
+
+.ach-variant {
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  padding: 0.5rem 0.6rem;
+}
+
+.ach-variant-head { display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap; }
+.ach-variant-head select { width: auto; padding: 0.25rem 0.4rem; font-size: 0.8rem; }
+
+.ach-used {
+  font-size: 0.75rem;
+  color: var(--ink-faint);
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  padding: 0.08rem 0.5rem;
+  white-space: nowrap;
+}
+
+.ach-note { font-size: 0.78rem; color: var(--ink-faint); font-style: italic; margin: 0; }

@@ -50,7 +50,7 @@ function applyMasterFilter() {
   });
 
   allCards.forEach((card) => {
-    const bullets = [...card.querySelectorAll(".highlight-row")];
+    const bullets = [...card.querySelectorAll(".highlight-row, .ach-card")];
     let anyBullet = false;
     bullets.forEach((b) => {
       const bv = !q || b.textContent.toLowerCase().includes(q);

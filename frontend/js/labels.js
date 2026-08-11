@@ -25,7 +25,7 @@ function detectSectionType(name, entries, sectionTypes) {
   if (!entries || entries.length === 0) return null;
   const first = entries[0];
   if (typeof first === "string") return "text";
-  if (first && typeof first === "object" && "highlights" in first) return "entries";
+  if (first && typeof first === "object" && ("highlights" in first || "achievements" in first)) return "entries";
   return "label_details";
 }
 

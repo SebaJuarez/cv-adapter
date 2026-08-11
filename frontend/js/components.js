@@ -251,7 +251,7 @@ function renderEntriesList(sectionName, entries, ctx) {
     onclick: () => {
       const template = entries.length > 0
         ? Object.fromEntries(Object.keys(entries[0]).filter((k) => !k.startsWith("_"))
-            .map((k) => [k, k === "highlights" ? [] : ""]))
+            .map((k) => [k, k === "highlights" || k === "achievements" ? [] : ""]))
         : blankEntryFor(sectionName, "entries");
       entries.push(template);
       ctx.onRerender();
@@ -331,7 +331,9 @@ function renderEntryCard(sectionName, entries, entry, index, ctx) {
     card.appendChild(reasonEl);
   }
 
-  if ("highlights" in entry) {
+  if (Array.isArray(entry.achievements)) {
+    card.appendChild(renderAchievements(entry, ctx));
+  } else if ("highlights" in entry) {
     card.appendChild(renderHighlights(entry, ctx, sectionName, index));
   }
 
@@ -384,7 +386,17 @@ function renderHighlights(entry, ctx, sectionName, entryIndex) {
     const row = h("div", { class: "highlight-row" }, [
       h("span", { class: "bullet-mark" }, "—"),
       ta,
-      h("div", { class: "row-controls" }, [moveUp, moveDown, del]),
+      h("div", { class: "row-controls" }, [
+        !ctx.isTarget ? h("button", {
+          class: "btn-icon ach-enrich",
+          title: "Enriquecer: convertir este bullet en un logro con hechos y variantes",
+          "aria-label": "Enriquecer este bullet",
+          onclick: () => enrichBullet(entry, i, ctx),
+        }, "✎") : null,
+        moveUp,
+        moveDown,
+        del,
+      ]),
     ]);
     if (scoreEl) {
       row.appendChild(scoreEl);
@@ -483,6 +495,272 @@ function renderPullback(entry, ctx) {
     details.appendChild(row);
   });
   return details;
+}
+
+// ------------------------------------------------- logros (F2)
+
+// Una entrada usa UN solo formato (D1, doc §2.3): highlights (legacy) o
+// achievements (hechos + variantes). El backend es la fuente de verdad de
+// la validación; acá solo se decide qué renderizar.
+const ANGLE_OPTIONS = ["", "liderazgo", "ownership", "escala", "reduccion_costo", "velocidad_entrega", "impacto_tecnico", "calidad_testing", "cross_funcional", "vision_producto"];
+const STATUS_OPTIONS = ["pending", "approved", "deprecated"];
+
+function uid(prefix) {
+  const bytes = crypto.getRandomValues(new Uint8Array(6));
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+  return `${prefix}_${hex}`;
+}
+
+function blankVariant() {
+  return {
+    id: uid("var"),
+    text: "",
+    angle: "",
+    source: "manual",
+    status: "approved",
+    used_count: 0,
+    created_at: new Date().toISOString().slice(0, 10),
+  };
+}
+
+function blankAchievement() {
+  return { id: uid("ach"), facts: emptyFacts(), variants: [blankVariant()] };
+}
+
+function emptyFacts() {
+  return { action: "", tools: [], scope: "", outcomes: [] };
+}
+
+function normalizeFacts(f) {
+  const src = f && typeof f === "object" ? f : {};
+  return {
+    action: typeof src.action === "string" ? src.action : "",
+    tools: Array.isArray(src.tools) ? src.tools.map((t) => (typeof t === "string" ? t : "")) : [],
+    scope: typeof src.scope === "string" ? src.scope : "",
+    outcomes: Array.isArray(src.outcomes)
+      ? src.outcomes.map((o) => ({
+          metric: typeof o?.metric === "string" ? o.metric : "",
+          value: typeof o?.value === "string" ? o.value : "",
+        }))
+      : [],
+  };
+}
+
+function variantStatus(v) {
+  return v && typeof v.status === "string" && STATUS_OPTIONS.includes(v.status) ? v.status : "approved";
+}
+
+function renderAchievements(entry, ctx) {
+  const wrap = h("div", { class: "achievements" });
+  entry.achievements.forEach((ach, i) => {
+    wrap.appendChild(renderAchievementCard(entry, ach, i, ctx));
+  });
+  wrap.appendChild(h("button", {
+    class: "btn btn-ghost",
+    onclick: () => {
+      const newAch = blankAchievement();
+      rememberUndo("master", "Agregar logro", () => {
+        const j = entry.achievements.indexOf(newAch);
+        if (j !== -1) entry.achievements.splice(j, 1);
+        ctx.onRerender();
+      });
+      entry.achievements.push(newAch);
+      ctx.onRerender();
+    },
+  }, "+ Agregar logro"));
+  return wrap;
+}
+
+function renderAchievementCard(entry, ach, i, ctx) {
+  ach.facts = normalizeFacts(ach.facts);
+  if (!Array.isArray(ach.variants)) ach.variants = [];
+
+  const moveUp = h("button", {
+    class: "btn-icon", title: "Subir logro", "aria-label": "Subir logro", disabled: i === 0 ? "disabled" : null,
+    onclick: () => {
+      [entry.achievements[i - 1], entry.achievements[i]] = [entry.achievements[i], entry.achievements[i - 1]];
+      ctx.onRerender();
+    },
+  }, "↑");
+  const moveDown = h("button", {
+    class: "btn-icon", title: "Bajar logro", "aria-label": "Bajar logro", disabled: i === entry.achievements.length - 1 ? "disabled" : null,
+    onclick: () => {
+      [entry.achievements[i + 1], entry.achievements[i]] = [entry.achievements[i], entry.achievements[i + 1]];
+      ctx.onRerender();
+    },
+  }, "↓");
+  const del = h("button", {
+    class: "btn-icon danger", title: "Sacar logro", "aria-label": "Sacar logro",
+    onclick: () => {
+      rememberUndo("master", "Eliminar logro", () => { entry.achievements.splice(i, 0, ach); ctx.onRerender(); });
+      entry.achievements.splice(i, 1);
+      ctx.onRerender();
+    },
+  }, "×");
+
+  const card = h("div", { class: "ach-card" });
+  card.appendChild(h("div", { class: "ach-head" }, [
+    h("span", { class: "ach-title" }, `Logro ${i + 1}`),
+    h("div", { class: "row-controls" }, [moveUp, moveDown, del]),
+  ]));
+
+  // Columna de hechos (verificables, fuente de verdad de la validación)
+  const factsCol = h("div", { class: "ach-facts" });
+  factsCol.appendChild(h("div", { class: "ach-field-label" }, "Acción (qué hiciste)"));
+
+  const actionTa = h("textarea", { class: "highlight-text" });
+  actionTa.value = ach.facts.action;
+  setTimeout(() => autoResize(actionTa), 0);
+  actionTa.addEventListener("input", () => { ach.facts.action = actionTa.value; autoResize(actionTa); });
+  factsCol.appendChild(actionTa);
+
+  factsCol.appendChild(h("div", { class: "ach-field-label" }, "Herramientas"));
+  const toolsList = h("div", { class: "ach-tools" });
+  const drawTools = () => {
+    toolsList.innerHTML = "";
+    ach.facts.tools.forEach((tool, j) => {
+      const input = h("input", { type: "text", value: tool, placeholder: "tecnología" });
+      input.addEventListener("input", () => { ach.facts.tools[j] = input.value; });
+      const delTool = h("button", {
+        class: "btn-icon danger", title: "Quitar herramienta", "aria-label": "Quitar herramienta",
+        onclick: () => { ach.facts.tools.splice(j, 1); drawTools(); },
+      }, "×");
+      toolsList.appendChild(h("div", { class: "ach-tool-row" }, [input, delTool]));
+    });
+  };
+  drawTools();
+  factsCol.appendChild(toolsList);
+  factsCol.appendChild(h("button", {
+    class: "btn btn-ghost",
+    onclick: () => { ach.facts.tools.push(""); drawTools(); },
+  }, "+ herramienta"));
+
+  factsCol.appendChild(h("div", { class: "ach-field-label" }, "Alcance (contexto, equipo, módulo)"));
+  const scopeTa = h("textarea", { class: "highlight-text" });
+  scopeTa.value = ach.facts.scope;
+  setTimeout(() => autoResize(scopeTa), 0);
+  scopeTa.addEventListener("input", () => { ach.facts.scope = scopeTa.value; autoResize(scopeTa); });
+  factsCol.appendChild(scopeTa);
+
+  factsCol.appendChild(h("div", { class: "ach-field-label" }, "Resultados medibles"));
+  const outcomesList = h("div", { class: "ach-outcomes" });
+  const drawOutcomes = () => {
+    outcomesList.innerHTML = "";
+    ach.facts.outcomes.forEach((o, j) => {
+      const metric = h("input", { type: "text", value: o.metric, placeholder: "métrica" });
+      metric.addEventListener("input", () => { o.metric = metric.value; });
+      const value = h("input", { type: "text", value: o.value, placeholder: "valor (ej. -30%)" });
+      value.addEventListener("input", () => { o.value = value.value; });
+      const delOutcome = h("button", {
+        class: "btn-icon danger", title: "Quitar resultado", "aria-label": "Quitar resultado",
+        onclick: () => { ach.facts.outcomes.splice(j, 1); drawOutcomes(); },
+      }, "×");
+      outcomesList.appendChild(h("div", { class: "ach-outcome-row" }, [metric, value, delOutcome]));
+    });
+  };
+  drawOutcomes();
+  factsCol.appendChild(outcomesList);
+  factsCol.appendChild(h("button", {
+    class: "btn btn-ghost",
+    onclick: () => { ach.facts.outcomes.push({ metric: "", value: "" }); drawOutcomes(); },
+  }, "+ resultado"));
+
+  // Columna de variantes (redacciones, una por ángulo)
+  const variantsCol = h("div", { class: "ach-variants" });
+  const variantsList = h("div", { class: "ach-variant-list" });
+  const hasApproved = ach.variants.some((v) => variantStatus(v) === "approved");
+  if (hasApproved) {
+    variantsCol.appendChild(h("p", { class: "ach-note" }, "Los hechos no reescriben las redacciones existentes: si cambiás un hecho, revisá las variantes que lo mencionan."));
+  }
+  const drawVariants = () => {
+    variantsList.innerHTML = "";
+    ach.variants.forEach((v, j) => {
+      const angleSel = h("select", { "aria-label": "Ángulo" }, ANGLE_OPTIONS.map((a) => h("option", { value: a }, a ? a : "sin ángulo")));
+      angleSel.value = typeof v.angle === "string" ? v.angle : (Array.isArray(v.angle) ? (v.angle[0] || "") : "");
+      angleSel.addEventListener("change", () => { v.angle = angleSel.value; });
+
+      const statusSel = h("select", { "aria-label": "Estado" }, STATUS_OPTIONS.map((s) => h("option", { value: s }, s)));
+      statusSel.value = variantStatus(v);
+      statusSel.addEventListener("change", () => { v.status = statusSel.value; });
+
+      const delVariant = h("button", {
+        class: "btn-icon danger", title: "Eliminar variante", "aria-label": "Eliminar variante",
+        onclick: () => {
+          rememberUndo("master", "Eliminar variante", () => { ach.variants.splice(j, 0, v); ctx.onRerender(); });
+          ach.variants.splice(j, 1);
+          ctx.onRerender();
+        },
+      }, "×");
+
+      const variantTa = h("textarea", { class: "highlight-text" });
+      variantTa.value = typeof v.text === "string" ? v.text : "";
+      setTimeout(() => autoResize(variantTa), 0);
+      variantTa.addEventListener("input", () => { v.text = variantTa.value; autoResize(variantTa); });
+
+      const cardVariant = h("div", { class: "ach-variant" });
+      cardVariant.appendChild(h("div", { class: "ach-variant-head" }, [
+        angleSel,
+        statusSel,
+        h("span", { class: "ach-used" }, `usada en ${v.used_count ?? 0} CVs`),
+        delVariant,
+      ]));
+      cardVariant.appendChild(variantTa);
+      variantsList.appendChild(cardVariant);
+    });
+  };
+  drawVariants();
+  variantsCol.appendChild(variantsList);
+  variantsCol.appendChild(h("button", {
+    class: "btn btn-ghost",
+    onclick: () => {
+      const newV = blankVariant();
+      rememberUndo("master", "Agregar variante", () => {
+        const j = ach.variants.indexOf(newV);
+        if (j !== -1) ach.variants.splice(j, 1);
+        ctx.onRerender();
+      });
+      ach.variants.push(newV);
+      ctx.onRerender();
+    },
+  }, "+ Nueva variante"));
+
+  card.appendChild(h("div", { class: "ach-columns" }, [factsCol, variantsCol]));
+  return card;
+}
+
+// Enriquecer un bullet legacy: convierte TODA la entrada al formato
+// achievements (D1: una entrada usa un solo formato) y, si el backend
+// extrae hechos del bullet elegido, los carga en su achievement. Cada
+// bullet existente pasa a ser una variante aprobada sin perder texto.
+async function enrichBullet(entry, i, ctx) {
+  const source = entry.highlights || [];
+  const text = source[i];
+  if (typeof text !== "string" || !text.trim()) {
+    toast("El bullet está vacío: no hay nada que enriquecer.");
+    return;
+  }
+  let facts = null;
+  try {
+    const res = await api("/api/master/extract-facts", { method: "POST", body: JSON.stringify({ text }) });
+    facts = normalizeFacts(res?.facts);
+  } catch (e) {
+    toast("No se pudieron extraer los hechos automáticamente (los cargás a mano): " + (e.message || "error"));
+  }
+  const achievements = source.map((t, j) => {
+    const ach = blankAchievement();
+    ach.variants[0].text = t;
+    ach.variants[0].source = "last_bullet";
+    if (j === i && facts) ach.facts = facts;
+    return ach;
+  });
+  rememberUndo("master", "Enriquecer bullet", () => {
+    delete entry.achievements;
+    entry.highlights = source;
+    ctx.onRerender();
+  });
+  delete entry.highlights;
+  entry.achievements = achievements;
+  ctx.onRerender();
 }
 
 // ------------------------------------------------------------- header
