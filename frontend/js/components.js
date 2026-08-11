@@ -602,6 +602,55 @@ function variantAngleText(v) {
   return angles.length ? angles.map((a) => ANGLE_LABELS[a] || a).join(" · ") : "genérica";
 }
 
+// Colapso y estado de guardado por logro: viven fuera del doc (Sets por
+// ach.id) para que el re-render no los pierda y no contaminen el YAML.
+const collapsedAch = new Set();
+const dirtyAch = new Set();
+
+function clearAchDirty() {
+  dirtyAch.clear();
+}
+
+// Texto que el merge emitiría por defecto (D4): la variante approved con
+// mayor used_count; empate -> created_at más reciente; sin approved, la
+// primera variante con texto (para no perder nada en "volver a bullets").
+function representativeText(ach) {
+  let best = null;
+  for (const v of ach.variants || []) {
+    if (!v || variantStatus(v) !== "approved") continue;
+    if (typeof v.text !== "string" || !v.text.trim()) continue;
+    if (!best) { best = v; continue; }
+    const usedBest = best.used_count ?? 0;
+    const usedV = v.used_count ?? 0;
+    if (usedV > usedBest || (usedV === usedBest && (v.created_at || "") > (best.created_at || ""))) {
+      best = v;
+    }
+  }
+  if (!best) {
+    for (const v of ach.variants || []) {
+      if (v && typeof v.text === "string" && v.text.trim()) { best = v; break; }
+    }
+  }
+  if (!best) return null;
+  return { text: best.text, used_count: best.used_count ?? 0, angleText: variantAngleText(best) };
+}
+
+function markAchDirtyFromEvent(ev) {
+  const card = ev.target.closest && ev.target.closest(".ach-card");
+  if (!card || !card.dataset.achId) return;
+  dirtyAch.add(card.dataset.achId);
+  let badge = card.querySelector(".ach-dirty-badge");
+  if (!badge) {
+    badge = h("span", { class: "ach-dirty-badge" }, "● sin guardar");
+    const head = card.querySelector(".ach-head");
+    if (head) head.appendChild(badge);
+  }
+  badge.classList.add("show");
+}
+
+document.addEventListener("input", markAchDirtyFromEvent, true);
+document.addEventListener("change", markAchDirtyFromEvent, true);
+
 function toggleVariantPopover(row, entry, i, ctx) {
   if (activeVariantPopover && activeVariantPopover._row === row) {
     closeVariantPopover();
@@ -662,7 +711,38 @@ function renderAchievements(entry, ctx) {
       ctx.onRerender();
     },
   }, "+ Agregar logro"));
+  wrap.appendChild(h("button", {
+    class: "btn btn-ghost",
+    onclick: () => convertEntryToLegacy(entry, ctx),
+  }, "volver a bullets"));
   return wrap;
+}
+
+async function convertEntryToLegacy(entry, ctx) {
+  const count = (entry.achievements || []).length;
+  const confirm = await openModal((close) => {
+    return h("div", {}, [
+      h("h3", {}, "¿Volver a bullets?"),
+      h("p", { class: "modal-hint" }, `Se convierten ${count} logros a bullets de texto: se pierden los hechos estructurados y las variantes; queda el texto de la variante representativa de cada uno. Podés deshacer con Ctrl+Z.`),
+      h("div", { class: "modal-actions" }, [
+        h("button", { class: "btn btn-ghost", onclick: () => close(null) }, "Cancelar"),
+        h("button", { class: "btn btn-primary", onclick: () => close(true) }, "Convertir a bullets"),
+      ]),
+    ]);
+  });
+  if (!confirm) return;
+  const achievements = entry.achievements;
+  const texts = achievements
+    .map((ach) => { const rep = representativeText(ach); return rep ? rep.text : null; })
+    .filter((t) => typeof t === "string" && t.trim());
+  rememberUndo("master", "Volver a bullets", () => {
+    entry.achievements = achievements;
+    delete entry.highlights;
+    ctx.onRerender();
+  });
+  delete entry.achievements;
+  entry.highlights = texts;
+  ctx.onRerender();
 }
 
 function renderAchievementCard(entry, ach, i, ctx) {
@@ -692,9 +772,35 @@ function renderAchievementCard(entry, ach, i, ctx) {
     },
   }, "×");
 
+  const collapsed = collapsedAch.has(ach.id);
+  const rep = representativeText(ach);
+  const dirty = dirtyAch.has(ach.id);
+
+  const toggle = h("button", {
+    class: "btn-icon ach-toggle",
+    title: collapsed ? "Expandir logro" : "Colapsar logro",
+    "aria-label": collapsed ? "Expandir logro" : "Colapsar logro",
+    onclick: () => {
+      if (collapsedAch.has(ach.id)) collapsedAch.delete(ach.id);
+      else collapsedAch.add(ach.id);
+      ctx.onRerender();
+    },
+  }, collapsed ? "▸" : "▾");
+
   const card = h("div", { class: "ach-card" });
+  card.dataset.achId = ach.id;
   card.appendChild(h("div", { class: "ach-head" }, [
-    h("span", { class: "ach-title" }, `Logro ${i + 1}`),
+    toggle,
+    h("div", { class: "ach-head-info" }, [
+      rep
+        ? h("span", { class: "ach-head-preview", title: rep.text }, `Quedará en tu CV: ${rep.text}`)
+        : h("span", { class: "ach-head-preview none" }, "sin variantes aprobadas — no aparecerá en el CV"),
+      h("span", { class: "ach-head-meta" }, [
+        rep ? h("span", { class: "ach-head-angles" }, rep.angleText) : null,
+        rep ? h("span", { class: "ach-used" }, `usada en ${rep.used_count} CVs`) : null,
+      ]),
+    ]),
+    dirty ? h("span", { class: "ach-dirty-badge show" }, "● sin guardar") : null,
     h("div", { class: "row-controls" }, [moveUp, moveDown, del]),
   ]));
 
@@ -818,6 +924,7 @@ function renderAchievementCard(entry, ach, i, ctx) {
     },
   }, "+ Nueva variante"));
 
+  if (collapsed) return card;
   card.appendChild(h("div", { class: "ach-columns" }, [factsCol, variantsCol]));
   return card;
 }
@@ -847,6 +954,9 @@ async function enrichBullet(entry, i, ctx) {
     if (j === i && facts) ach.facts = facts;
     return ach;
   });
+  // Solo se abre el logro enriquecido; los demás quedan colapsados para
+  // que la entrada no estalle en N editores expandidos de golpe.
+  achievements.forEach((ach, j) => { if (j !== i) collapsedAch.add(ach.id); });
   rememberUndo("master", "Enriquecer bullet", () => {
     delete entry.achievements;
     entry.highlights = source;
@@ -855,6 +965,7 @@ async function enrichBullet(entry, i, ctx) {
   delete entry.highlights;
   entry.achievements = achievements;
   ctx.onRerender();
+  toast("Toda la entrada pasó a formato logro: cada bullet quedó como una redacción. Expandí las que quieras revisar.");
 }
 
 // ------------------------------------------------------------- header
@@ -911,4 +1022,4 @@ function renderHeader(container, doc, onDirty) {
 }
 
 
-export { getMatchReason, humanizeSectionName, renderEntriesList, renderEntryCard, renderHeader, renderHighlights, renderLabelDetailsList, renderPullback, renderSectionBlock, renderSectionNav, renderSections, renderTextList };
+export { clearAchDirty, getMatchReason, humanizeSectionName, renderEntriesList, renderEntryCard, renderHeader, renderHighlights, renderLabelDetailsList, renderPullback, renderSectionBlock, renderSectionNav, renderSections, renderTextList };

@@ -1491,7 +1491,7 @@ mark.jd-mark:hover { background: #f5b942; }
   padding: 0.8rem 0.9rem;
 }
 
-.ach-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.6rem; }
+.ach-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.5rem; margin-bottom: 0.6rem; }
 .ach-title { font-size: 0.8rem; font-weight: 600; color: var(--ink-strong); }
 
 .ach-columns { display: grid; grid-template-columns: 1fr 1.1fr; gap: 1rem; }
@@ -1532,7 +1532,7 @@ mark.jd-mark:hover { background: #f5b942; }
 
 .ach-note { font-size: 0.78rem; color: var(--ink-faint); font-style: italic; margin: 0; }
 
-/* Fase 3 — selector de variante en "Nueva aplicación" (doc §6.5) */
+/* Fase 3 ï¿½ selector de variante en "Nueva aplicaciï¿½n" (doc ï¿½6.5) */
 .ach-switch-popover {
   position: absolute;
   right: 0;
@@ -1575,3 +1575,45 @@ mark.jd-mark:hover { background: #f5b942; }
 }
 
 .ach-switch-text { font-size: 0.85rem; color: var(--ink); line-height: 1.35; }
+
+/* Editor de logros usable: colapso, preview y estado (fix F2) */
+.ach-head-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.ach-head-preview {
+  font-size: 0.85rem;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ach-head-preview.none { color: var(--ink-faint); font-style: italic; }
+
+.ach-head-meta { display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap; }
+
+.ach-head-angles {
+  font-size: 0.72rem;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.ach-dirty-badge {
+  display: none;
+  font-size: 0.72rem;
+  color: var(--warn);
+  border: 1px solid var(--warn);
+  border-radius: 999px;
+  padding: 0.08rem 0.5rem;
+  white-space: nowrap;
+}
+
+.ach-dirty-badge.show { display: inline-block; }
+
+.modal-hint { font-size: 0.85rem; color: var(--ink-soft); margin: 0.4rem 0 1rem; }
