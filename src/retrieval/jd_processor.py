@@ -20,16 +20,29 @@ def extract_requirements_section(jd: str) -> str:
     Si no encuentra delimitadores conocidos, devuelve el JD completo.
     El resultado se usa como query fija para el cross-encoder.
     """
-    patterns = [
+    section_pattern = re.compile(
         # Secciones que SÍ son requisitos (empiezan acá el contenido)
         r"(?:Requisitos|Requirements|Qualifications|What you need|Must have|Responsabilidades|Responsibilities|Perfil buscado|Lo que buscamos|Buscamos)[\s:]*(.+?)(?=\n(?:Ofrecemos|Ofreceremos|Beneficios|Qué ofrecemos|Que ofrecemos|What we offer|Nice to have|Deseable|About us|About the company|Quiénes somos|Sobre nosotros|Apply now|Postulate|Postúlate|Postulate ya|Aplicá|Aplica|Cómo postularme|Como postularme|Cómo aplicar|Salario|Remuneración|Remuneracion|Compensación|Compensacion|$))",
-        # Secciones que NO son requisitos (cortan el contenido)
+        re.IGNORECASE | re.DOTALL,
+    )
+    match = section_pattern.search(jd)
+    if match:
+        return match.group(1).strip()
+
+    # Sin encabezado de requisitos: "Deseable/Nice to have/..." corta el
+    # contenido. Solo si el JD EMPIEZA con el marcador se captura su sección;
+    # si aparece en medio, el contenido principal está antes y no debe
+    # perderse (descartarlo dejaría solo ese fragmento como query del
+    # cross-encoder y el canal denso).
+    cut_pattern = re.compile(
         r"(?:Nice to have|Deseable|Plus|Preferred)[\s:]*(.+?)(?=\n|$)",
-    ]
-    for pattern in patterns:
-        match = re.search(pattern, jd, re.IGNORECASE | re.DOTALL)
-        if match:
-            return match.group(1).strip()
+        re.IGNORECASE | re.DOTALL,
+    )
+    match = cut_pattern.search(jd)
+    if match:
+        if match.start() > 0:
+            return jd[: match.start()].strip()
+        return match.group(1).strip()
     return jd.strip()
 
 

@@ -113,9 +113,13 @@ def _count_keyword_occurrences(text: str, keyword: str) -> int:
     if sep_pattern is not None:
         return len(re.findall(sep_pattern, text.lower()))
     text = _normalize_text(text)
-    # Para bigramas
+    # Multi-palabra: límites de palabra por token (como en los unigramas),
+    # para que "github actions" no cuente dentro de "github actionscript".
+    # \s+ cubre espacios simples o múltiples del texto normalizado.
     if " " in kw:
-        return text.count(kw)
+        parts = [re.escape(p) for p in kw.split(" ")]
+        pattern = r"(?<!\w)" + r"\s+".join(parts) + r"(?!\w)"
+        return len(re.findall(pattern, text))
     # Para unigramas: word boundary
     pattern = r"\b" + re.escape(kw) + r"\b"
     return len(re.findall(pattern, text))

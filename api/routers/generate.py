@@ -74,11 +74,18 @@ def preview_keywords(payload: JobDescriptionIn) -> Dict[str, Any]:
     pipeline completo — solo extract_keywords (diccionario + abiertas + 
     manuales), sin modelos, sin LLM, sin cache ni historial."""
     master_cv = _require_master()
+    config = load_config()
     corpus = _corpus_text(master_cv)
+    # Mismas fuentes que la corrida real (selection.py + merge.py): las fijas
+    # de Configuración (config.custom_keywords) y las manuales del payload.
+    # extract_keywords normaliza y deduplica, así que concatenar es seguro.
+    custom_keywords = list(config.get("custom_keywords") or []) + list(
+        payload.manual_keywords or []
+    )
     keywords, _ = extract_keywords(
         payload.job_description,
         master_corpus=corpus,
-        custom_keywords=payload.manual_keywords,
+        custom_keywords=custom_keywords,
     )
     # Flag por keyword: si existe (o su sinónimo) en el master. Misma fuente
     # única de sinónimos que el resto del pipeline (SYNONYMS en sparse.py).

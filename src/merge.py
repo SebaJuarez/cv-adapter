@@ -390,19 +390,26 @@ def build_target_cv(
         config["max_keywords"],
     )
 
-    # Manual keywords con la misma lógica de sinónimos
+    # Manual keywords con la misma lógica de sinónimos, pero con PRIORIDAD
+    # sobre las detectadas: el usuario las escribió explícitamente y no debe
+    # perderlas por el truncado de max_keywords. Las detectadas completan el
+    # cupo restante.
     master_corpus = _master_cv_corpus(master_cv)
+    final_keywords: List[str] = []
     for kw in manual_keywords or []:
         kw_clean = (kw or "").strip()
         if not kw_clean:
             continue
         if (
             _keyword_in_text(kw_clean, master_corpus)
-            and kw_clean not in verified_keywords
+            and kw_clean not in final_keywords
         ):
-            verified_keywords.append(kw_clean)
+            final_keywords.append(kw_clean)
+    for kw in verified_keywords:
+        if kw not in final_keywords:
+            final_keywords.append(kw)
 
-    verified_keywords = verified_keywords[: config["max_keywords"]]
+    verified_keywords = final_keywords[: config["max_keywords"]]
     if verified_keywords and config.get("show_keywords_line", True):
         # Línea visible "Palabras clave: ..." — opcional (ver [5.1] de la
         # review): ayuda contra ATS basados en conteo simple de términos,
@@ -513,7 +520,17 @@ def estimate_page_overflow(target_cv: Dict[str, Any], config: Optional[Dict[str,
                 for highlight in entry.get("highlights", []):
                     lines += _text_lines(highlight)
         elif section == "skills":
-            lines += len(entries)  # una línea por categoría
+            # Una línea por categoría, pero un details largo ocupa más de
+            # una línea real: se mide con el mismo criterio que el resto
+            # (_text_lines, ~90 chars por línea).
+            for entry in entries:
+                if isinstance(entry, dict):
+                    details = entry.get("details", "")
+                    if isinstance(details, list):
+                        details = ", ".join(str(d) for d in details)
+                    lines += max(1, _text_lines(details))
+                else:
+                    lines += max(1, _text_lines(entry))
         else:
             # keywords (una línea) y secciones passthrough (1 línea/entrada)
             lines += len(entries)

@@ -7,6 +7,7 @@ los mismos valores que ya veníamos usando.
 """
 import hashlib
 import json
+import math
 from pathlib import Path
 from typing import Any, Dict
 
@@ -103,6 +104,122 @@ _SELECTION_CONFIG_KEYS = (
     "custom_keywords",
     "use_hyde",
 )
+
+
+# ---------------------------------------------------------------------
+# Validación de tipos/rangos del POST /api/config (08)
+#
+# Espeja las reglas de validateConfig del frontend (settings.js): enteros
+# >= 1 para los límites de página, booleans, select del proveedor y strings
+# no vacías. Los rangos de los knobs que la UI no expone (pesos del RRF,
+# lambdas, TTL, swaps) se derivan de la semántica documentada en DEFAULTS:
+# peso 0 = canal ignorado, lambda/penalty 1.0 = desactivado, TTL/swaps
+# 0 = pasada desactivada.
+# ---------------------------------------------------------------------
+_INT_MIN_1 = frozenset(
+    {
+        "max_experience_entries",
+        "max_project_entries",
+        "max_highlights_per_entry",
+        "max_skill_categories",
+        "max_education_extra",
+        "max_keywords",
+        "rrf_k",
+        "lines_per_page",
+    }
+)
+_INT_MIN_0 = frozenset({"selection_cache_ttl_hours", "max_global_coverage_swaps"})
+_FLOAT_MIN_0 = frozenset({"sparse_weight", "dense_weight", "keyword_boost_weight"})
+_FLOAT_0_1 = frozenset({"diversity_lambda", "negation_penalty"})
+_BOOL_KEYS = frozenset({"use_reranker", "use_stemming", "show_keywords_line", "use_hyde"})
+_SELECT_KEYS = {"llm_provider": frozenset({"ollama", "openai"})}
+_LIST_KEYS = frozenset({"custom_keywords"})
+_STRING_REQUIRED = frozenset(
+    {"ollama_model", "openai_model", "rendercv_theme", "dense_model", "cross_encoder_model"}
+)
+# openai_base_url puede quedar vacía (vacío = endpoint oficial de OpenAI).
+_STRING_OPTIONAL = frozenset({"openai_api_key", "openai_base_url"})
+
+
+class ConfigValidationError(ValueError):
+    """Payload de config con tipos o rangos inválidos (POST /api/config → 400)."""
+
+
+def _es_entero(valor: Any) -> bool:
+    return (
+        isinstance(valor, int)
+        and not isinstance(valor, bool)
+        or isinstance(valor, float)
+        and valor.is_integer()
+    )
+
+
+def _es_numero_finito(valor: Any) -> bool:
+    return isinstance(valor, (int, float)) and not isinstance(valor, bool) and math.isfinite(valor)
+
+
+def validate_config(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Valida y normaliza un payload de config contra las reglas de DEFAULTS.
+
+    Rechaza claves desconocidas, tipos equivocados y rangos fuera de lo
+    esperado; normaliza strings (trim) y custom_keywords (lista de strings
+    sin vacíos). Devuelve el payload listo para save_config.
+    """
+    unknown = set(payload) - set(DEFAULTS)
+    if unknown:
+        raise ConfigValidationError(f"Claves desconocidas: {sorted(unknown)}")
+
+    validated: Dict[str, Any] = {}
+    for key, value in payload.items():
+        if key in _INT_MIN_1:
+            if not _es_entero(value) or value < 1:
+                raise ConfigValidationError(
+                    f'Clave "{key}" debe ser un número entero mayor o igual a 1.'
+                )
+            validated[key] = int(value)
+        elif key in _INT_MIN_0:
+            if not _es_entero(value) or value < 0:
+                raise ConfigValidationError(
+                    f'Clave "{key}" debe ser un número entero mayor o igual a 0 (0 desactiva la pasada).'
+                )
+            validated[key] = int(value)
+        elif key in _FLOAT_MIN_0:
+            if not _es_numero_finito(value) or value < 0:
+                raise ConfigValidationError(
+                    f'Clave "{key}" debe ser un número mayor o igual a 0 (0 ignora el canal).'
+                )
+            validated[key] = float(value)
+        elif key in _FLOAT_0_1:
+            if not _es_numero_finito(value) or not 0 <= value <= 1:
+                raise ConfigValidationError(
+                    f'Clave "{key}" debe ser un número entre 0 y 1 (1.0 desactiva el ajuste).'
+                )
+            validated[key] = float(value)
+        elif key in _BOOL_KEYS:
+            if not isinstance(value, bool):
+                raise ConfigValidationError(f'Clave "{key}" debe ser un booleano (true/false).')
+            validated[key] = value
+        elif key in _SELECT_KEYS:
+            opciones = _SELECT_KEYS[key]
+            if value not in opciones:
+                raise ConfigValidationError(
+                    f'Clave "{key}" debe ser uno de: {sorted(opciones)}.'
+                )
+            validated[key] = value
+        elif key in _LIST_KEYS:
+            if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
+                raise ConfigValidationError(f'Clave "{key}" debe ser una lista de strings.')
+            validated[key] = [v.strip() for v in value if v.strip() != ""]
+        elif key in _STRING_OPTIONAL:
+            if not isinstance(value, str):
+                raise ConfigValidationError(f'Clave "{key}" debe ser un string.')
+            validated[key] = value.strip()
+        elif key in _STRING_REQUIRED:
+            if not isinstance(value, str) or value.strip() == "":
+                raise ConfigValidationError(f'Clave "{key}" no puede estar vacía.')
+            validated[key] = value.strip()
+
+    return validated
 
 
 def selection_config_fingerprint(config: Dict[str, Any]) -> str:
