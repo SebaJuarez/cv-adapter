@@ -17,7 +17,7 @@ El proveedor se elige con config["llm_provider"]: "ollama" (modelo local) u
 """
 import json
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from .achievements import VALID_ANGLES, entry_bullet_slots
 from .config import load_config
@@ -334,6 +334,168 @@ def extract_achievement_facts(
     finally:
         if pool is not None:
             pool.shutdown(wait=False, cancel_futures=True)
+
+
+# F6 (doc §6.6): la generación de variantes devuelve `text` + `tech_terms`
+# (los términos que el modelo usó en su redacción, para verificar contra el
+# logro). Schema estricto: si el modelo no lista términos, no se rompe nada;
+# si inventa término sin respaldo, se marca, jamás se descarta en silencio.
+_VARIANT_GEN_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "text": {"type": "string"},
+        "tech_terms": {"type": "array", "items": {"type": "string"}},
+    },
+    "required": ["text", "tech_terms"],
+    "additionalProperties": False,
+}
+
+
+def _format_facts_for_prompt(facts: Dict[str, Any]) -> str:
+    """Facts de un logro como texto legible para el prompt de redacción."""
+    parts = []
+    if not isinstance(facts, dict):
+        return "(sin hechos estructurados)"
+    action = facts.get("action")
+    if isinstance(action, str) and action.strip():
+        parts.append(f"Acción: {action.strip()}")
+    tools = facts.get("tools")
+    if isinstance(tools, list) and tools:
+        parts.append(
+            "Herramientas: "
+            + ", ".join(t for t in tools if isinstance(t, str) and t.strip())
+        )
+    scope = facts.get("scope")
+    if isinstance(scope, str) and scope.strip():
+        parts.append(f"Alcance: {scope.strip()}")
+    for outcome in facts.get("outcomes") or []:
+        if not isinstance(outcome, dict):
+            continue
+        metric = outcome.get("metric")
+        value = outcome.get("value")
+        if isinstance(metric, str) and metric.strip():
+            line = f"Resultado: {metric.strip()}"
+            if isinstance(value, str) and value.strip():
+                line += f" {value.strip()}"
+            parts.append(line)
+        elif isinstance(value, str) and value.strip():
+            parts.append(f"Resultado: {value.strip()}")
+    return "\n".join(parts) if parts else "(sin hechos estructurados)"
+
+
+def _facts_corpus(facts: Dict[str, Any]) -> List[str]:
+    """Partes de `facts` que respaldan términos técnicos (action + tools)."""
+    parts = []
+    if not isinstance(facts, dict):
+        return parts
+    action = facts.get("action")
+    if isinstance(action, str) and action.strip():
+        parts.append(action.strip())
+    tools = facts.get("tools")
+    if isinstance(tools, list):
+        parts.extend(t.strip() for t in tools if isinstance(t, str) and t.strip())
+    return parts
+
+
+def generate_variant_text(
+    angle: str,
+    facts: Dict[str, Any],
+    variant_texts: List[str],
+    current_text: str = "",
+    jd_snippet: str = "",
+    config: Optional[Dict[str, Any]] = None,
+    timeout: float = 30.0,
+) -> Dict[str, Any]:
+    """Genera una redacción nueva orientada a `angle` para un logro (F6).
+
+    El LLM reescribe SOLO a partir de los hechos del logro (facts + variantes
+    existentes + texto actual); el snippet del JD es contexto de énfasis,
+    jamás una fuente de hechos. Devuelve `{text, unverified_terms}`: los
+    términos técnicos que el modelo declara se verifican con
+    `keyword_in_text` contra el corpus del logro (mismo verificador que las
+    keywords ATS, soporta sinónimos); los que no están respaldados se listan
+    para que el frontend los resalte — la variante jamás entra al master sin
+    aprobación humana explícita.
+
+    A diferencia de `extract_achievement_facts` (que degrada a vacío), acá los
+    errores se propagan con mensaje legible: la UX pide mostrar el error del
+    proveedor (toast con enlace a Configuración), no silenciarlo.
+    """
+    config = config or load_config()
+    angle = (angle or "").strip().lower()
+    if angle not in VALID_ANGLES:
+        raise RuntimeError(
+            f"Ángulo desconocido: '{angle}'. Válidos: {', '.join(VALID_ANGLES)}."
+        )
+
+    variant_texts = [t for t in (variant_texts or []) if isinstance(t, str) and t.strip()]
+    corpus_parts = _facts_corpus(facts) + variant_texts
+    if isinstance(current_text, str) and current_text.strip():
+        corpus_parts.append(current_text.strip())
+    if not corpus_parts:
+        raise RuntimeError(
+            "Este logro no tiene contenido para redactar (hechos y redacciones "
+            "vacíos). Completá sus hechos en el editor de logros."
+        )
+    corpus_text = " ".join(corpus_parts)
+
+    system_prompt = (
+        "Sos un redactor de logros de CV. Reescribís el logro de un candidato "
+        f"orientado al ángulo '{angle}', conservando exactamente los mismos hechos.\n"
+        "Reglas inquebrantables:\n"
+        "- SOLO podés usar información que aparezca en los HECHOS del logro o en sus "
+        "redacciones existentes. NUNCA inventes tecnologías, métricas, equipos ni clientes.\n"
+        "- El contexto de la oferta es solo para énfasis y tono; no es fuente de hechos.\n"
+        "- En tech_terms listá cada tecnología o herramienta que menciones en tu "
+        "redacción (incluidas las ya presentes en los hechos), para poder verificarlas."
+    )
+    user_prompt = (
+        "### hechos del logro ###\n"
+        f"{_format_facts_for_prompt(facts)}\n\n"
+        "### redacciones existentes del logro ###\n"
+        + ("\n".join(f"- {t}" for t in variant_texts) if variant_texts else "(ninguna)")
+        + "\n\n### texto actual ###\n"
+        + (current_text.strip() if isinstance(current_text, str) and current_text.strip() else "(ninguno)")
+        + (
+            "\n\n### contexto de la oferta (para énfasis, no para inventar hechos) ###\n"
+            + jd_snippet.strip()
+            if isinstance(jd_snippet, str) and jd_snippet.strip()
+            else ""
+        )
+        + f"\n\nRedactá una variante orientada al ángulo '{angle}'. Devolvé SOLO el "
+        "JSON: text = la redacción (una frase de 1 a 3 líneas, en español, sin "
+        "viñeta); tech_terms = lista de tecnologías/herramientas mencionadas en "
+        "tu redacción."
+    )
+
+    pool = None
+    try:
+        pool = ThreadPoolExecutor(max_workers=1)
+        try:
+            result = pool.submit(
+                _call_llm, system_prompt, user_prompt, _VARIANT_GEN_SCHEMA, config
+            ).result(timeout=timeout)
+        except TimeoutError:
+            raise RuntimeError(
+                f"El proveedor tardó demasiado en generar la redacción ({int(timeout)}s). "
+                "Probá de nuevo o cambiá de proveedor en Configuración."
+            ) from None
+    finally:
+        if pool is not None:
+            pool.shutdown(wait=False, cancel_futures=True)
+
+    text = result.get("text")
+    if not isinstance(text, str) or not text.strip():
+        raise RuntimeError("El modelo devolvió una redacción vacía. Probá de nuevo.")
+    terms = result.get("tech_terms")
+    unverified = [
+        t.strip()
+        for t in terms
+        if isinstance(t, str) and t.strip() and not keyword_in_text(t.strip(), corpus_text)
+    ] if isinstance(terms, list) else []
+    # Dedupe preservando orden (el modelo puede repetir términos).
+    unverified = list(dict.fromkeys(unverified))
+    return {"text": text.strip(), "unverified_terms": unverified}
 
 
 def _build_strategic_prompt(
