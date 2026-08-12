@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .deps import FRONTEND_DIR
-from .routers import config, generate, history, imports, master_cv, onboarding, render, system
+from .routers import config, generate, history, imports, master_cv, onboarding, render, system, variants
 
 app = FastAPI(title="cv-adapter")
 
@@ -21,6 +21,7 @@ app.include_router(render.router)
 app.include_router(history.router)
 app.include_router(onboarding.router)
 app.include_router(imports.router)
+app.include_router(variants.router)
 
 
 @app.exception_handler(Exception)

@@ -45,6 +45,18 @@ class ExtractFactsIn(BaseModel):
     text: str
 
 
+class GenerateVariantIn(BaseModel):
+    # F6 (doc §6.6): redacción asistida de variante. El frontend manda los
+    # hechos y redacciones actuales del logro (mismo patrón que
+    # ExtractFactsIn: el master del disco puede diferir de la edición en
+    # memoria sin guardar); el servidor nunca replica el master.
+    angle: str
+    facts: Dict[str, Any] = {}
+    variant_texts: list[str] = []
+    current_text: str = ""
+    jd_snippet: str = ""
+
+
 class OnboardingAnswersIn(BaseModel):
     # Respuestas libres del onboarding conversacional (F4): qué hiciste,
     # herramientas, resultados. Cada una puede venir vacía ("no sé / paso
