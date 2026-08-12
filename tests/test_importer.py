@@ -64,6 +64,33 @@ def test_parse_text_limpia_vinetas_y_filtra_lineas_cortas():
     ]
 
 
+def test_parse_text_limita_concat_de_linea_sin_vineta():
+    from src.importer import parse_document
+
+    # Un PDF mal extraído puede venir como una sola línea gigante (o una
+    # sección entera sin viñetas): jamás se deja crecer un bullet pasado
+    # BULLET_MAX_LEN concatenando continuaciones.
+    largo = "palabra " * 200
+    doc = f"Sebastián Juárez\nLos Cardales, Buenos Aires\n{largo.strip()}\nDesarrollé el backend en Python."
+    bullets = parse_document("text", doc)
+    assert all(len(b) <= 300 for b in bullets)
+    assert any("Desarrollé el backend en Python." in b for b in bullets)
+
+
+def test_parse_text_normaliza_vineta_corrupta_del_pdf():
+    from src.importer import parse_document
+
+    # pypdf extrae la viñeta bullet de ciertos PDFs como \x88 (cp1252 mal
+    # mapeado): debe tratarse como viñeta nueva, no como continuación.
+    doc = "Encabezado\n\x88 Desarrollé el backend con Java.\n\x88 Implementé tests con pytest."
+    bullets = parse_document("text", doc)
+    assert bullets == [
+        "Encabezado",
+        "Desarrollé el backend con Java.",
+        "Implementé tests con pytest.",
+    ]
+
+
 def test_parse_yaml_extrae_highlights_y_variantes():
     from src.importer import parse_document
 
@@ -374,6 +401,31 @@ def test_orphans_se_aceptan_con_action_del_texto(client, monkeypatch):
     assert len(body["candidates"]) == 1
     assert body["candidates"][0]["facts"]["action"] == "Diseñé la red."
     assert body["session"]["orphans_done"] is True
+
+
+def test_orphans_se_pueden_descartar_sin_candidatos(client, monkeypatch):
+    _no_net_similarity(monkeypatch)
+    resp = client.post("/api/imports/clusterize", json={
+        "files": [{"name": "cv.txt", "kind": "text", "content": "- Diseñé la red."}],
+    })
+    session = resp.json()["session"]
+    resp = client.post(f"/api/imports/session/{session['id']}/orphans", json={"accept": False})
+    body = resp.json()
+    assert body["candidates"] == []
+    assert body["session"]["orphans_done"] is True
+
+
+def test_orphans_ya_resueltos_404_no_duplica(client, monkeypatch):
+    _no_net_similarity(monkeypatch)
+    resp = client.post("/api/imports/clusterize", json={
+        "files": [{"name": "cv.txt", "kind": "text", "content": "- Diseñé la red."}],
+    })
+    session = resp.json()["session"]
+    sid = session["id"]
+    client.post(f"/api/imports/session/{sid}/orphans", json={"accept": True})
+    resp = client.post(f"/api/imports/session/{sid}/orphans", json={"accept": False})
+    assert resp.status_code == 200
+    assert resp.json()["candidates"] == []
 
 
 def test_sesion_inexistente_404(client):

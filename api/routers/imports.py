@@ -124,11 +124,12 @@ def imports_orphans(session_id: str, payload: ImportOrphansIn) -> dict:
     if session.orphans_done:
         return {"session": _session_payload(session), "candidates": []}
     candidates = []
-    for i in session.orphan_ids:
-        text = session.bullets[i]["text"]
-        candidates.append(
-            build_achievement_candidate([text], {"action": text, "tools": [], "scope": "", "outcomes": []})
-        )
+    if payload.accept:
+        for i in session.orphan_ids:
+            text = session.bullets[i]["text"]
+            candidates.append(
+                build_achievement_candidate([text], {"action": text, "tools": [], "scope": "", "outcomes": []})
+            )
     session.orphans_done = True
     save_session(session, IMPORT_SESSIONS_DIR)
     return {"session": _session_payload(session), "candidates": candidates}

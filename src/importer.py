@@ -31,6 +31,10 @@ DEFAULT_CLUSTER_THRESHOLD = 0.78
 _BULLET_PREFIX_RE = re.compile(r"^[\s\-•·*–—>]+")
 # Una viñeta de verdad: espacios opcionales + un marcador no-espacio.
 _BULLET_MARK_RE = re.compile(r"^\s*[-•·*–—>]")
+# Caracteres que pypdf extrae corruptos de ciertos PDFs (viñeta bullet y
+# separador em-dash en cp1252 mal mapeado a unicode): se normalizan antes
+# de evaluar si la línea es una viñeta.
+_PDF_CORRUPT_CHARS = str.maketrans({"\x88": "•", "\x15": "–"})
 
 
 # ---------------------------------------------------------------------------
@@ -39,6 +43,7 @@ _BULLET_MARK_RE = re.compile(r"^\s*[-•·*–—>]")
 def _split_lines(text: str) -> List[str]:
     bullets: List[str] = []
     for line in (text or "").splitlines():
+        line = line.translate(_PDF_CORRUPT_CHARS)
         s = _BULLET_PREFIX_RE.sub("", line).strip()
         s = " ".join(s.split())
         if not s:
@@ -47,7 +52,12 @@ def _split_lines(text: str) -> List[str]:
         # común en PDFs con texto justificado y en textos pegados) — solo
         # si es lo bastante larga; si no, es ruido (años, fechas sueltas).
         if not _BULLET_MARK_RE.match(line) and bullets and len(s) >= BULLET_MIN_LEN:
-            bullets[-1] += " " + s
+            # Tope duro: jamás dejar crecer un bullet más allá del límite
+            # (un PDF mal extraído concatenaría todo el CV en uno solo).
+            if len(bullets[-1]) + 1 + len(s) <= BULLET_MAX_LEN:
+                bullets[-1] += " " + s
+            elif len(s) <= BULLET_MAX_LEN:
+                bullets.append(s)
             continue
         if BULLET_MIN_LEN <= len(s) <= BULLET_MAX_LEN:
             bullets.append(s)

@@ -220,7 +220,7 @@ function candidatesZone() {
     zone.appendChild(h("h2", { class: "imports-h2" }, "Revisá los logros propuestos"));
     zone.appendChild(h("p", { class: "imports-hint" },
       pendingCandidates.source === "orphans"
-        ? `${pendingCandidates.entries.length} redacciones únicas. Editá lo que quieras antes de confirmar.`
+        ? `${pendingCandidates.entries.length} redacción${pendingCandidates.entries.length === 1 ? "" : "es"} únicas. Editá lo que quieras antes de confirmar.`
         : "Un logro con todas las redacciones del grupo como variantes. Si algo no cierra, editá los hechos o las redacciones antes de confirmar."));
     pendingCandidates.entries.forEach((entry) => {
       zone.appendChild(renderAchievementCard(entry, entry.achievements[0], 0, ctx));
@@ -262,30 +262,55 @@ function drawBandeja() {
 
   const stillPending = session.clusters.filter((c) =>
     ["pending", "awaiting"].includes(session.resolutions[c.id]?.status));
-  if (stillPending.length) {
-    root.appendChild(h("h2", { class: "imports-h2" }, "Grupos por revisar"));
-    stillPending.forEach((c) => root.appendChild(clusterCard(c)));
+  const orphansPending = session.orphan_ids.length > 0 && !session.orphans_done;
+  if (stillPending.length || orphansPending) {
+    if (stillPending.length) {
+      root.appendChild(h("h2", { class: "imports-h2" }, "Grupos por revisar"));
+      stillPending.forEach((c) => root.appendChild(clusterCard(c)));
+    }
+    if (orphansPending && !stillPending.length) {
+      root.appendChild(h("p", { class: "imports-hint" },
+        "No quedan grupos duplicados: lo que falta son los logros sin duplicados de abajo."));
+    }
   } else {
     root.appendChild(h("p", { class: "imports-done" }, "Todos los grupos fueron revisados."));
   }
 
-  if (session.orphan_ids.length && !session.orphans_done) {
+  if (orphansPending) {
+    const n = session.orphan_ids.length;
+    const plural = n === 1 ? "redacción" : "redacciones";
     root.appendChild(h("div", { class: "imp-orphans" }, [
       h("h2", { class: "imports-h2" }, "Logros sin duplicados"),
       h("p", { class: "imports-hint" },
-        `${session.orphan_ids.length} redacciones que aparecen en un solo CV. Aceptalas todas como están, o cerrá la importación y cargalas desde el editor.`),
-      h("button", { class: "btn btn-primary btn-sm", onclick: async (e) => {
-        try {
-          const res = await api(`/api/imports/session/${session.id}/orphans`, {
-            method: "POST", body: JSON.stringify({ accept: true }),
-          });
-          session = res.session;
-          pendingCandidates = { source: "orphans", entries: buildEntries(res.candidates) };
-          drawBandeja();
-        } catch (err) {
-          toast(err.message || "No se pudo aceptar el grupo.");
-        }
-      } }, "Aceptar todos como están"),
+        `${n} ${plural} que aparecen en un solo CV. Aceptalas todas como están, descartalas, o cerrá la importación y cargalas desde el editor.`),
+      h("div", { class: "imp-cluster-actions" }, [
+        h("button", { class: "btn btn-primary btn-sm", onclick: async (e) => {
+          try {
+            const res = await api(`/api/imports/session/${session.id}/orphans`, {
+              method: "POST", body: JSON.stringify({ accept: true }),
+            });
+            session = res.session;
+            pendingCandidates = { source: "orphans", entries: buildEntries(res.candidates) };
+            drawBandeja();
+          } catch (err) {
+            toast(err.message || "No se pudo aceptar el grupo.");
+          }
+        } }, "Aceptar todos como están"),
+        h("button", { class: "btn btn-ghost btn-sm", onclick: async (e) => {
+          e.currentTarget.disabled = true;
+          try {
+            const res = await api(`/api/imports/session/${session.id}/orphans`, {
+              method: "POST", body: JSON.stringify({ accept: false }),
+            });
+            session = res.session;
+            pendingCandidates = null;
+            drawBandeja();
+            toast("Redacciones descartadas: no entran al CV.");
+          } catch (err) {
+            toast(err.message || "No se pudo descartar el grupo.");
+          }
+        } }, "Descartar todas"),
+      ]),
     ]));
   }
 }

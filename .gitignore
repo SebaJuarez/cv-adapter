@@ -29,3 +29,6 @@ __pycache__
 /.opencode
 # Planes y tareas de sesión (no versionables)
 /tasks
+
+# Sesiones de importacion de CVs (F5) - datos personales del usuario
+/data/import_sessions
