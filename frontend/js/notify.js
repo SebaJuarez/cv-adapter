@@ -17,10 +17,14 @@ function setGlobalStatus(message, kind) {
 
 // ---------------------------------------------------------------- toasts
 
-function toast(message, kind) {
+function toast(message, kind, action) {
   const container = $("#toasts");
   if (!container) return;
-  const el = h("div", { class: "toast" + (kind ? " toast-" + kind : "") }, message);
+  const content = typeof message === "string" ? [message] : [...(message || [])];
+  if (action && action.label) {
+    content.push(h("button", { class: "toast-action", onclick: action.onclick }, action.label));
+  }
+  const el = h("div", { class: "toast" + (kind ? " toast-" + kind : "") }, content);
   container.appendChild(el);
   setTimeout(() => {
     el.classList.add("toast-out");

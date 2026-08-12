@@ -354,11 +354,15 @@ function renderHighlights(entry, ctx, sectionName, entryIndex) {
     ta.addEventListener("input", () => { entry.highlights[i] = ta.value; autoResize(ta); });
 
     // Score de relevancia del bullet
+    const bulletId = `${entry._src_section}_${entry._src_index}_bullet_${i}`;
     let scoreEl = null;
     if (ctx.isTarget && entry._src_section !== undefined && entry._src_index !== undefined) {
-      const bulletId = `${entry._src_section}_${entry._src_index}_bullet_${i}`;
       scoreEl = renderBulletScore(bulletId);
     }
+
+    // F6 (doc §6.6): info de generación asistida si el ángulo preferido del
+    // slot no tiene ninguna variante aprobada (o el logro no tiene ninguna).
+    const genInfo = ctx.isTarget ? variantGenInfo(entry, i, ctx) : null;
 
     const moveUp = h("button", {
       class: "btn-icon", title: "Subir", "aria-label": "Subir bullet", disabled: i === 0 ? "disabled" : null,
@@ -400,6 +404,13 @@ function renderHighlights(entry, ctx, sectionName, entryIndex) {
           "aria-haspopup": "menu",
           onclick: () => toggleVariantPopover(row, entry, i, ctx),
         }, "⇄") : null,
+        ctx.isTarget && genInfo ? h("button", {
+          class: "btn-icon ach-gen" + (generatingBullets.has(bulletId) ? " busy" : ""),
+          title: "Generar versión para " + (ANGLE_LABELS[genInfo.angle] || genInfo.angle),
+          "aria-label": "Generar versión para " + (ANGLE_LABELS[genInfo.angle] || genInfo.angle),
+          disabled: generatingBullets.has(bulletId) ? "disabled" : null,
+          onclick: () => generateVariantForBullet(entry, genInfo, i, ctx),
+        }, "✏") : null,
         moveUp,
         moveDown,
         del,
@@ -600,6 +611,80 @@ function variantSwitchOptions(entry, i, ctx) {
 function variantAngleText(v) {
   const angles = Array.isArray(v.angle) ? v.angle : (v.angle ? [v.angle] : []);
   return angles.length ? angles.map((a) => ANGLE_LABELS[a] || a).join(" · ") : "genérica";
+}
+
+// F6 (doc §6.6) — generación asistida de variante nueva: el botón aparece
+// solo cuando la selección tiene ángulo preferido para el slot y el logro
+// no tiene ninguna variante approved con ese ángulo (el texto emitido es
+// la representativa, genérica para el ángulo que pide la oferta).
+const generatingBullets = new Set(); // bulletIds con una generación en curso
+
+function preferredAngleForSlot(selection, entry, slotIdx) {
+  if (!selection) return null;
+  const list = entry._src_section === "experience"
+    ? selection.selected_experience
+    : selection.selected_projects;
+  if (!Array.isArray(list)) return null;
+  const item = list.find((x) => x && x.index === entry._src_index);
+  if (!item || !item.preferred_angles) return null;
+  const angle = item.preferred_angles[String(slotIdx)];
+  return typeof angle === "string" && angle ? angle : null;
+}
+
+function variantGenInfo(entry, i, ctx) {
+  if (!ctx.isTarget || entry._src_section === undefined || entry._src_index === undefined) return null;
+  const slotIdx = Array.isArray(entry._src_slot_map) ? entry._src_slot_map[i] : i;
+  const meta = entry._src_variant_map && entry._src_variant_map[String(slotIdx)];
+  if (!meta || !meta.ach_id) return null;
+  const sections = ctx.masterDoc && ctx.masterDoc.cv && ctx.masterDoc.cv.sections;
+  const original = sections && sections[entry._src_section] && sections[entry._src_section][entry._src_index];
+  if (!original) return null;
+  const ach = (original.achievements || []).find((a) => a && a.id === meta.ach_id);
+  if (!ach) return null;
+  const angle = preferredAngleForSlot(ctx.selection, entry, slotIdx);
+  if (!angle) return null;
+  const variants = (ach.variants || []).filter((v) => v && variantStatus(v) === "approved");
+  const covers = variants.some((v) => {
+    const angles = Array.isArray(v.angle) ? v.angle : (v.angle ? [v.angle] : []);
+    return angles.includes(angle);
+  });
+  if (covers) return null;
+  return { slotIdx, meta, ach, angle, variants };
+}
+
+async function generateVariantForBullet(entry, genInfo, i, ctx) {
+  const bulletId = `${entry._src_section}_${entry._src_index}_bullet_${i}`;
+  if (generatingBullets.has(bulletId)) return;
+  generatingBullets.add(bulletId);
+  ctx.onRerender();
+  try {
+    const res = await api("/api/variants/generate", {
+      method: "POST",
+      body: JSON.stringify({
+        angle: genInfo.angle,
+        facts: genInfo.ach.facts || {},
+        variant_texts: (genInfo.ach.variants || []).map((v) => v.text).filter(Boolean),
+        current_text: entry.highlights[i] || "",
+        jd_snippet: getJDSnippet(bulletId) || "",
+      }),
+    });
+    // T4 reemplaza este placeholder por el modal de comparación.
+    toast("Redacción generada para " + (ANGLE_LABELS[genInfo.angle] || genInfo.angle) + ".", "ok");
+  } catch (err) {
+    // Proveedor caído o modelo inválido: el detail ya es legible; se ofrece
+    // navegar a Configuración para cambiar de proveedor (§6.6).
+    toast(
+      err.message || "No se pudo generar la redacción.",
+      "err",
+      { label: "Configuración", onclick: () => {
+        const tab = document.querySelector('.tab[data-view="settings"]');
+        if (tab) tab.click();
+      } },
+    );
+  } finally {
+    generatingBullets.delete(bulletId);
+    ctx.onRerender();
+  }
 }
 
 // Colapso y borradores por logro: viven fuera del doc (Sets/Map keyed por
