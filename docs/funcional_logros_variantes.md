@@ -375,6 +375,19 @@ Reglas:
 - Cuando no hay variante para el ángulo detectado (sección 4.3), el
   botón "Generar versión para [ángulo]" aparece integrado en la misma
   tarjeta del bullet — no navega a otra pantalla.
+- **Decisión de API key (2026-08-12):** la generación funciona con el
+  proveedor activo — Ollama local o API remota — sin exigir API key ni
+  redirigir a Configuración por "falta de key". Si el proveedor activo
+  falla (Ollama caído, key inválida, timeout), el toast muestra el error
+  con un enlace a Configuración para cambiarlo — nunca un error genérico
+  a mitad del flujo.
+- El botón aparece SOLO si la selección tiene ángulo preferido para ese
+  slot (`preferred_angles` de la fase estratégica) y el logro no tiene
+  ninguna variante `approved` con ese ángulo (el texto emitido es la
+  representativa). Sin ángulo preferido → no hay botón.
+- Además, el selector de variantes (6.5) ofrece "Generar otra
+  redacción…" con los 9 ángulos a elección, aun cuando el logro ya tenga
+  variantes aprobadas.
 - Al generar, se muestra el resultado **al lado** de la redacción
   actual (comparación lado a lado, no reemplazo silencioso), con
   cualquier término técnico resaltado si NO está verificado contra los
@@ -384,11 +397,6 @@ Reglas:
   `approved`, queda para siempre), **Usar solo esta vez** (se usa en
   este target pero queda `pending`, no contamina el banco de variantes
   con algo no revisado del todo), **Descartar**.
-- Si esto requiere API key y no está configurada, el botón lleva
-  directo a Configuración con el contexto ya explicado ("esta función
-  necesita un proveedor remoto para mejor calidad de redacción") — no
-  un error genérico de "no hay API key" en medio del flujo de
-  generación como pasa hoy.
 
 ### 6.7 Historial: cerrar el loop de qué variante funciona
 
@@ -440,9 +448,10 @@ Reglas:
 5. **Importación + bandeja de clusters** (6.3, 4.2) — resuelve cold
    start con muchos CVs (la feature más compleja, va después de que el
    resto del modelo ya esté probado).
-6. **Generación asistida + aprobación inline** (6.6) — es la única
-   fase que requiere decidir el tema de API key, y queda para el final
-   a propósito: todo lo anterior ya funciona sin ella.
+6. **Generación asistida + aprobación inline** (6.6) — decidió el tema
+   de API key: funciona con el proveedor activo (Ollama local incluido),
+   sin exigir key; era la última fase que dependía de una decisión
+   externa, por eso quedó para el final.
 7. **Loop de feedback en historial** (6.7) — depende de que haya
    volumen real de uso de variantes para decir algo útil.
 

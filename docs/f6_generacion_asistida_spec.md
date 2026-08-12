@@ -101,6 +101,7 @@ Criterios de éxito (testeables):
 
 - Ícono visual del botón de generar: decisión de implementación (se reusa la línea visual de `btn-icon`).
 - "Usar y guardar" con términos no verificados: se permiten (la aprobación es humana y el usuario ve el resaltado). Registrado como comportamiento, no como pregunta.
+- Hallazgo de QA (2026-08-12, corrida real con gemini-3.6-flash): la fase estratégica no produjo `preferred_angles` en el master real del usuario → el botón ✏ no aparece hasta que el modelo proponga ángulos (comportamiento correcto por diseño, decisión cerrada el 2026-08-12).
 
 ## Detalle técnico del diseño
 
@@ -123,11 +124,17 @@ keywords ATS, usar `keyword_in_text` (ya resuelve variantes de `SYNONYMS`).
 
 ### Router nuevo — `api/routers/variants.py`
 
-`POST /api/variants/generate` — payload: `{ ach_id, angle, jd_snippet, current_text }`
-- Busca el achievement en el master por `id` (404 si no existe).
-- `jd_snippet` opcional (el frontend reusa `getJDSnippet`); si falta, se genera
-  igual (el prompt solo con facts).
-- 200 → `{ text, unverified_terms }`; fallo de proveedor → 502 con `detail` legible.
+`POST /api/variants/generate` — payload: `{ angle, facts, variant_texts, current_text, jd_snippet }`
+- El frontend manda los hechos y redacciones actuales del logro (mismo
+  patrón que `/api/master/extract-facts`: el master del disco puede
+  diferir de la edición en memoria sin guardar). El servidor NO replica
+  el master ni busca por `ach_id` — desviación de diseño aprobada en el
+  plan, elimina el 404 de la primera versión de esta spec.
+- `jd_snippet` opcional (el frontend reusa `getJDSnippet`); si falta, se
+  genera igual (el prompt solo con facts).
+- 422 si faltan datos mínimos (ángulo vacío o logro sin contenido);
+  200 → `{ text, unverified_terms }`; fallo de proveedor → 502 con
+  `detail` legible.
 
 ### Frontend — `components.js`
 
