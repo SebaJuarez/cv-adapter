@@ -1618,7 +1618,7 @@ mark.jd-mark:hover { background: #f5b942; }
 
 .modal-hint { font-size: 0.85rem; color: var(--ink-soft); margin: 0.4rem 0 1rem; }
 
-/* Guardado atómico por logro: acciones por tarjeta y barra de pendientes */
+/* Guardado atï¿½mico por logro: acciones por tarjeta y barra de pendientes */
 .ach-actions {
   display: flex;
   gap: 0.5rem;
@@ -1667,7 +1667,7 @@ mark.jd-mark:hover { background: #f5b942; }
   color: var(--ink-soft);
 }
 
-/* Onboarding conversacional (F4): primera pantalla con master vacío */
+/* Onboarding conversacional (F4): primera pantalla con master vacï¿½o */
 .onboarding {
   max-width: 44rem;
   padding: 1rem 0 2rem;
@@ -1794,3 +1794,91 @@ mark.jd-mark:hover { background: #f5b942; }
   border-radius: var(--radius);
   padding: 0.8rem;
 }
+
+/* -------------------------------------------------- F6: comparaciÃ³n de variante generada */
+
+.variant-compare {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.9rem;
+  margin-top: 0.9rem;
+}
+
+.vc-intro {
+  font-size: 0.84rem;
+  color: var(--ink-soft);
+  margin: 0.3rem 0 0;
+}
+
+.vc-pane {
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  padding: 0.7rem 0.85rem;
+  background: var(--paper);
+}
+
+.vc-pane-proposed {
+  border-color: var(--warn);
+  background: var(--warn-soft);
+}
+
+.vc-pane h4 {
+  margin: 0 0 0.4rem;
+  font-size: 0.74rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-soft);
+}
+
+.vc-text {
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+mark.vc-uv {
+  background: transparent;
+  color: var(--warn);
+  font-weight: 700;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 3px;
+}
+
+.vc-chips {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-top: 0.7rem;
+}
+
+.vc-note {
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+}
+
+.vc-chip-warn {
+  font-family: var(--font-mono);
+  font-size: 0.76rem;
+  background: var(--warn-soft);
+  color: var(--warn);
+  border: 1px solid var(--warn);
+  border-radius: var(--radius);
+  padding: 0.15rem 0.45rem;
+}
+
+.toast-action {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--accent-strong);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  text-decoration: underline;
+  padding: 0 0 0 0.5rem;
+}
+
+.toast-action:hover { color: var(--accent-soft); }

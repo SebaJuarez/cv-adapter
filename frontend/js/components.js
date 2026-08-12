@@ -5,7 +5,7 @@ import { $, autoResize, h } from "./dom.js";
 import { blankEntryFor, defaultSectionType, detectSectionType, fieldLabel } from "./labels.js";
 import { confirmAction, openModal, showMessageModal } from "./modals.js";
 import { hideJDSnippet, setGlobalStatus, showJDSnippet, toast } from "./notify.js";
-import { rememberUndo, state } from "./state.js";
+import { rememberUndo, markDirty, state } from "./state.js";
 import { getBulletScore, getJDSnippet, renderBulletScore, renderEntryHeatBorder } from "./widgets.js";
 
 // ------------------------------------------------------------ renderer
@@ -668,8 +668,12 @@ async function generateVariantForBullet(entry, genInfo, i, ctx) {
         jd_snippet: getJDSnippet(bulletId) || "",
       }),
     });
-    // T4 reemplaza este placeholder por el modal de comparación.
-    toast("Redacción generada para " + (ANGLE_LABELS[genInfo.angle] || genInfo.angle) + ".", "ok");
+    pendingGen = {
+      entry, genInfo, i, ctx,
+      text: res.text,
+      unverified: Array.isArray(res.unverified_terms) ? res.unverified_terms : [],
+    };
+    openVariantCompareModal();
   } catch (err) {
     // Proveedor caído o modelo inválido: el detail ya es legible; se ofrece
     // navegar a Configuración para cambiar de proveedor (§6.6).
@@ -685,6 +689,125 @@ async function generateVariantForBullet(entry, genInfo, i, ctx) {
     generatingBullets.delete(bulletId);
     ctx.onRerender();
   }
+}
+
+// F6 (§6.6): comparación lado a lado de la redacción generada. La propuesta
+// reemplaza el bullet SOLO con aprobación explícita: "Usar y guardar como
+// variante nueva" la agrega al master (approved, source=generated) y el POST
+// /api/master-cv existente la persiste con el guardado global; "Usar solo
+// esta vez" toca únicamente el target; "Descartar" no cambia nada.
+let pendingGen = null;
+
+function highlightTerms(text, terms) {
+  if (!terms || !terms.length) return [text];
+  // Marcar cada aparición (orden de mayor a menor para evitar doble marcas)
+  // y descartar rangos solapados.
+  const lower = text.toLowerCase();
+  const marks = [];
+  for (const t of [...terms].sort((a, b) => b.length - a.length)) {
+    const tl = t.toLowerCase();
+    let from = 0;
+    while (true) {
+      const idx = lower.indexOf(tl, from);
+      if (idx === -1) break;
+      marks.push({ from: idx, to: idx + t.length });
+      from = idx + t.length;
+    }
+  }
+  marks.sort((a, b) => a.from - b.from);
+  const clean = [];
+  let lastEnd = -1;
+  for (const m of marks) {
+    if (m.from < lastEnd) continue;
+    clean.push(m);
+    lastEnd = m.to;
+  }
+  const nodes = [];
+  let pos = 0;
+  for (const m of clean) {
+    if (m.from > pos) nodes.push(text.slice(pos, m.from));
+    nodes.push(h("mark", { class: "vc-uv" }, text.slice(m.from, m.to)));
+    pos = m.to;
+  }
+  if (pos < text.length) nodes.push(text.slice(pos));
+  return nodes.length ? nodes : [text];
+}
+
+function openVariantCompareModal() {
+  const p = pendingGen;
+  if (!p) return;
+  const angleLabel = ANGLE_LABELS[p.genInfo.angle] || p.genInfo.angle;
+  openModal((close) => {
+    const panes = h("div", { class: "variant-compare" }, [
+      h("div", { class: "vc-pane" }, [
+        h("h4", {}, "Actual"),
+        h("p", { class: "vc-text" }, p.entry.highlights[p.i] || ""),
+      ]),
+      h("div", { class: "vc-pane vc-pane-proposed" }, [
+        h("h4", {}, "Propuesta para " + angleLabel),
+        h("p", { class: "vc-text" }, highlightTerms(p.text, p.unverified)),
+        p.unverified.length > 0 ? h("div", { class: "vc-chips" }, [
+          h("span", { class: "vc-note" }, "No respaldados por tus hechos (verificá que sean reales):"),
+          ...p.unverified.map((t) => h("span", { class: "vc-chip-warn" }, t)),
+        ]) : null,
+      ]),
+    ]);
+    const actions = h("div", { class: "modal-actions" }, [
+      h("button", { class: "btn btn-ghost", onclick: () => close(null) }, "Descartar"),
+      h("button", {
+        class: "btn btn-ghost",
+        onclick: () => { useVariantText(p, false); close(null); },
+      }, "Usar solo esta vez"),
+      h("button", {
+        class: "btn btn-primary",
+        onclick: () => { useVariantText(p, true); close(null); },
+      }, "Usar y guardar como variante nueva"),
+    ]);
+    return h("div", {}, [
+      h("h3", {}, "Nueva redacción para " + angleLabel),
+      h("p", { class: "vc-intro" }, "Compará la redacción actual con la propuesta. " + (
+        p.unverified.length
+          ? "Los términos marcados no están respaldados por los hechos del logro."
+          : "Todos los términos técnicos están respaldados por tus hechos."
+      )),
+      panes,
+      actions,
+    ]);
+  });
+}
+
+function useVariantText(p, saveInMaster) {
+  const slotIdx = Array.isArray(p.entry._src_slot_map) ? p.entry._src_slot_map[p.i] : p.i;
+  const prevText = p.entry.highlights[p.i];
+  p.entry.highlights[p.i] = p.text;
+  if (saveInMaster && p.genInfo.ach) {
+    const variant = {
+      id: uid("var"),
+      text: p.text,
+      angle: p.genInfo.angle,
+      source: "generated",
+      status: "approved",
+      used_count: 0,
+      created_at: new Date().toISOString().slice(0, 10),
+    };
+    p.genInfo.ach.variants = p.genInfo.ach.variants || [];
+    p.genInfo.ach.variants.push(variant);
+    if (p.entry._src_variant_map) {
+      p.entry._src_variant_map[String(slotIdx)].variant_id = variant.id;
+    }
+    rememberUndo("master", "Agregar variante generada", () => {
+      const idx = p.genInfo.ach.variants.indexOf(variant);
+      if (idx !== -1) p.genInfo.ach.variants.splice(idx, 1);
+      p.entry.highlights[p.i] = prevText;
+      markDirty("master");
+      p.ctx.onRerender();
+    });
+    markDirty("master");
+    toast("Variante guardada en el CV maestro. Pulsá Guardar para persistirla.", "ok");
+  } else {
+    toast("Redacción aplicada solo a este CV.", "ok");
+  }
+  p.ctx.onRerender();
 }
 
 // Colapso y borradores por logro: viven fuera del doc (Sets/Map keyed por
