@@ -4,7 +4,12 @@ from typing import Any, Dict
 
 from fastapi import APIRouter, HTTPException
 
-from src.config import DEFAULTS, load_config, save_config
+from src.config import (
+    ConfigValidationError,
+    load_config,
+    save_config,
+    validate_config,
+)
 
 router = APIRouter(tags=["config"])
 
@@ -16,9 +21,8 @@ def get_config() -> Dict[str, Any]:
 
 @router.post("/api/config")
 def update_config(payload: Dict[str, Any]) -> Dict[str, Any]:
-    unknown = set(payload) - set(DEFAULTS)
-    if unknown:
-        raise HTTPException(
-            status_code=400, detail=f"Claves desconocidas: {sorted(unknown)}"
-        )
-    return save_config(payload)
+    try:
+        validated = validate_config(payload)
+    except ConfigValidationError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    return save_config(validated)
