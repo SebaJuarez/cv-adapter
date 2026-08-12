@@ -631,7 +631,7 @@ function preferredAngleForSlot(selection, entry, slotIdx) {
   return typeof angle === "string" && angle ? angle : null;
 }
 
-function variantGenInfo(entry, i, ctx) {
+function achFromMeta(entry, i, ctx) {
   if (!ctx.isTarget || entry._src_section === undefined || entry._src_index === undefined) return null;
   const slotIdx = Array.isArray(entry._src_slot_map) ? entry._src_slot_map[i] : i;
   const meta = entry._src_variant_map && entry._src_variant_map[String(slotIdx)];
@@ -641,15 +641,21 @@ function variantGenInfo(entry, i, ctx) {
   if (!original) return null;
   const ach = (original.achievements || []).find((a) => a && a.id === meta.ach_id);
   if (!ach) return null;
-  const angle = preferredAngleForSlot(ctx.selection, entry, slotIdx);
+  return { slotIdx, meta, ach };
+}
+
+function variantGenInfo(entry, i, ctx) {
+  const info = achFromMeta(entry, i, ctx);
+  if (!info) return null;
+  const angle = preferredAngleForSlot(ctx.selection, entry, info.slotIdx);
   if (!angle) return null;
-  const variants = (ach.variants || []).filter((v) => v && variantStatus(v) === "approved");
+  const variants = (info.ach.variants || []).filter((v) => v && variantStatus(v) === "approved");
   const covers = variants.some((v) => {
     const angles = Array.isArray(v.angle) ? v.angle : (v.angle ? [v.angle] : []);
     return angles.includes(angle);
   });
   if (covers) return null;
-  return { slotIdx, meta, ach, angle, variants };
+  return { ...info, angle, variants };
 }
 
 async function generateVariantForBullet(entry, genInfo, i, ctx) {
@@ -981,6 +987,35 @@ function toggleVariantPopover(row, entry, i, ctx) {
       h("span", { class: "ach-switch-text" }, v.text),
     ]);
     pop.appendChild(option);
+  });
+  // F6 (§6.6): generar una redacción nueva para cualquier ángulo aunque el
+  // logro ya tenga variantes aprobadas.
+  pop.appendChild(h("div", { class: "ach-switch-sep", role: "separator" }));
+  pop.appendChild(h("button", {
+    class: "ach-switch-option ach-switch-gen",
+    role: "menuitem",
+    onclick: () => openAngleMenuPopover(row, entry, i, ctx),
+  }, "Generar otra redacción…"));
+  row.appendChild(pop);
+  activeVariantPopover = pop;
+}
+
+function openAngleMenuPopover(row, entry, i, ctx) {
+  const info = achFromMeta(entry, i, ctx);
+  if (!info) return;
+  closeVariantPopover();
+  const pop = h("div", { class: "ach-switch-popover", role: "menu" });
+  pop._row = row;
+  pop.appendChild(h("div", { class: "ach-switch-head" }, "Redacción para…"));
+  Object.keys(ANGLE_LABELS).forEach((angle) => {
+    pop.appendChild(h("button", {
+      class: "ach-switch-option ach-switch-angle-opt",
+      role: "menuitem",
+      onclick: () => {
+        closeVariantPopover();
+        generateVariantForBullet(entry, { ...info, angle, variants: [] }, i, ctx);
+      },
+    }, ANGLE_LABELS[angle]));
   });
   row.appendChild(pop);
   activeVariantPopover = pop;

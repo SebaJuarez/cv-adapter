@@ -1567,6 +1567,31 @@ mark.jd-mark:hover { background: #f5b942; }
 
 .ach-switch-option.current { border-color: var(--accent); }
 
+.ach-switch-sep {
+  height: 1px;
+  background: var(--rule);
+  margin: 0.15rem 0;
+}
+
+.ach-switch-head {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-soft);
+  padding: 0.2rem 0.6rem;
+}
+
+.ach-switch-gen {
+  flex-direction: row;
+  color: var(--accent-strong);
+  font-weight: 700;
+}
+
+.ach-switch-angle-opt {
+  flex-direction: row;
+  align-items: center;
+}
+
 .ach-switch-angle {
   font-size: 0.7rem;
   color: var(--accent);
