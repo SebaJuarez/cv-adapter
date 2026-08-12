@@ -406,8 +406,12 @@ function renderHighlights(entry, ctx, sectionName, entryIndex) {
         }, "⇄") : null,
         ctx.isTarget && genInfo ? h("button", {
           class: "btn-icon ach-gen" + (generatingBullets.has(bulletId) ? " busy" : ""),
-          title: "Generar versión para " + (ANGLE_LABELS[genInfo.angle] || genInfo.angle),
-          "aria-label": "Generar versión para " + (ANGLE_LABELS[genInfo.angle] || genInfo.angle),
+          title: genInfo.angle
+            ? "Generar versión para " + (ANGLE_LABELS[genInfo.angle] || genInfo.angle) + " — el ángulo preferido que mejor matchea esta oferta aún no tiene variante aprobada."
+            : "Generar versión genérica — la oferta no tiene un ángulo preferido claro para este bullet; se genera una redacción mejorada sin ángulo específico.",
+          "aria-label": genInfo.angle
+            ? "Generar versión para " + (ANGLE_LABELS[genInfo.angle] || genInfo.angle)
+            : "Generar versión genérica",
           disabled: generatingBullets.has(bulletId) ? "disabled" : null,
           onclick: () => generateVariantForBullet(entry, genInfo, i, ctx),
         }, "✏") : null,
@@ -604,7 +608,7 @@ function variantSwitchOptions(entry, i, ctx) {
   const ach = (original.achievements || []).find((a) => a && a.id === meta.ach_id);
   if (!ach) return null;
   const variants = (ach.variants || []).filter((v) => v && variantStatus(v) === "approved");
-  if (variants.length <= 1) return null;
+  if (variants.length < 1) return null;
   return { slotIdx, meta, variants };
 }
 
@@ -613,10 +617,10 @@ function variantAngleText(v) {
   return angles.length ? angles.map((a) => ANGLE_LABELS[a] || a).join(" · ") : "genérica";
 }
 
-// F6 (doc §6.6) — generación asistida de variante nueva: el botón aparece
-// solo cuando la selección tiene ángulo preferido para el slot y el logro
-// no tiene ninguna variante approved con ese ángulo (el texto emitido es
-// la representativa, genérica para el ángulo que pide la oferta).
+// F6 (doc §6.6) — generación asistida de variante nueva. El botón ✏ aparece
+// SIEMPRE en los bullets del target con logro: si la selección tiene ángulo
+// preferido para el slot se genera orientado a ese ángulo (el mejor match del
+// bullet con la oferta); si no, se genera una versión "genérica" (sin ángulo).
 const generatingBullets = new Set(); // bulletIds con una generación en curso
 
 function preferredAngleForSlot(selection, entry, slotIdx) {
@@ -648,14 +652,7 @@ function variantGenInfo(entry, i, ctx) {
   const info = achFromMeta(entry, i, ctx);
   if (!info) return null;
   const angle = preferredAngleForSlot(ctx.selection, entry, info.slotIdx);
-  if (!angle) return null;
-  const variants = (info.ach.variants || []).filter((v) => v && variantStatus(v) === "approved");
-  const covers = variants.some((v) => {
-    const angles = Array.isArray(v.angle) ? v.angle : (v.angle ? [v.angle] : []);
-    return angles.includes(angle);
-  });
-  if (covers) return null;
-  return { ...info, angle, variants };
+  return { ...info, angle: angle || "" };
 }
 
 async function generateVariantForBullet(entry, genInfo, i, ctx) {
@@ -742,7 +739,9 @@ function highlightTerms(text, terms) {
 function openVariantCompareModal() {
   const p = pendingGen;
   if (!p) return;
-  const angleLabel = ANGLE_LABELS[p.genInfo.angle] || p.genInfo.angle;
+  const hasAngle = Boolean(p.genInfo.angle);
+  const angleLabel = hasAngle ? (ANGLE_LABELS[p.genInfo.angle] || p.genInfo.angle) : "genérica";
+  const paraLabel = hasAngle ? "para " + angleLabel : "genérica";
   openModal((close) => {
     const panes = h("div", { class: "variant-compare" }, [
       h("div", { class: "vc-pane" }, [
@@ -750,7 +749,7 @@ function openVariantCompareModal() {
         h("p", { class: "vc-text" }, p.entry.highlights[p.i] || ""),
       ]),
       h("div", { class: "vc-pane vc-pane-proposed" }, [
-        h("h4", {}, "Propuesta para " + angleLabel),
+        h("h4", {}, "Propuesta " + paraLabel),
         h("p", { class: "vc-text" }, highlightTerms(p.text, p.unverified)),
         p.unverified.length > 0 ? h("div", { class: "vc-chips" }, [
           h("span", { class: "vc-note" }, "No respaldados por tus hechos (verificá que sean reales):"),
@@ -770,7 +769,7 @@ function openVariantCompareModal() {
       }, "Usar y guardar como variante nueva"),
     ]);
     return h("div", {}, [
-      h("h3", {}, "Nueva redacción para " + angleLabel),
+      h("h3", {}, "Nueva redacción " + paraLabel),
       h("p", { class: "vc-intro" }, "Compará la redacción actual con la propuesta. " + (
         p.unverified.length
           ? "Los términos marcados no están respaldados por los hechos del logro."

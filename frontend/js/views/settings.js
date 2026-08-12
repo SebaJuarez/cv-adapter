@@ -7,30 +7,69 @@ import { snapshotView, state } from "../state.js";
 
 // ------------------------------------------------------- vista: settings
 
+// Sugerencias de modelos de OpenRouter (solo ayuda al escribir el ID en el
+// campo de texto libre — no hay lista cerrada ni mantenimiento de API).
+const OPENROUTER_MODEL_SUGGESTIONS = [
+  "nvidia/nemotron-3.5-lightning:free",
+  "openai/gpt-4o-mini",
+  "openai/gpt-4o",
+  "anthropic/claude-3.5-haiku",
+  "anthropic/claude-3.5-sonnet",
+  "google/gemini-2.0-flash-001",
+  "meta-llama/llama-3.3-70b-instruct",
+  "deepseek/deepseek-chat-v3.1",
+  "mistralai/mistral-small-3.2-24b-instruct",
+];
+
+// El valor guardado de "openrouter" es llm_provider=openai + base_url de
+// OpenRouter (el despacho _call_llm no cambia). El select lo deriva al dibujar.
+function llmProviderSelectValue(config) {
+  if (config.llm_provider === "ollama") return "ollama";
+  const base = String(config.openai_base_url || "").toLowerCase();
+  return base.includes("openrouter.ai") ? "openrouter" : "openai";
+}
+
+const LLM_PROVIDER_OPTIONS = [
+  { value: "ollama", label: "Ollama (modelo local)" },
+  { value: "openai", label: "API remota compatible con OpenAI" },
+  { value: "openrouter", label: "OpenRouter (API remota)" },
+];
+
 const SETTINGS_FIELDS = [
   {
     key: "llm_provider",
     label: "Proveedor del LLM",
     type: "select",
-    options: [
-      { value: "ollama", label: "Ollama (modelo local)" },
-      { value: "openai", label: "API remota compatible con OpenAI" },
-    ],
+    options: LLM_PROVIDER_OPTIONS,
     hint: "Local: requiere Ollama corriendo. Remoto: usa una API key (OpenAI, OpenRouter, Groq…).",
   },
-  { key: "ollama_model", label: "Modelo de Ollama", type: "text", hint: "ej: llama3:8b, llama3.1:8b" },
+  {
+    key: "ollama_model",
+    label: "Modelo de Ollama",
+    type: "text",
+    hint: "ej: llama3:8b, llama3.1:8b",
+    visibleWhen: (c) => c.llm_provider === "ollama",
+  },
   {
     key: "openai_api_key",
-    label: "API key de OpenAI",
+    label: "API key del proveedor remoto",
     type: "password",
     hint: "Se guarda en config.json (gitignored, texto plano). Solo necesaria con proveedor remoto.",
+    visibleWhen: (c) => c.llm_provider !== "ollama",
   },
-  { key: "openai_model", label: "Modelo remoto", type: "text", hint: "ej: gpt-4o-mini" },
+  {
+    key: "openai_model",
+    label: "Modelo remoto",
+    type: "text",
+    hint: "ej: gpt-4o-mini, nvidia/nemotron-3.5-lightning:free. Con OpenRouter usás el ID completo del modelo (sugerencias abajo).",
+    visibleWhen: (c) => c.llm_provider !== "ollama",
+  },
   {
     key: "openai_base_url",
     label: "URL base remota (opcional)",
     type: "text",
-    hint: "Para OpenRouter, Groq, LM Studio… Dejalo vacío para el endpoint oficial de OpenAI.",
+    hint: "Se completa sola al elegir OpenRouter. Para Groq, LM Studio… usá su URL. Vacío = endpoint oficial de OpenAI.",
+    visibleWhen: (c) => c.llm_provider !== "ollama",
   },
   { key: "rendercv_theme", label: "Tema de RenderCV", type: "text", hint: "ej: engineeringresumes, classic, sb2nov" },
   { key: "max_experience_entries", label: "Máx. experiencias", type: "number" },
@@ -101,6 +140,7 @@ async function loadSettingsView() {
 function drawSettingsView() {
   const form = $("#settings-form");
   form.innerHTML = "";
+  form.appendChild(buildModelSuggestions());
   SETTINGS_FIELDS.forEach((f) => {
     if (f.type === "boolean") {
       const checkbox = h("input", { type: "checkbox" });
@@ -117,13 +157,27 @@ function drawSettingsView() {
     }
     if (f.type === "select") {
       const select = h("select", {});
+      const selectedValue = f.key === "llm_provider" ? llmProviderSelectValue(state.config) : String(state.config[f.key]);
       f.options.forEach((o) => {
         const opt = h("option", { value: o.value }, o.label);
-        if (String(state.config[f.key]) === o.value) opt.selected = true;
+        if (selectedValue === o.value) opt.selected = true;
         select.appendChild(opt);
       });
       select.addEventListener("change", () => {
-        state.config[f.key] = select.value;
+        if (f.key === "llm_provider") {
+          const v = select.value;
+          if (v === "ollama") {
+            state.config.llm_provider = "ollama";
+          } else {
+            state.config.llm_provider = "openai";
+            state.config.openai_base_url = v === "openrouter" ? "https://openrouter.ai/api/v1" : "";
+            const urlInput = form.querySelector('input[data-cfg-key="openai_base_url"]');
+            if (urlInput) urlInput.value = state.config.openai_base_url;
+          }
+          applyLlmVisibility();
+        } else {
+          state.config[f.key] = select.value;
+        }
       });
       const fieldEl = h("div", { class: "settings-field" }, [
         h("label", {}, f.label),
@@ -157,6 +211,8 @@ function drawSettingsView() {
       value: state.config[f.key],
       min: f.type === "number" ? 1 : null,
       step: f.type === "number" ? 1 : null,
+      "data-cfg-key": f.key,
+      ...(f.key === "openai_model" ? { list: "openrouter-model-suggestions" } : {}),
     });
     input.addEventListener("input", () => {
       if (f.type === "number") {
@@ -170,8 +226,29 @@ function drawSettingsView() {
       input,
     ]);
     if (f.hint) fieldEl.appendChild(h("span", { class: "hint" }, f.hint));
+    if (f.visibleWhen) fieldEl._visibleWhen = f.visibleWhen;
     form.appendChild(fieldEl);
   });
+  applyLlmVisibility();
+}
+
+// Muestra/oculta los campos dependientes del proveedor (los valores nunca se
+// pierden: solo cambia la visibilidad).
+function applyLlmVisibility() {
+  const form = $("#settings-form");
+  for (const el of form.querySelectorAll(".settings-field")) {
+    if (typeof el._visibleWhen === "function") {
+      el.style.display = el._visibleWhen(state.config) ? "" : "none";
+    }
+  }
+}
+
+function buildModelSuggestions() {
+  const dl = h("datalist", { id: "openrouter-model-suggestions" });
+  OPENROUTER_MODEL_SUGGESTIONS.forEach((m) => {
+    dl.appendChild(h("option", { value: m }));
+  });
+  return dl;
 }
 
 $("#save-settings").addEventListener("click", async () => {

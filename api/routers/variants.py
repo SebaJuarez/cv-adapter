@@ -4,6 +4,7 @@ from typing import Any, Dict
 
 from fastapi import APIRouter, HTTPException
 
+from src.achievements import VALID_ANGLES
 from src.config import load_config
 from src.llm_node import generate_variant_text
 
@@ -24,8 +25,12 @@ def generate_variant(payload: GenerateVariantIn) -> Dict[str, Any]:
     acá: la persiste el POST /api/master-cv existente tras la aprobación
     humana explícita.
     """
-    if not payload.angle.strip():
-        raise HTTPException(status_code=422, detail="Falta el ángulo de la redacción.")
+    angle = (payload.angle or "").strip()
+    if angle and angle not in VALID_ANGLES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Ángulo desconocido: '{angle}'. Válidos: {', '.join(VALID_ANGLES)}.",
+        )
     has_content = bool(payload.current_text.strip()) or bool(
         payload.facts
     ) or any(t.strip() for t in payload.variant_texts)
@@ -36,7 +41,7 @@ def generate_variant(payload: GenerateVariantIn) -> Dict[str, Any]:
         )
     try:
         return generate_variant_text(
-            angle=payload.angle,
+            angle=angle,
             facts=payload.facts,
             variant_texts=payload.variant_texts,
             current_text=payload.current_text,

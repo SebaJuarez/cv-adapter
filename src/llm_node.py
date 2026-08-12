@@ -404,7 +404,7 @@ def generate_variant_text(
     current_text: str = "",
     jd_snippet: str = "",
     config: Optional[Dict[str, Any]] = None,
-    timeout: float = 30.0,
+    timeout: float = 90.0,
 ) -> Dict[str, Any]:
     """Genera una redacción nueva orientada a `angle` para un logro (F6).
 
@@ -423,10 +423,11 @@ def generate_variant_text(
     """
     config = config or load_config()
     angle = (angle or "").strip().lower()
-    if angle not in VALID_ANGLES:
+    if angle and angle not in VALID_ANGLES:
         raise RuntimeError(
             f"Ángulo desconocido: '{angle}'. Válidos: {', '.join(VALID_ANGLES)}."
         )
+    angle_desc = f"el ángulo '{angle}'" if angle else "un enfoque genérico (sin ángulo específico)"
 
     variant_texts = [t for t in (variant_texts or []) if isinstance(t, str) and t.strip()]
     corpus_parts = _facts_corpus(facts) + variant_texts
@@ -441,7 +442,7 @@ def generate_variant_text(
 
     system_prompt = (
         "Sos un redactor de logros de CV. Reescribís el logro de un candidato "
-        f"orientado al ángulo '{angle}', conservando exactamente los mismos hechos.\n"
+        f"orientado a {angle_desc}, conservando exactamente los mismos hechos.\n"
         "Reglas inquebrantables:\n"
         "- SOLO podés usar información que aparezca en los HECHOS del logro o en sus "
         "redacciones existentes. NUNCA inventes tecnologías, métricas, equipos ni clientes.\n"
@@ -462,7 +463,7 @@ def generate_variant_text(
             if isinstance(jd_snippet, str) and jd_snippet.strip()
             else ""
         )
-        + f"\n\nRedactá una variante orientada al ángulo '{angle}'. Devolvé SOLO el "
+        + f"\n\nRedactá una variante con {angle_desc}. Devolvé SOLO el "
         "JSON: text = la redacción (una frase de 1 a 3 líneas, en español, sin "
         "viñeta); tech_terms = lista de tecnologías/herramientas mencionadas en "
         "tu redacción."
@@ -477,8 +478,8 @@ def generate_variant_text(
             ).result(timeout=timeout)
         except TimeoutError:
             raise RuntimeError(
-                f"El proveedor tardó demasiado en generar la redacción ({int(timeout)}s). "
-                "Probá de nuevo o cambiá de proveedor en Configuración."
+                f"El proveedor tardó demasiado en generar la redacción (más de {int(timeout)}s). "
+                "Probá de nuevo; si persiste, cambiá de proveedor en Configuración."
             ) from None
     finally:
         if pool is not None:

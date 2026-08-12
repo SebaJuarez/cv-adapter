@@ -358,14 +358,16 @@ Reglas:
 ### 6.5 Selector de variante durante "Nueva aplicación"
 
 - Dentro de cada bullet del CV generado (misma tarjeta de
-  `entry-card`/`highlight-row` de hoy), si el achievement tiene más de
+  `entry-card`/`highlight-row` de hoy), si el achievement tiene al menos
   una variante `approved`, agregar un ícono chico de "cambiar
   redacción" junto al bullet (no un dropdown gigante — algo discreto,
   en la línea del ícono de mover arriba/abajo que ya existe).
 - Al hacer clic, popover corto con las variantes disponibles como
   opciones de un clic (mostrando su `angle` como etiqueta), no un modal
   pesado — el usuario está en medio de revisar el CV, la interacción
-  tiene que ser instantánea.
+  tiene que ser instantánea. (Decisión 2026-08-12: el ícono existe desde
+  UNA variante approved — el popover incluye "Generar otra redacción…",
+  así ningún bullet queda sin vía de generar redacciones desde el target.)
 - El match automático (paso 3 de la sección 4.3) ya eligió la mejor
   por default — este selector es solo para el caso "quiero override
   manual", no el camino principal.
@@ -381,10 +383,14 @@ Reglas:
   falla (Ollama caído, key inválida, timeout), el toast muestra el error
   con un enlace a Configuración para cambiarlo — nunca un error genérico
   a mitad del flujo.
-- El botón aparece SOLO si la selección tiene ángulo preferido para ese
-  slot (`preferred_angles` de la fase estratégica) y el logro no tiene
-  ninguna variante `approved` con ese ángulo (el texto emitido es la
-  representativa). Sin ángulo preferido → no hay botón.
+- El botón aparece SIEMPRE en los bullets del target con logro
+  (decisión revisada 2026-08-12 tras QA de corrida real): si la
+  selección tiene ángulo preferido para ese slot (`preferred_angles` de
+  la fase estratégica — el ángulo que mejor matchea el bullet con la
+  oferta) la generación se orienta a ese ángulo; si no lo tiene, se
+  genera una versión **genérica** (variante sin ángulo, `angle: ""`) —
+  nunca se inventa un ángulo que el match no respalda. El tooltip del
+  botón explica esta regla y el ángulo elegido.
 - Además, el selector de variantes (6.5) ofrece "Generar otra
   redacción…" con los 9 ángulos a elección, aun cuando el logro ya tenga
   variantes aprobadas.

@@ -639,4 +639,4 @@ function renderPageEstimate() {
 }
 
 
-export { addBulletToTarget, addEntryToTarget, buildDocCorpus, countExcluded, effectiveKeywordList, getBulletScore, getEntryScore, getJDSnippet, getManualKeywords, getScoreMode, handleMissingKeywordClick, recalcKeywordReport, refreshKeywordWidgets, renderBulletScore, renderEntryHeatBorder, renderExcludedPanel, renderKeywordReport, renderOpportunities, renderPageEstimate, renderResultSummary, updateNotIncludedPanel };
+export { addBulletToTarget, addEntryToTarget, buildDocCorpus, countExcluded, effectiveKeywordList, getBulletScore, getEntryScore, getJDSnippet, getManualKeywords, getScoreMode, handleMissingKeywordClick, keywordPresentIn, recalcKeywordReport, refreshKeywordWidgets, renderBulletScore, renderEntryHeatBorder, renderExcludedPanel, renderKeywordReport, renderOpportunities, renderPageEstimate, renderResultSummary, updateNotIncludedPanel };
