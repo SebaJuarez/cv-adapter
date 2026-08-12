@@ -114,6 +114,28 @@ def test_build_target_cv_sin_keywords_no_genera_linea(master_cv, config, job_des
     assert "keywords" not in target["cv"]["sections"]
 
 
+def test_build_target_cv_manual_keywords_prioridad_al_truncar(master_cv, config, job_description):
+    # Regresión: si keywords_detected ya llenaban max_keywords, las manuales
+    # del request quedaban cortadas por el slice final — la keyword escrita
+    # a mano desaparecía en silencio.
+    selection = {
+        "selected_experience": [],
+        "selected_projects": [],
+        "selected_skills_indices": [],
+        "summary_index": 0,
+        "keywords_detected": ["python", "docker", "postgresql"],
+    }
+    cfg = {**config, "max_keywords": 2}
+    target = build_target_cv(
+        master_cv,
+        selection,
+        cfg,
+        job_description=job_description,
+        manual_keywords=["postgresql"],
+    )
+    assert target["cv"]["sections"]["keywords"] == ["Palabras clave: postgresql, python"]
+
+
 def test_build_target_cv_summary_usa_indice_seleccionado(master_cv, config, job_description):
     selection = {
         "selected_experience": [],
@@ -246,3 +268,47 @@ def test_estimate_overflow_respeta_lines_per_page_config(master_cv):
     est = estimate_page_overflow(target, {"lines_per_page": 4})
     assert est["overflow"] is True
     assert est["overflow_lines"] == 1
+
+
+def test_estimate_overflow_skills_details_largo_suma_varias_lineas():
+    # Regresión: cada categoría de skills sumaba siempre 1 línea aunque el
+    # details (~15 ítems separados por coma) ocupe 2 líneas reales.
+    target = {
+        "cv": {
+            "sections": {
+                "skills": [
+                    {
+                        "name": "Lenguajes",
+                        "details": "python, java, javascript, typescript, go, "
+                        "rust, kotlin, swift, ruby, php, c, c++, c#, sql, r",
+                    }
+                ],
+            }
+        }
+    }
+    est = estimate_page_overflow(target)
+    # encabezado (2) + título sección (1) + categoría: details > 90 chars -> 2
+    assert est["estimated_lines"] == 5
+
+
+def test_estimate_overflow_skills_details_lista_suma_varias_lineas():
+    # El details puede venir como lista (formato del master): se une con
+    # comas y se mide igual que un string.
+    target = {
+        "cv": {
+            "sections": {
+                "skills": [
+                    {
+                        "name": "Lenguajes",
+                        "details": [
+                            "python", "java", "javascript", "typescript", "go",
+                            "rust", "kotlin", "swift", "ruby", "php", "c",
+                            "c++", "c#", "sql", "r",
+                        ],
+                    }
+                ],
+            }
+        }
+    }
+    est = estimate_page_overflow(target)
+    assert est["estimated_lines"] == 5

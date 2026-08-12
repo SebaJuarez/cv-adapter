@@ -342,6 +342,21 @@ def test_extract_keywords_bigram_con_puntuacion():
     assert "github actions" in keywords
 
 
+def test_count_bigramas_respeta_limites_de_palabra():
+    # Regresión: text.count() plano contaba "github actions" como substring
+    # dentro de "github actionscript" — inflaba la frecuencia y con freq>=2
+    # la keyword se volvía "crítica" sin mérito real.
+    _, freqs = extract_keywords("Usé github actions y github actionscript.")
+    assert freqs["github actions"] == 1
+
+
+def test_count_bigramas_multiples_ocasiones_reales():
+    # Los límites no rompen los conteos legítimos: dos menciones reales
+    # siguen sumando 2.
+    _, freqs = extract_keywords("Uso github actions. Amo github actions.")
+    assert freqs["github actions"] == 2
+
+
 def test_build_keyword_ranking_matchea_cpp17():
     bullets = [
         {"id": "a", "text": "Programé en c++17 y creé APIs REST."},
@@ -386,6 +401,31 @@ def test_requirements_section_corta_en_salario():
 def test_requirements_section_sin_marcadores_devuelve_jd_completo():
     jd = "Somos una empresa moderna buscando talento."
     assert extract_requirements_section(jd) == jd
+
+
+def test_requirements_section_con_deseable_en_medio_conserva_contenido():
+    # JD sin encabezado de requisitos pero con "Deseable" en el medio:
+    # el patrón de corte no debe devolver solo esa línea (regresión: antes
+    # descartaba el contenido principal, que es la query del cross-encoder).
+    jd = (
+        "Somos una empresa de banca digital con presencia en 12 paises.\n"
+        "El candidato sera parte del equipo de pagos trabajando con Java, "
+        "Spring y AWS.\n"
+        "Deseable: experiencia con Kafka.\n"
+        "Beneficios: flexibilidad horaria y dias libres."
+    )
+    result = extract_requirements_section(jd)
+    assert "Java" in result
+    assert "Spring" in result
+    assert "AWS" in result
+    assert "Deseable" not in result
+
+
+def test_requirements_section_deseable_al_inicio_captura_esa_seccion():
+    # El patrón de corte solo captura su sección si el JD empieza con el
+    # marcador: ahí no hay contenido principal anterior que perder.
+    jd = "Deseable: Python y SQL.\nContacto: jobs@empresa.com."
+    assert extract_requirements_section(jd) == "Python y SQL."
 
 
 # ---------------------------------------------------------------------------

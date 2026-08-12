@@ -343,6 +343,25 @@ class TestPreviewKeywords:
         assert res.status_code == 200
         assert res.json()["keywords_detected"] == []
 
+    def test_preview_incluye_custom_keywords_de_config_y_manuales(self, client, master_cv, monkeypatch):
+        # Regresión: el preview en vivo solo pasaba payload.manual_keywords al
+        # extractor y las fijas de Configuración (custom_keywords) solo
+        # aparecían en /api/generate real — el preview no coincidía.
+        monkeypatch.setattr("api.routers.generate.load_master_cv", lambda _p: master_cv)
+        monkeypatch.setattr(
+            "api.routers.generate.load_config",
+            lambda: {"custom_keywords": ["zurbark"]},
+        )
+        jd = "Buscamos un backend developer con python y docker."
+        res = client.post(
+            "/api/preview-keywords",
+            json={"job_description": jd, "manual_keywords": ["otra-manual"]},
+        )
+        assert res.status_code == 200
+        body = res.json()
+        assert "zurbark" in body["keywords_detected"]
+        assert "otra-manual" in body["keywords_detected"]
+
     def test_preview_sin_master_404(self, client, monkeypatch):
         monkeypatch.setattr(
             "api.routers.generate.load_master_cv", lambda _p: None
