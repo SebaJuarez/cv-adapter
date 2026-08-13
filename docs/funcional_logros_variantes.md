@@ -415,6 +415,20 @@ Reglas:
   `application.status` por corrida) alcanza para dar la primera señal
   real de qué redacción viene funcionando mejor.
 
+**Implementación (2026-08-13):** la traza se arma en `merge.py` — la
+metadata interna por bullet (`_src_variant_map`) suma `angle` y `text`
+emitidos, y `extract_bullet_variants(target_cv)` la reconstruye en el
+orden efectivo del target. `add_run` la persiste como `bullet_variants`
+(solo cuando hay logros con variantes: los runs legacy no ganan la
+clave), con el texto guardado para que el historial siga siendo legible
+aunque la variante después se marque `deprecated` o se borre del master.
+`aggregate_variant_stats` agrupa por variante (clave `ach_id` +
+`variant_id`): corridas distintas, cuántas llegaron a
+`entrevista`/`oferta` (`SUCCESS_STATUSES`) y última vez usada. UI:
+sección "Tus variantes más usadas" en Historial (endpoint
+`GET /api/history/stats/variants`) y bloque "Variantes usadas en esta
+corrida" en el tab de Análisis del detalle (texto + ángulo + ID).
+
 ---
 
 ## 7. Arquitectura técnica afectada (resumen, no exhaustivo)
@@ -459,7 +473,9 @@ Reglas:
    sin exigir key; era la última fase que dependía de una decisión
    externa, por eso quedó para el final.
 7. **Loop de feedback en historial** (6.7) — depende de que haya
-   volumen real de uso de variantes para decir algo útil.
+   volumen real de uso de variantes para decir algo útil. ✅
+   (2026-08-13: traza `bullet_variants` por corrida, "variantes más
+   usadas" en Historial y `variant_id` por bullet en el detalle.)
 
 Cada fase es usable de forma independiente — no hace falta llegar a la
 fase 6 para que el proyecto ya haya resuelto el problema de los "30
