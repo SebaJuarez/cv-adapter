@@ -134,3 +134,12 @@ def delete_run_route(run_id: str, delete_files: bool = False) -> Dict[str, Any]:
 def keyword_stats() -> Dict[str, Any]:
     runs = history_mod.load_runs(RUNS_PATH)
     return {"keywords": history_mod.aggregate_missing_keywords(runs)}
+
+
+@router.get("/api/history/stats/variants")
+def variant_stats() -> Dict[str, Any]:
+    """Variantes más usadas (F7, §6.7): agrega la traza `bullet_variants` de
+    cada corrida — cuántas corridas usaron cada variante y cuántas de esas
+    llegaron a entrevista u oferta (el estado lo carga el usuario)."""
+    runs = history_mod.load_runs(RUNS_PATH)
+    return {"variants": history_mod.aggregate_variant_stats(runs)}

@@ -25,6 +25,10 @@ OUTPUT_DIR = BASE_DIR / "output"
 VALID_STATUSES = ("pendiente", "aplicado", "entrevista", "oferta", "rechazado")
 DEFAULT_STATUS = "pendiente"
 
+# Estados que cuentan como "éxito" para las estadísticas de variantes (F7):
+# la corrida llegó a entrevista o mejor.
+SUCCESS_STATUSES = ("entrevista", "oferta")
+
 MAX_OFFER_TITLE_LEN = 80
 FALLBACK_OFFER_TITLE = "Oferta sin título"
 
@@ -214,6 +218,7 @@ def add_run(
     pdf_path: Optional[str] = None,
     manual_keywords: Optional[List[str]] = None,
     variant_usage: Optional[Dict[str, int]] = None,
+    bullet_variants: Optional[List[Dict[str, Any]]] = None,
     path: Optional[Path] = None,
 ) -> Dict[str, Any]:
     """Crea y persiste un registro de corrida. Devuelve el run creado.
@@ -222,6 +227,11 @@ def add_run(
     `src/services/generation.py`). `variant_usage` (F2) mapea `id` de
     variante a usos en este run; se aplica al guardar el máster
     (`POST /api/master-cv`) y el run se marca `variant_usage_applied`.
+
+    `bullet_variants` (F7) es la traza por bullet de qué variante emitió el
+    merge (`extract_bullet_variants`): se persiste para que el historial
+    muestre qué redacción se usó en cada bullet y siga siendo legible aunque
+    la variante después se marque deprecated o se borre del master.
     """
     runs = load_runs(path)
     jd_hash_value = jd_hash(job_description)
@@ -256,6 +266,9 @@ def add_run(
     if variant_usage:
         # Solo se persiste si hay usos reales (los runs legacy no tienen clave).
         run["variant_usage"] = dict(variant_usage)
+    if bullet_variants:
+        # Igual que variant_usage: solo si hay traza real (runs legacy sin clave).
+        run["bullet_variants"] = [dict(b) for b in bullet_variants]
     runs.append(run)
     save_runs(runs, path)
     return run
@@ -411,5 +424,58 @@ def aggregate_missing_keywords(runs: List[Dict[str, Any]]) -> List[Dict[str, Any
     result = sorted(
         aggregated.values(),
         key=lambda e: (-e["count"], -e["total_frequency"], e["keyword"]),
+    )
+    return result
+
+
+def aggregate_variant_stats(runs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Agrega qué variantes se usaron a través de las corridas (F7, §6.7).
+
+    Por variante (clave `ach_id` + `variant_id` de la traza `bullet_variants`
+    persistida por `add_run`): cuántas corridas distintas la usaron, cuántas
+    de esas llegaron a `entrevista` o más (`SUCCESS_STATUSES`, el estado lo
+    carga el usuario en el seguimiento de aplicación) y la última vez usada.
+
+    Ordenadas por corridas desc, luego éxitos desc, luego texto alfabético.
+    Los runs legacy (sin `bullet_variants`) no aportan nada y no rompen.
+    """
+    by_variant: Dict[tuple, Dict[str, Any]] = {}
+    seen: set = set()
+
+    for run in runs:
+        run_id = run.get("run_id")
+        success = (run.get("application") or {}).get("status") in SUCCESS_STATUSES
+        created_at = run.get("created_at") or ""
+        for bullet in run.get("bullet_variants") or []:
+            ach_id = bullet.get("ach_id")
+            variant_id = bullet.get("variant_id")
+            if not variant_id:
+                continue
+            key = (ach_id, variant_id)
+            if run_id and (run_id, key) in seen:
+                continue
+            if run_id:
+                seen.add((run_id, key))
+            entry = by_variant.setdefault(
+                key,
+                {
+                    "ach_id": ach_id,
+                    "variant_id": variant_id,
+                    "angle": bullet.get("angle") or "",
+                    "text": bullet.get("text") or "",
+                    "runs": 0,
+                    "successful_runs": 0,
+                    "last_used": "",
+                },
+            )
+            entry["runs"] += 1
+            if success:
+                entry["successful_runs"] += 1
+            if created_at and created_at > entry["last_used"]:
+                entry["last_used"] = created_at
+
+    result = sorted(
+        by_variant.values(),
+        key=lambda e: (-e["runs"], -e["successful_runs"], e["text"]),
     )
     return result

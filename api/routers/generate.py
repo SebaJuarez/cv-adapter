@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException
 
 from src.config import load_config
 from src.history import add_run
-from src.merge import estimate_page_overflow
+from src.merge import estimate_page_overflow, extract_bullet_variants
 from src.retrieval.keywords import _corpus_text, extract_keywords
 from src.retrieval.sparse import keyword_in_text
 from src.services.generation import generate_cv, regenerate_section
@@ -49,12 +49,14 @@ def generate(payload: JobDescriptionIn) -> Dict[str, Any]:
         raise HTTPException(status_code=502, detail=str(e))
 
     # Registro automático de la corrida en el historial (sin PDF todavía).
+    # F7: la traza de variante por bullet se persiste con la corrida.
     run = add_run(
         payload.job_description,
         keyword_report,
         selection=selection,
         manual_keywords=payload.manual_keywords,
         variant_usage=variant_usage,
+        bullet_variants=extract_bullet_variants(target_cv),
         path=RUNS_PATH,
     )
 

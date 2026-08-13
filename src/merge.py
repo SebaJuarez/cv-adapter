@@ -200,6 +200,10 @@ def _apply_entry_selection(
                     variant_meta[str(s_idx)] = {
                         "ach_id": ach_id,
                         "variant_id": variant_id,
+                        # F7 (historial): ángulo y texto emitido se persisten
+                        # por corrida para trazabilidad (ver extract_bullet_variants).
+                        "angle": (variant or {}).get("angle") or "",
+                        "text": text,
                     }
             if len(filtered_highlights) >= max_highlights:
                 break
@@ -218,6 +222,8 @@ def _apply_entry_selection(
                         variant_meta[str(s_idx)] = {
                             "ach_id": ach_id,
                             "variant_id": variant_id,
+                            "angle": (variant or {}).get("angle") or "",
+                            "text": text,
                         }
                 if len(filtered_highlights) >= max_highlights:
                     break
@@ -237,6 +243,46 @@ def _apply_entry_selection(
         result.append(entry)
 
     return result
+
+
+def extract_bullet_variants(target_cv: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Traza de qué variante emitió cada bullet del target (F7, historial).
+
+    Recorre experience/projects y, para cada entrada con metadata interna
+    (`_src_slot_map`/`_src_variant_map`), reconstruye por bullet el logro
+    y la variante emitida, en el orden efectivo del target. Los bullets
+    legacy (highlights planos, sin variante) no entran a la traza.
+
+    Devuelve registros {section, entry_index, ach_id, variant_id, angle,
+    text} — el texto queda guardado para que el historial siga legible
+    aunque la variante se marque deprecated o se borre del master después.
+    """
+    records: List[Dict[str, Any]] = []
+    sections = target_cv.get("cv", {}).get("sections", {})
+    for section in ("experience", "projects"):
+        for entry in sections.get(section, []):
+            if not isinstance(entry, dict):
+                continue
+            meta_map = entry.get("_src_variant_map") or {}
+            slot_map = entry.get("_src_slot_map")
+            if not isinstance(meta_map, dict) or not isinstance(slot_map, list):
+                continue
+            for pos, text in enumerate(entry.get("highlights", [])):
+                slot_idx = slot_map[pos] if pos < len(slot_map) else pos
+                meta = meta_map.get(str(slot_idx))
+                if not meta or not meta.get("ach_id") or not meta.get("variant_id"):
+                    continue
+                records.append(
+                    {
+                        "section": entry.get("_src_section") or section,
+                        "entry_index": entry.get("_src_index", 0),
+                        "ach_id": meta["ach_id"],
+                        "variant_id": meta["variant_id"],
+                        "angle": meta.get("angle") or "",
+                        "text": text,
+                    }
+                )
+    return records
 
 
 def _master_cv_corpus(master_cv: Dict[str, Any]) -> str:
