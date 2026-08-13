@@ -64,6 +64,46 @@ class TestHistoryRuns:
         assert res.status_code == 200
         assert res.json() == {"keywords": []}
 
+    def test_stats_variantes(self, client, tmp_path):
+        # F7: el endpoint agrega la traza bullet_variants de las corridas.
+        path = tmp_path / "run_history.json"
+        report = {
+            "all_keywords": [],
+            "frequencies": {},
+            "missing_in_target": [],
+            "not_in_master": [],
+            "ats_impact_score": 100,
+            "critical_missing": [],
+        }
+        bullets = [
+            {
+                "section": "experience",
+                "entry_index": 0,
+                "ach_id": "ach_1",
+                "variant_id": "var_1a",
+                "angle": "liderazgo",
+                "text": "Lideré el diseño del sistema.",
+            }
+        ]
+        run = history_mod.add_run("Backend Senior", report, bullet_variants=bullets, path=path)
+        history_mod.update_run(run["run_id"], {"application": {"status": "entrevista"}}, path=path)
+
+        res = client.get("/api/history/stats/variants")
+        assert res.status_code == 200
+        variants = res.json()["variants"]
+        assert len(variants) == 1
+        assert variants[0]["variant_id"] == "var_1a"
+        assert variants[0]["ach_id"] == "ach_1"
+        assert variants[0]["angle"] == "liderazgo"
+        assert variants[0]["text"] == "Lideré el diseño del sistema."
+        assert variants[0]["runs"] == 1
+        assert variants[0]["successful_runs"] == 1
+
+    def test_stats_variantes_vacio(self, client):
+        res = client.get("/api/history/stats/variants")
+        assert res.status_code == 200
+        assert res.json() == {"variants": []}
+
     def test_flujo_completo_edicion_y_estadisticas(self, client, tmp_path):
         jd = "Backend Engineer (Terraform)\nRequisitos: terraform, aws."
         report = {

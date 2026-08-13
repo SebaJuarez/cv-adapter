@@ -30,6 +30,7 @@ from src.merge import (
     _build_verified_keywords,
     _master_cv_corpus,
     build_target_cv,
+    extract_bullet_variants,
     validate_master_cv_structure,
 )
 from src.render_node import save_yaml
@@ -390,9 +391,24 @@ def test_build_target_cv_metadata_variantes_por_bullet(master_achievements, conf
     entrada = target["cv"]["sections"]["experience"][0]
     assert entrada["_src_slot_map"] == [0, 1, 2]
     assert entrada["_src_variant_map"] == {
-        "0": {"ach_id": "ach_1", "variant_id": "var_1a"},
-        "1": {"ach_id": "ach_2", "variant_id": "var_2a"},
-        "2": {"ach_id": "ach_3", "variant_id": "var_3a"},
+        "0": {
+            "ach_id": "ach_1",
+            "variant_id": "var_1a",
+            "angle": "impacto_tecnico",
+            "text": "Diseñé un sistema de facturación con Java y Spring Boot.",
+        },
+        "1": {
+            "ach_id": "ach_2",
+            "variant_id": "var_2a",
+            "angle": "",
+            "text": "Reduje incidentes en producción un 30%.",
+        },
+        "2": {
+            "ach_id": "ach_3",
+            "variant_id": "var_3a",
+            "angle": "calidad_testing",
+            "text": "Desarrollé pipelines de CI/CD con GitHub Actions.",
+        },
     }
 
 
@@ -430,7 +446,7 @@ def test_build_target_cv_metadata_omite_slots_sin_emitir(config):
     assert entrada["highlights"] == ["Aprobada."]
     assert entrada["_src_slot_map"] == [0]
     assert entrada["_src_variant_map"] == {
-        "0": {"ach_id": "ach_A", "variant_id": "var_a"}
+        "0": {"ach_id": "ach_A", "variant_id": "var_a", "angle": "", "text": "Aprobada."}
     }
 
 
@@ -455,6 +471,54 @@ def test_build_target_cv_entrada_legacy_no_cambia(master_achievements, config):
     entrada_legacy = target["cv"]["sections"]["experience"][1]
     assert entrada_legacy["highlights"] == ["Bullet legacy uno."]
     assert entrada_legacy["company"] == "Empresa B"
+
+
+# ---------------------------------------------------------------------------
+# F7 — traza de variante por bullet (historial)
+# ---------------------------------------------------------------------------
+def test_extract_bullet_variants_traza_en_orden_efectivo(master_achievements, config):
+    target = build_target_cv(master_achievements, _selection([2, 0, 1]), config, job_description="")
+    records = extract_bullet_variants(target)
+    assert records == [
+        {
+            "section": "experience",
+            "entry_index": 0,
+            "ach_id": "ach_3",
+            "variant_id": "var_3a",
+            "angle": "calidad_testing",
+            "text": "Desarrollé pipelines de CI/CD con GitHub Actions.",
+        },
+        {
+            "section": "experience",
+            "entry_index": 0,
+            "ach_id": "ach_1",
+            "variant_id": "var_1a",
+            "angle": "impacto_tecnico",
+            "text": "Diseñé un sistema de facturación con Java y Spring Boot.",
+        },
+        {
+            "section": "experience",
+            "entry_index": 0,
+            "ach_id": "ach_2",
+            "variant_id": "var_2a",
+            "angle": "",
+            "text": "Reduje incidentes en producción un 30%.",
+        },
+    ]
+
+
+def test_extract_bullet_variants_omite_bullets_legacy(master_achievements, config):
+    # La entrada 1 (Empresa B) es highlights legacy: no tiene variante y no
+    # puede aparecer en la traza (los runs legacy no tienen clave bullet_variants).
+    target = build_target_cv(master_achievements, _selection([0, 1, 2]), config, job_description="")
+    records = extract_bullet_variants(target)
+    assert [r["ach_id"] for r in records] == ["ach_1", "ach_2", "ach_3"]
+    assert all(r["entry_index"] == 0 for r in records)
+
+
+def test_extract_bullet_variants_sin_metadata_devuelve_vacio(config):
+    target = {"cv": {"sections": {"experience": [{"company": "X", "highlights": ["a"]}]}}}
+    assert extract_bullet_variants(target) == []
 
 
 def test_build_target_cv_respeta_max_highlights_con_achievements(master_achievements, config):

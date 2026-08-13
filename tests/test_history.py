@@ -15,6 +15,7 @@ from src.history import (
     VALID_STATUSES,
     add_run,
     aggregate_missing_keywords,
+    aggregate_variant_stats,
     delete_run,
     delete_run_cv,
     extract_offer_title,
@@ -137,6 +138,28 @@ class TestAddRun:
         saved = json.loads(history_path.read_text(encoding="utf-8"))
         assert len(saved["runs"]) == 1
         assert saved["runs"][0]["offer_title"] == "Backend Engineer (Terraform)"
+
+    def test_persiste_traza_de_variantes_por_bullet(self, history_path, jd, keyword_report):
+        # F7: la traza solo se persiste si hay usos reales (runs legacy sin clave).
+        bullet_variants = [
+            {
+                "section": "experience",
+                "entry_index": 0,
+                "ach_id": "ach_1",
+                "variant_id": "var_1a",
+                "angle": "impacto_tecnico",
+                "text": "Diseñé un sistema de facturación.",
+            }
+        ]
+        run = add_run(jd, keyword_report, bullet_variants=bullet_variants, path=history_path)
+        assert run["bullet_variants"] == bullet_variants
+        reloaded = load_runs(history_path)[0]
+        assert reloaded["bullet_variants"] == bullet_variants
+
+    def test_sin_bullet_variants_no_crea_la_clave(self, history_path, jd, keyword_report):
+        run = add_run(jd, keyword_report, path=history_path)
+        assert "bullet_variants" not in run
+        assert "bullet_variants" not in load_runs(history_path)[0]
 
 
 class TestUpdateRun:
@@ -283,3 +306,76 @@ class TestAggregateMissingKeywords:
 
 def test_estados_validos_estan_definidos():
     assert VALID_STATUSES == ("pendiente", "aplicado", "entrevista", "oferta", "rechazado")
+
+
+def _bullet(ach_id, variant_id, text="", angle=""):
+    return {"ach_id": ach_id, "variant_id": variant_id, "text": text, "angle": angle}
+
+
+def _run_con_variantes(run_id, bullets, status="pendiente", created_at=""):
+    return {
+        "run_id": run_id,
+        "created_at": created_at,
+        "application": {"status": status},
+        "bullet_variants": [_bullet(*b) for b in bullets],
+    }
+
+
+class TestAggregateVariantStats:
+    def test_cuenta_corridas_y_exitos_por_variante(self):
+        runs = [
+            _run_con_variantes("r1", [("ach_1", "var_1a", "Redacción A", "liderazgo")], status="entrevista"),
+            _run_con_variantes("r2", [("ach_1", "var_1a", "Redacción A", "liderazgo")], status="pendiente"),
+            _run_con_variantes("r3", [("ach_1", "var_1b", "Redacción B")], status="oferta"),
+        ]
+        result = aggregate_variant_stats(runs)
+        por_id = {v["variant_id"]: v for v in result}
+        assert por_id["var_1a"]["runs"] == 2
+        assert por_id["var_1a"]["successful_runs"] == 1
+        assert por_id["var_1a"]["text"] == "Redacción A"
+        assert por_id["var_1a"]["angle"] == "liderazgo"
+        assert por_id["var_1b"]["runs"] == 1
+        assert por_id["var_1b"]["successful_runs"] == 1
+
+    def test_misma_variante_dos_bullets_en_un_run_cuenta_una_corrida(self):
+        # La misma variante puede emitirse dos veces en un run (dos logros con
+        # el mismo id no debería pasar, pero la agregación es por corrida).
+        runs = [
+            _run_con_variantes(
+                "r1",
+                [("ach_1", "var_1a"), ("ach_2", "var_1a")],
+                status="entrevista",
+            )
+        ]
+        result = aggregate_variant_stats(runs)
+        assert result[0]["runs"] == 1
+        assert result[0]["successful_runs"] == 1
+
+    def test_ordena_por_corridas_luego_exitos(self):
+        runs = [
+            _run_con_variantes("r1", [("a", "v1")], status="pendiente"),
+            _run_con_variantes("r2", [("a", "v1")], status="pendiente"),
+            _run_con_variantes("r3", [("a", "v2")], status="entrevista"),
+        ]
+        result = aggregate_variant_stats(runs)
+        assert [v["variant_id"] for v in result] == ["v1", "v2"]
+
+    def test_ultima_uso_es_la_corrida_mas_reciente(self):
+        runs = [
+            _run_con_variantes("r1", [("a", "v1")], created_at="2026-07-01T00:00:00+00:00"),
+            _run_con_variantes("r2", [("a", "v1")], created_at="2026-08-05T00:00:00+00:00"),
+        ]
+        result = aggregate_variant_stats(runs)
+        assert result[0]["last_used"] == "2026-08-05T00:00:00+00:00"
+
+    def test_runs_legacy_y_vacios_no_rompen(self):
+        runs = [
+            {"run_id": "legacy", "application": {"status": "pendiente"}},
+            {"run_id": "r2", "application": {"status": "aplicado"}, "bullet_variants": []},
+        ]
+        assert aggregate_variant_stats(runs) == []
+
+    def test_variante_sin_variant_id_ignorada(self):
+        runs = [{"run_id": "r1", "application": {"status": "pendiente"},
+                 "bullet_variants": [{"ach_id": "a", "variant_id": None, "text": "x"}]}]
+        assert aggregate_variant_stats(runs) == []
