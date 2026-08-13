@@ -1301,6 +1301,56 @@ mark.jd-mark:hover { background: #f5b942; }
 
 .history-copy-btn { flex-shrink: 0; }
 
+/* -------------------------------------------------- variantes usadas (F7) */
+
+.history-variant-text {
+  margin: 0 0 0.35rem;
+  font-size: 0.86rem;
+  line-height: 1.45;
+  color: var(--ink);
+}
+
+.history-variant-angle,
+.detail-variant-angle {
+  display: inline-block;
+  font-size: 0.72rem;
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  padding: 0.05rem 0.4rem;
+  margin-right: 0.35rem;
+}
+
+.history-variant-id,
+.detail-variant-id {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--ink-faint);
+  border: 1px dashed var(--rule);
+  border-radius: var(--radius);
+  padding: 0.05rem 0.35rem;
+}
+
+.detail-variant-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.detail-variant-item {
+  background: var(--paper-raised);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  padding: 0.5rem 0.7rem;
+}
+
+.detail-variant-text {
+  margin: 0 0 0.3rem;
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+
 /* ---------------------------------------------- toolbar: buscador + chips */
 
 .history-toolbar { margin-bottom: 0.9rem; }

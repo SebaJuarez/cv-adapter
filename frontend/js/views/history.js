@@ -3,6 +3,7 @@
 // de la oferta / CV sin descargar (modal con pestañas).
 
 import { api } from "../api.js";
+import { ANGLE_LABELS } from "../components.js";
 import { $, h } from "../dom.js";
 import { openModal } from "../modals.js";
 import { setGlobalStatus, toast } from "../notify.js";
@@ -42,20 +43,26 @@ let loading = false;
 // ---------------------------------------------------------- carga inicial
 
 async function loadHistoryView() {
-  const [runsRes, statsRes] = await Promise.allSettled([
+  const [runsRes, statsRes, variantStatsRes] = await Promise.allSettled([
     fetchPage(true),
     api("/api/history/stats/keywords"),
+    api("/api/history/stats/variants"),
   ]);
   if (runsRes.status === "rejected") return; // fetchPage ya mostró el error
   renderKeywordStats(statsRes.status === "fulfilled" ? statsRes.value.keywords : []);
+  renderVariantStats(variantStatsRes.status === "fulfilled" ? variantStatsRes.value.variants : []);
 }
 
 async function reload() {
   try {
-    const { keywords } = await api("/api/history/stats/keywords");
-    renderKeywordStats(keywords || []);
+    const [kwRes, varRes] = await Promise.all([
+      api("/api/history/stats/keywords"),
+      api("/api/history/stats/variants"),
+    ]);
+    renderKeywordStats(kwRes.keywords || []);
+    renderVariantStats(varRes.variants || []);
   } catch (e) {
-    setGlobalStatus("No se pudieron cargar las keywords: " + e.message, "error");
+    setGlobalStatus("No se pudieron cargar las estadísticas: " + e.message, "error");
   }
   await fetchPage(true);
 }
@@ -588,6 +595,23 @@ function openDetailModal(run, initialTab = "jd") {
         return;
       }
 
+      const bulletVariants = run.bullet_variants || [];
+      if (bulletVariants.length) {
+        panel.appendChild(h("h4", { class: "detail-h4" }, "Variantes usadas en esta corrida"));
+        panel.appendChild(h("p", { class: "detail-hint" },
+          "Qué redacción de cada logro entró al CV generado. El ID identifica la variante en tu CV maestro."));
+        panel.appendChild(h("div", { class: "detail-variant-list" }, bulletVariants.map((b) => {
+          const angleLabel = variantAngleLabel(b.angle);
+          return h("div", { class: "detail-variant-item" }, [
+            h("p", { class: "detail-variant-text" }, b.text),
+            h("div", {}, [
+              angleLabel ? h("span", { class: "detail-variant-angle" }, angleLabel) : null,
+              h("span", { class: "detail-variant-id", title: "ID de la variante en el CV maestro" }, b.variant_id),
+            ]),
+          ]);
+        })));
+      }
+
       if (notInMaster.length) {
         panel.appendChild(h("h4", { class: "detail-h4" }, "Pedidas por la oferta y ausentes en tu CV maestro"));
         panel.appendChild(h("div", { class: "detail-kws" }, notInMaster.map((kw) =>
@@ -692,6 +716,44 @@ function renderKeywordStats(keywords) {
         titles,
       ]),
       h("button", { class: "btn btn-sm btn-ghost history-copy-btn", onclick: copy }, "Copiar"),
+    ]);
+  }));
+  el.appendChild(list);
+}
+
+// --------------------------------------- stats: variantes más usadas (F7, §6.7)
+
+function variantAngleLabel(angle) {
+  if (!angle) return "";
+  const angles = Array.isArray(angle) ? angle : [angle];
+  return angles.map((a) => ANGLE_LABELS[a] || a).join(" · ");
+}
+
+function renderVariantStats(variants) {
+  const el = $("#history-variant-stats");
+  el.innerHTML = "";
+  if (!variants.length) {
+    el.appendChild(h("p", { class: "history-empty" },
+      "Todavía no hay variantes registradas. Cuando generes CVs para ofertas con logros que tengan variantes de redacción, aparecen acá."));
+    return;
+  }
+  const list = h("div", { class: "history-stats-list" }, variants.map((v) => {
+    const angleLabel = variantAngleLabel(v.angle);
+    const chips = [];
+    if (angleLabel) chips.push(h("span", { class: "history-variant-angle" }, angleLabel));
+    chips.push(h("span", { class: "history-variant-id", title: "ID de la variante en el CV maestro" }, v.variant_id));
+    return h("div", { class: "history-stat" }, [
+      h("div", { class: "history-stat-body" }, [
+        h("p", { class: "history-variant-text" }, v.text),
+        h("div", { class: "history-stat-meta" }, [
+          `${v.runs} corrida${v.runs === 1 ? "" : "s"} con esta redacción`,
+          v.successful_runs > 0
+            ? ` · ${v.successful_runs} llegó${v.successful_runs === 1 ? "" : "ron"} a entrevista u oferta`
+            : " · ninguna llegó a entrevista todavía",
+          v.last_used ? ` · última: ${formatDate(v.last_used)}` : "",
+        ]),
+        h("div", {}, chips),
+      ]),
     ]);
   }));
   el.appendChild(list);
