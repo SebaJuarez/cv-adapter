@@ -1,176 +1,435 @@
-# cv-adapter — Adaptador de CV local ($0, 100% offline)
+# cv-adapter
 
-Pipeline que adapta tu `master_cv.yaml` a una oferta laboral usando un LLM
-local (Ollama) o una API remota, con revisión humana antes de compilar el PDF
-con RenderCV. Todo desde una interfaz web local — no hace falta tocar YAML a
-mano ni usar la línea de comandos.
+### Adaptador de CV con IR híbrido + LLM opcional — 100% local, $0, sin alucinaciones
 
-## Por qué es seguro contra alucinaciones
+<p align="center">
+  <img src="https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white" alt="Python 3.11+">
+  <img src="https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white" alt="FastAPI">
+  <img src="https://img.shields.io/badge/frontend-vanilla%20JS%20%28sin%20build%20step%29-F7DF1E?logo=javascript&logoColor=black" alt="Vanilla JS">
+  <img src="https://img.shields.io/badge/tests-270%2B%20pytest-brightgreen" alt="270+ tests">
+  <img src="https://img.shields.io/badge/100%25-local%20%26%20offline-8A2BE2" alt="100% local">
+  <img src="https://img.shields.io/badge/LLM-Ollama%20%7C%20OpenAI--compatible-orange" alt="LLM provider agnostic">
+  <img src="https://img.shields.io/badge/license-MIT-yellow" alt="MIT License">
+</p>
 
-El LLM **nunca redacta el YAML final**. Solo devuelve un JSON con **índices**
-que apuntan a experiencia/skills/bullets que ya existen en `master_cv.yaml`
-(ver `src/prompts.py`). El armado real del `target_cv.yaml` lo hace código
-Python determinístico (`src/merge.py`), que copia texto literal del maestro.
-Si el LLM devuelve un índice inválido, se ignora — nunca se inventa contenido
-de reemplazo. A esto se suma la revisión humana en la web antes de compilar
-el PDF.
+<!--
+  TODO antes de publicar:
+  · si conectaste GitHub Actions, agregá acá el badge real:
+    ![CI](https://github.com/<tu-usuario>/cv-adapter/actions/workflows/tests.yml/badge.svg)
+  · reemplazá los placeholders de GIF (docs/media/*.gif) por capturas reales
+  · si tu licencia no es MIT, actualizá el badge de arriba + el archivo LICENSE
+-->
 
-## Presupuesto de una página (forzado por código, no por prompt)
+<p align="center">
+  <img src="docs/media/demo-hero.gif" alt="Demo: pegar una oferta laboral y generar un CV adaptado en segundos" width="820">
+  <br>
+  <sub>🚧 <em>GIF pendiente — grabar el flujo completo: pegar oferta → revisar selección → descargar PDF</em></sub>
+</p>
 
-Un modelo de 8B local no es confiable para "portarse bien" solo con
-instrucciones — así que los límites de longitud se aplican con código en
-`src/merge.py`, leyendo valores desde `config.json` (editable desde la
-pestaña **Configuración** de la web, o a mano), sin importar cuánto
-contenido pida devolver el LLM:
+**cv-adapter** pega una oferta laboral y elige — de tu CV maestro completo —
+qué experiencias, proyectos, logros y skills mostrar, con qué keywords ATS,
+en el orden que más matchea con esa oferta específica. Todo corre en tu
+máquina: sin SaaS, sin suscripción, sin mandar tu CV a ningún lado que no
+elijas vos.
 
-- Máx. N experiencias laborales, máx. N proyectos.
-- Máx. N bullets por experiencia/proyecto (los que el LLM haya marcado como
-  más relevantes, según `highlight_order`).
-- Máx. N categorías de skills.
-- Educación: el título principal siempre se incluye; hasta N
-  certificaciones adicionales si aplican.
+La pieza que lo distingue de "pegarle tu CV a ChatGPT": el LLM **nunca
+redacta el documento final**. Un motor de *information retrieval* híbrido
+(BM25 + embeddings + cross-encoder + RRF) hace la selección real, de forma
+determinística y explicable; el LLM, si se usa, es opcional y queda
+confinado a tareas de bajo riesgo con verificación anti-alucinación en
+código. Ver [Garantías](#-garantías-anti-alucinación) más abajo.
 
-## Optimización ATS
+---
 
-El LLM identifica palabras clave de la oferta (`job_description`) que
-también existen literalmente en tu `master_cv.yaml`, y esas palabras se:
+## Índice
 
-1. Priorizan al elegir qué bullets mostrar (los que matchean van primero).
-2. Agregan como una línea "Palabras clave: ..." al principio del CV, para
-   mejorar el parseo por sistemas ATS.
+- [¿Por qué existe esto?](#-por-qué-existe-esto)
+- [Funcionalidades](#-funcionalidades)
+- [Arquitectura del pipeline](#-arquitectura-del-pipeline)
+- [Garantías anti-alucinación](#-garantías-anti-alucinación)
+- [Stack](#-stack)
+- [Instalación rápida](#-instalación-rápida)
+- [Estructura del proyecto](#-estructura-del-proyecto)
+- [Configuración avanzada](#-configuración-avanzada)
+- [Estado del proyecto / roadmap](#-estado-del-proyecto--roadmap)
+- [Limitaciones conocidas](#-limitaciones-conocidas)
+- [Tests](#-tests)
+- [Licencia](#-licencia)
 
-Cualquier keyword que el LLM "invente" (que no exista literalmente en tu
-master_cv) se descarta automáticamente en `merge.py` — nunca se muestra una
-palabra clave sin respaldo real en tu experiencia.
+---
 
-## 1. Instalación
+## 🤔 ¿Por qué existe esto?
+
+Adaptar un CV a mano para cada oferta es lento y repetitivo. Pegarlo entero
+en un chat de IA genérico es rápido, pero:
+
+- el modelo **inventa** logros, tecnologías o métricas que nunca pusiste,
+- no hay forma de saber **por qué** priorizó un bullet sobre otro,
+- tu CV termina en los logs de un proveedor externo,
+- y el resultado casi nunca entra en una página sin retocar el layout a mano.
+
+`cv-adapter` ataca los cuatro problemas con **código determinístico**, no
+con más prompt: la selección de contenido la hace un pipeline de retrieval
+clásico (no un LLM), cada bullet queda copiado *byte a byte* del CV maestro,
+cada keyword ATS mostrada se verifica que exista de verdad en tu experiencia,
+y el presupuesto de una página se aplica con código — nunca confiando en
+que un modelo de 8B "se porte bien" con una instrucción de brevedad.
+
+## ✨ Funcionalidades
+
+### 🎯 Selección de contenido explicable, no una caja negra
+Cada bullet elegido para el CV generado muestra **por qué** matchea con la
+oferta (el fragmento del JD que lo justificó) y un score de relevancia
+visual. Lo que no entró por presupuesto de página queda igual disponible
+en un panel de "contenido excluido", con un botón para traerlo manualmente.
+
+<p align="center">
+  <img src="docs/media/demo-apply.gif" alt="Demo: generar CV, keyword report y panel de match reasons" width="760">
+  <br>
+  <sub>🚧 <em>GIF pendiente — vista "Nueva aplicación": keyword report, scores por bullet, tooltip de JD</em></sub>
+</p>
+
+### 📝 Logros con variantes de redacción
+En vez de un bullet-string fijo, cada logro separa los **hechos**
+verificables (acción, herramientas, resultados medibles) de sus
+**variantes de redacción**, cada una orientada a un ángulo distinto
+(liderazgo, impacto técnico, reducción de costos...). El motor de
+retrieval elige, automáticamente, qué variante mostrar según qué ángulo
+matchea mejor con cada oferta.
+
+<p align="center">
+  <img src="docs/media/demo-achievements.gif" alt="Demo: editor de logros con hechos y variantes por ángulo" width="760">
+  <br>
+  <sub>🚧 <em>GIF pendiente — editor de logros: hechos, variantes, ángulos, "usada en N CVs"</em></sub>
+</p>
+
+### 🤖 Generación asistida de una redacción nueva, bajo aprobación humana
+Si ningún bullet existente sirve para el ángulo que mejor matchea una
+oferta, un botón inline le pide al LLM una redacción nueva **usando solo
+los hechos ya cargados** del logro. El resultado se muestra lado a lado
+con la redacción actual, con los términos técnicos no verificables
+resaltados — nada se aplica sin que el usuario elija explícitamente
+"usar" o "descartar".
+
+<p align="center">
+  <img src="docs/media/demo-variant-gen.gif" alt="Demo: generación asistida de variante con comparación lado a lado" width="760">
+  <br>
+  <sub>🚧 <em>GIF pendiente — botón ✏ → comparación lado a lado → "usar y guardar"</em></sub>
+</p>
+
+### 📥 Importación masiva de CVs viejos
+Subís varios PDFs/YAML/texto a la vez, el sistema agrupa por embeddings
+los bullets que probablemente son el mismo logro redactado distinto
+(con protección contra el "bullet embudo" que encadenaría todo el
+documento en un cluster), y una bandeja de revisión te deja confirmar,
+separar o descartar cluster por cluster.
+
+<p align="center">
+  <img src="docs/media/demo-imports.gif" alt="Demo: bandeja de revisión de clusters de CVs importados" width="760">
+  <br>
+  <sub>🚧 <em>GIF pendiente — subir CVs → bandeja de clusters con diff resaltado → confirmar</em></sub>
+</p>
+
+### 🕓 Historial, ATS score y seguimiento de postulaciones
+Cada corrida queda registrada con su análisis ATS, el PDF asociado y el
+seguimiento de la aplicación (estado, fecha, notas). Las keywords que las
+ofertas piden y nunca están en tu CV maestro se agregan entre todas las
+corridas, para detectar patrones ("terraform" aparece en 8 de tus últimas
+10 ofertas y no está en tu CV — quizás valga la pena agregarlo).
+
+<p align="center">
+  <img src="docs/media/demo-history.gif" alt="Demo: historial de corridas, ATS score y keywords faltantes agregadas" width="760">
+  <br>
+  <sub>🚧 <em>GIF pendiente — historial: filtros, comparar dos corridas, keywords que se repiten</em></sub>
+</p>
+
+### 💬 Arrancar de cero sin miedo a la hoja en blanco
+Si todavía no cargaste ningún logro, un onboarding conversacional
+pregunta una cosa a la vez ("¿qué hiciste?", "¿con qué herramientas?",
+"¿algún resultado medible?") en vez de mostrar un formulario vacío con
+conceptos como *facts*/*outcomes* desde el primer segundo.
+
+---
+
+## 🧠 Arquitectura del pipeline
+
+Lo que pasa entre "pegar una oferta laboral" y "obtener el CV adaptado":
+un motor de *information retrieval* híbrido por sección del CV (BM25 +
+embeddings densos + keyword-boost, fusionados con Reciprocal Rank Fusion
+y re-rankeados con un cross-encoder), con una fase de LLM opcional acotada
+a tareas de bajo riesgo, y un merge 100% determinístico al final.
+
+```
+                  ┌────────────────────────────────────────────────────────────┐
+                  │           SOLICITUD: GENERAR CV PARA UNA OFERTA            │
+                  └────────────────────────────────────────────────────────────┘
+                                                │                                                 
+                                                ▼                                                 
+┌────────────────────────────────────────────────────────────────────────────────────────────────┐
+│        SELECTION ENGINE — Pipeline de Information Retrieval Híbrido (src/selection.py)         │
+├────────────────────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                                │
+│   ┌──────────────────────────────────────────────────────────────────────────────────────────┐ │
+│   │ PROCESAMIENTO DEL JD                                                                     │ │
+│   ├──────────────────────────────────────────────────────────────────────────────────────────┤ │
+│   │   · extract_requirements_section — recorta heurísticamente la sección de requisitos      │ │
+│   │   · chunk_text — ventana deslizante de 200 tokens (overlap 50) para no truncar el JD     │ │
+│   │   · extract_negated_terms — detecta "no se requiere X" en el JD (P0.2)                   │ │
+│   │   · HyDE (opcional) — CV hipotético del LLM antepuesto a los chunks del JD (P3.1)        │ │
+│   └──────────────────────────────────────────────────────────────────────────────────────────┘ │
+│                                                                                                │
+│   ▼                                                                                            │
+│                                                                                                │
+│   ┌──────────────────────────────────────────────────────────────────────────────────────────┐ │
+│   │ FUENTES DE CANDIDATOS — por sección (experience / projects / skills / education)         │ │
+│   ├──────────────────────────────────────────────────────────────────────────────────────────┤ │
+│   │ ┌──────────────────────────┐  ┌──────────────────────────┐  ┌──────────────────────────┐ │ │
+│   │ │          SPARSE          │  │          DENSE           │  │      KEYWORD BOOST       │ │ │
+│   │ ├──────────────────────────┤  ├──────────────────────────┤  ├──────────────────────────┤ │ │
+│   │ │ BM25 Okapi               │  │ multilingual-e5-small    │  │ match literal contra     │ │ │
+│   │ │ sinónimos técnicos       │  │ Late Interaction         │  │ keywords ATS del JD      │ │ │
+│   │ │ (k8s→kubernetes...)      │  │ (Max-Sim vs los          │  │ (con sinónimos y         │ │ │
+│   │ │ stemming ES/EN           │  │ chunks del JD)           │  │ límites de palabra)      │ │ │
+│   │ └──────────────────────────┘  └──────────────────────────┘  └──────────────────────────┘ │ │
+│   └──────────────────────────────────────────────────────────────────────────────────────────┘ │
+│                                                                                                │
+│   ▼                                                                                            │
+│                                                                                                │
+│   ┌──────────────────────────────────────────────────────────────────────────────────────────┐ │
+│   │ FUSIÓN — Reciprocal Rank Fusion (RRF)                                                    │ │
+│   ├──────────────────────────────────────────────────────────────────────────────────────────┤ │
+│   │   · combina los 3 rankings con pesos configurables por canal (sparse/dense/keyword)      │ │
+│   │   · k ajustado a corpus chicos (default 15; el k=60 de la literatura es para TREC)       │ │
+│   └──────────────────────────────────────────────────────────────────────────────────────────┘ │
+│                                                                                                │
+│   ▼                                                                                            │
+│                                                                                                │
+│   ┌──────────────────────────────────────────────────────────────────────────────────────────┐ │
+│   │ RE-RANKING — Cross-Encoder (CPU)                                                         │ │
+│   ├──────────────────────────────────────────────────────────────────────────────────────────┤ │
+│   │   · cross-encoder/mmarco-mMiniLMv2-L12-H384-v1                                           │ │
+│   │   · re-scorea el top-30 de la fusión contra el JD completo                               │ │
+│   └──────────────────────────────────────────────────────────────────────────────────────────┘ │
+│                                                                                                │
+│   ▼                                                                                            │
+│                                                                                                │
+│   ┌──────────────────────────────────────────────────────────────────────────────────────────┐ │
+│   │ SELECCIÓN                                                                                │ │
+│   ├──────────────────────────────────────────────────────────────────────────────────────────┤ │
+│   │   · MMR (Maximal Marginal Relevance) — diversidad de bullets, evita redundancia          │ │
+│   │   · presupuesto de página — máx. entradas/bullets por config (código, no por prompt)     │ │
+│   │   · cobertura global de keywords críticas — swap de entradas si alguna queda afuera      │ │
+│   │   · penalización por negación — baja el rank de lo que el JD excluye explícitamente      │ │
+│   └──────────────────────────────────────────────────────────────────────────────────────────┘ │
+│                                                                                                │
+└────────────────────────────────────────────────────────────────────────────────────────────────┘
+                                                │                                                 
+                                                ▼                                                 
+  ┌────────────────────────────────────────────────────────────────────────────────────────────┐
+  │ FASE ESTRATÉGICA — LLM (Ollama local u API remota, OPCIONAL)                               │
+  ├────────────────────────────────────────────────────────────────────────────────────────────┤
+  │   · recibe SOLO el JD + los bullets ya elegidos por IR (~2K tokens, nunca el CV entero)    │
+  │   · puede: redactar mejores match_reason, sugerir preferred_angles por logro               │
+  │   · NO puede: tocar índices, keywords ni la selección de IR (guardrail de código)          │
+  │   · cada match_reason se verifica anti-alucinación antes de aceptarse                      │
+  │   · si el proveedor falla o tarda → degrada con gracia y queda la selección de IR pura     │
+  └────────────────────────────────────────────────────────────────────────────────────────────┘
+                                                │                                                 
+                                                ▼                                                 
+  ┌────────────────────────────────────────────────────────────────────────────────────────────┐
+  │ MERGE DETERMINÍSTICO — src/merge.py (cero LLM acá)                                         │
+  ├────────────────────────────────────────────────────────────────────────────────────────────┤
+  │   · copia texto BYTE A BYTE desde master_cv.yaml — el LLM nunca redacta el YAML final      │
+  │   · keywords ATS verificadas: sobreviven solo si existen en el master Y en la oferta       │
+  │   · límites de una página aplicados con código, nunca confiando en que el LLM obedezca     │
+  └────────────────────────────────────────────────────────────────────────────────────────────┘
+                                                │                                                 
+                                                ▼                                                 
+                       ┌──────────────────────────────────────────────────┐
+                       │            RENDER — RenderCV + Typst             │
+                       ├──────────────────────────────────────────────────┤
+                       │               target_cv.yaml → PDF               │
+                       └──────────────────────────────────────────────────┘
+                                                │                                                 
+                                                ▼                                                 
+      ┌────────────────────────────────────────────────────────────────────────────────────┐
+      │      RESPUESTA: CV ADAPTADO (PDF) + REPORTE ATS + RAZONES DE MATCH POR BULLET      │
+      └────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Puntos clave del diseño:**
+
+- **Cada sección del CV (experiencia, proyectos, skills, educación) tiene
+  su propio índice** BM25 + embeddings — el retrieval no compite bullets
+  de secciones distintas entre sí.
+- **RRF en vez de un score único**: combinar rankings (en vez de sumar
+  scores heterogéneos) evita que un canal con una escala de valores
+  distinta domine artificialmente a los otros.
+- **MMR (diversidad) antes que puro top-N por score**: sin esto, los N
+  bullets de mayor score de una entrada suelen decir lo mismo con otras
+  palabras, desperdiciando presupuesto de página.
+- **Cache de selección**: la fase de IR (el paso caro — embeddings +
+  cross-encoder) se cachea por hash de `(oferta, CV maestro, config)`,
+  así que regenerar la misma oferta o pedir "regenerar sección" no vuelve
+  a pagar ese costo.
+- **El LLM es prescindible en todo momento**: si el proveedor está caído o
+  no hay API key configurada, el pipeline degrada con gracia a la
+  selección de IR pura — nunca rompe, nunca bloquea.
+
+## 🛡 Garantías anti-alucinación
+
+La razón por la que el LLM (cuando se usa) nunca toca el documento final:
+
+| Guardrail | Cómo se aplica |
+|---|---|
+| El YAML final nunca lo redacta el LLM | `merge.py` copia texto **byte a byte** desde el CV maestro; el LLM solo puede devolver *índices* a contenido que ya existe |
+| Índices inválidos se ignoran | Nunca se inventa contenido de reemplazo — un índice fuera de rango simplemente no se usa |
+| Keywords ATS verificadas en ambos lados | Una keyword solo sobrevive si existe (o una variante sinónima) en el CV maestro **y** en la oferta |
+| `match_reason` verificado | Si el LLM menciona una tecnología que no está ni en el bullet ni en el JD, se descarta y queda el motivo determinístico de IR |
+| Términos técnicos de variantes generadas verificados | Al generar una redacción nueva (F6), cada término técnico se chequea contra los *hechos* del logro; lo no verificable se resalta, nunca se oculta |
+| Presupuesto de una página forzado por código | `config.json` define los límites; se aplican siempre, sin importar cuánto contenido devuelva el modelo |
+
+## 🧰 Stack
+
+| Capa | Tecnología |
+|---|---|
+| Backend | FastAPI + Pydantic |
+| Retrieval léxico | `rank-bm25` + sinónimos técnicos curados + stemming Snowball ES/EN |
+| Retrieval denso | `sentence-transformers` (`intfloat/multilingual-e5-small`), Late Interaction (Max-Sim) |
+| Re-ranking | Cross-encoder (`cross-encoder/mmarco-mMiniLMv2-L12-H384-v1`), CPU-only |
+| Fusión | Reciprocal Rank Fusion con pesos configurables por canal |
+| LLM (opcional) | Ollama local **o** cualquier API compatible con OpenAI (OpenAI, OpenRouter, Groq...) |
+| Render final | [RenderCV](https://github.com/rendercv/rendercv) + Typst (sin LaTeX) |
+| Frontend | JavaScript vanilla, ES modules nativos — **sin bundler, sin build step** |
+| Persistencia | YAML (CV maestro/target) + JSON (historial, sesiones de importación) — sin base de datos |
+
+## 🚀 Instalación rápida
 
 ```bash
-# 1. Instalar Ollama (una sola vez): https://ollama.com/download
-ollama pull llama3:8b        # o llama3.1:8b si preferís esa versión
-ollama serve                 # dejalo corriendo en otra terminal
+# 1. Ollama (modelo local) — o saltealo y usá una API remota, ver más abajo
+ollama pull llama3.1:8b
+ollama serve
 
 # 2. Entorno Python
 python3 -m venv .venv
-source .venv/bin/activate    # Windows: .venv\Scripts\activate
+source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-```
 
-> **¿Sin Ollama? Usá una API remota compatible con OpenAI** (OpenAI,
-> OpenRouter, Groq, LM Studio…). No hace falta instalar nada local: configurá
-> en la pestaña Configuración (o en `config.json`):
->
-> ```json
-> {
->   "llm_provider": "openai",
->   "openai_api_key": "sk-...",
->   "openai_model": "gpt-4o-mini",
->   "openai_base_url": ""
-> }
-> ```
->
-> - `openai_base_url` es opcional: vacío usa el endpoint oficial de OpenAI;
->   para OpenRouter/Groq poné su URL base (`https://openrouter.ai/api/v1`,
->   `https://api.groq.com/openai/v1`).
-> - La API key se guarda en `config.json` **en texto plano** (está
->   gitignored, pero no la compartas). Cualquier API compatible con OpenAI
->   sirve, siempre que devuelva JSON estructurado.
-> - Si la llamada remota falla, el pipeline degrada con gracia y usa solo la
->   selección IR local (el CV igual se genera, sin razones de match).
-
-> **Nota sobre Structured Outputs:** el nodo LLM usa el parámetro `format`
-> del cliente `ollama` con un JSON Schema (no el modo básico `format="json"`).
-> Esto requiere **Ollama >= 0.5**. Verificá con `ollama --version`; si tenés
-> una versión vieja, actualizala o el nodo puede fallar/degradar la calidad
-> del JSON.
-
-> **Nota sobre RenderCV:** la versión probada es **RenderCV v2.8**, que usa
-> Typst como motor de render (no necesitás instalar LaTeX aparte). Instalá
-> con el extra `[full]` (`pip install "rendercv[full]"`) — si instalás solo
-> `rendercv`, el propio CLI te va a pedir que reinstales así. La primera vez
-> que renderiza, Typst descarga paquetes (fuentes, íconos) de
-> `packages.typst.org`, así que necesitás conexión a internet **la primera
-> vez** (después queda cacheado localmente; el resto del pipeline sigue
-> siendo 100% local/offline).
-
-## 2. Uso
-
-```bash
+# 3. Levantar
 uvicorn app:app --reload
 ```
 
-Abrí `http://127.0.0.1:8000` en el navegador. Cuatro pestañas:
+Abrí `http://127.0.0.1:8000`. Cuatro pestañas: **CV maestro**,
+**Nueva aplicación**, **Historial**, **Configuración** (+ **Importar**
+para migrar CVs viejos).
 
-- **CV maestro** — editá tu CV completo con un formulario (no YAML a mano):
-  agregar/sacar secciones enteras, entradas y bullets; reordenar con ↑/↓.
-- **Nueva aplicación** — pegá la oferta, tocá "Generar CV para esta oferta".
-  El resultado es editable: cada experiencia/proyecto muestra por qué se
-  eligió, y tenés un desplegable "traer bullet del master" para recuperar
-  contenido que el modelo dejó afuera pero vos querés incluir igual.
-  "Generar PDF" compila y te deja descargarlo.
-- **Historial** — cada corrida queda registrada automáticamente con su
-  análisis ATS, el PDF asociado y el seguimiento de la aplicación
-  (estado, fecha, notas, link a la oferta). Además agrupa las keywords que
-  las ofertas piden y no están en tu CV maestro, para ver cuáles se repiten
-  en general y decidir agregarlas manualmente (nunca se toca el master solo).
-  El historial vive en `data/run_history.json` (gitignored).
-- **Configuración** — los límites de una página, el proveedor del LLM
-  (Ollama local o API remota) y su modelo, ya no hardcodeados: se guardan en
-  `config.json`.
+> **¿Preferís una API remota en vez de un modelo local?** No hace falta
+> instalar nada extra: en la pestaña Configuración elegí el proveedor
+> (OpenAI, OpenRouter, o cualquier endpoint compatible) y pegá tu API key.
+> Si el proveedor falla o no configuraste ninguno, la app sigue funcionando
+> con la selección de IR pura (sin `match_reason` redactado por LLM).
 
-## 3. Estructura del proyecto
+### Probarlo con datos de ejemplo (sin cargar tu CV real)
+
+```bash
+cp data/master_cv_example.yaml data/master_cv.yaml
+```
+
+Abrí la app, pestaña **Nueva aplicación**, y pegá el contenido de
+`data/job_description_example.txt`. Con eso ya podés ver el pipeline
+completo funcionando de punta a punta antes de cargar tu propia
+experiencia.
+
+## 📁 Estructura del proyecto
 
 ```
 cv-adapter/
-├── README.md
-├── requirements.txt
-├── config.json               # límites configurables (se crea al guardar desde la web)
-├── app.py                    # entry point de uvicorn (re-exporta api.main:app)
-├── api/                      # backend web (FastAPI)
-│   ├── main.py               # arma la app (routers + mount del frontend)
-│   ├── schemas.py            # modelos pydantic de request/response
-│   ├── deps.py               # rutas del filesystem compartidas
-│   └── routers/              # un router por recurso (master_cv, config, generate, render, history, system)
-├── frontend/
-│   ├── index.html
-│   ├── style.css
-│   ├── package.json          # declara ESM ("type": "module"), sin build step
-│   └── js/                   # ES modules nativos (sin bundler)
-│       ├── main.js           # bootstrap: tabs, init
-│       ├── dom.js / api.js / state.js / labels.js / notify.js / modals.js
-│       ├── widgets.js        # keyword report, oportunidades, excluidos
-│       ├── components.js     # renderers compartidos master/target (ctx)
-│       └── views/            # master.js, apply.js, history.js, settings.js
-├── data/
-│   ├── master_cv.yaml        # tu CV completo (reemplazar por el real)
-│   ├── job_description_example.txt   # ejemplo de oferta laboral
-│   └── run_history.json      # historial de corridas y seguimiento (se crea solo)
+├── app.py                    # entry point de uvicorn
+├── api/                      # FastAPI: routers, schemas, deps
 ├── src/
-│   ├── config.py             # carga/guarda config.json
-│   ├── storage.py            # persistencia YAML (master/target)
-│   ├── prompts.py            # system prompt + JSON Schema, dinámicos según config
-│   ├── llm_node.py           # llamada al LLM: Ollama local o API remota (función pelada)
-│   ├── merge.py              # fusión determinística + presupuesto de una página
-│   ├── history.py            # historial de corridas + agregación de keywords faltantes
-│   ├── render_node.py        # guardar YAML + render PDF (funciones peladas)
-│   └── services/
-│       └── generation.py     # orquestación del pipeline (web)
-├── target_cv.yaml            # generado en cada corrida (revisar antes de aprobar)
-└── output/                   # PDFs finales generados por RenderCV
+│   ├── retrieval/            # BM25, denso, RRF, cross-encoder, keywords, JD processing
+│   ├── selection.py          # SelectionEngine — orquesta el pipeline de IR
+│   ├── merge.py              # fusión determinística master → target
+│   ├── llm_node.py           # fase LLM estratégica (opcional, con guardrails)
+│   ├── achievements.py       # modelo de logros con variantes
+│   ├── importer.py           # importación + clustering de CVs viejos
+│   ├── history.py            # historial de corridas y seguimiento
+│   └── config.py             # config.json: defaults + validación
+├── frontend/
+│   ├── js/                   # ES modules nativos, sin bundler
+│   └── style.css
+├── scripts/
+│   └── eval_retrieval.py     # eval harness (recall@10 / MRR@10) para tunear retrieval
+├── docs/
+│   ├── funcional_logros_variantes.md   # doc funcional del modelo de logros (F1-F7)
+│   └── media/                          # GIFs/capturas de este README
+├── tests/                    # pytest — ver sección Tests
+└── data/                     # CV maestro, historial (gitignored salvo *_example.*)
 ```
 
-## 4. Troubleshooting rápido
+## ⚙️ Configuración avanzada
 
-- **"Error llamando a Ollama"** → confirmá que `ollama serve` está corriendo
-  y que el modelo (pestaña Configuración, o `ollama_model` en `config.json`)
-  fue descargado con `ollama pull`.
-- **"No hay API key configurada"** → tenés `llm_provider: "openai"` pero la
-  `openai_api_key` está vacía. Completala en Configuración, o volvé a
-  `llm_provider: "ollama"`.
-- **Error de la API remota (401/403/404)** → verificá la key, el modelo y la
-  `openai_base_url` (para OpenRouter/Groq, esa URL es obligatoria).
-- **"El LLM no devolvió JSON válido"** → normalmente pasa con modelos muy
-  chicos sin soporte real de structured outputs. Probá con `llama3.1:8b`.
-- **"RenderCV falló al compilar el YAML"** → revisá `target_cv.yaml` a mano;
-  el error de `stderr` de RenderCV suele apuntar directo a la línea rota. La
-  causa más común es un bullet sin comillas con ": " en el medio del texto.
+Los límites de página, el proveedor del LLM y los *knobs* del motor de
+retrieval (peso de cada canal en la fusión, `k` de RRF, umbral de
+diversidad, penalización por términos negados, stemming on/off, HyDE...)
+viven en `config.json` y son editables desde la pestaña **Configuración**
+sin tocar código. Para tunear el retrieval con datos propios:
+
+```bash
+python scripts/eval_retrieval.py --master data/master_cv_example.yaml
+```
+
+El harness compara canales aislados (sparse/dense/keywords) y distintas
+configuraciones de fusión contra un set de evaluación, reportando
+`recall@10` y `MRR@10` por config.
+
+## 🗺 Estado del proyecto / roadmap
+
+El cambio de modelo de datos más grande del proyecto —de "bullet-string
+fijo" a "logro con hechos + variantes de redacción por ángulo"— se hizo
+en fases incrementales, cada una usable de forma independiente:
+
+- ✅ **F1** — Esquema + compatibilidad total con CVs legacy (`highlights`)
+- ✅ **F2** — Editor de logros (hechos, variantes, ángulo sugerido por IA)
+- ✅ **F3** — Selector manual de variante en el CV generado
+- ✅ **F4** — Onboarding conversacional para arrancar sin CVs previos
+- ✅ **F5** — Importación masiva + bandeja de revisión por clustering
+- ✅ **F6** — Generación asistida de variantes con aprobación humana inline
+- 🚧 **F7** — Loop de feedback: qué variante se usó en cada corrida y cuáles
+  correlacionan con llegar a entrevista (parcialmente hecho: el uso ya se
+  registra internamente, falta exponerlo en la UI de Historial)
+
+Detalle completo de cada fase en
+[`docs/funcional_logros_variantes.md`](docs/funcional_logros_variantes.md).
+
+## ⚠️ Limitaciones conocidas
+
+- **Primer uso:** descarga los modelos de embeddings/reranker desde
+  HuggingFace y Typst baja paquetes la primera vez que renderiza — necesita
+  internet solo esa primera vez, después el resto del pipeline es 100%
+  local/offline.
+- **Estimación de una página:** es una heurística de aviso (conteo
+  aproximado de líneas), no un cálculo exacto — el layout real lo decide
+  Typst según el tema elegido.
+- **Proyecto de un solo usuario, pensado para correr en `localhost`:** no
+  tiene capa de autenticación; no lo expongas en una red pública sin
+  agregar una delante.
+
+## 🧪 Tests
+
+```bash
+pytest
+```
+
+Suite de 270+ tests cubriendo el pipeline de IR (BM25, sinónimos,
+stemming, RRF, cache de selección), el merge determinístico y sus
+invariantes anti-alucinación, el modelo de logros con variantes, la
+importación con clustering, y la API completa (FastAPI `TestClient`).
+
+## 📄 Licencia
+
+[MIT](LICENSE) — usalo, forkealo, adaptalo.
+
+---
+
+<p align="center"><sub>Hecho por <strong>[tu nombre]</strong> · <a href="https://github.com/tu-usuario">GitHub</a> · <a href="https://www.linkedin.com/in/tu-usuario">LinkedIn</a></sub></p>
