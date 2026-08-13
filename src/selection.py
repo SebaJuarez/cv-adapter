@@ -121,8 +121,9 @@ def _build_indices_for_section(
     dense_model: SentenceTransformer,
     dense_model_name: str,
     store: IndexStore,
+    stemming: bool,
 ) -> tuple[SparseIndex, DenseIndex]:
-    sparse_idx = SparseIndex()
+    sparse_idx = SparseIndex(stemming=stemming)
     dense_idx = DenseIndex(dense_model, dense_model_name)
 
     bullet_dicts = [
@@ -152,6 +153,7 @@ def _load_indices_for_section(
     dense_model: SentenceTransformer,
     dense_model_name: str,
     store: IndexStore,
+    stemming: bool,
 ) -> tuple[SparseIndex, DenseIndex] | None:
     bullets = store.load_bullets(section_name)
     dense_emb = store.load_dense(section_name)
@@ -163,7 +165,7 @@ def _load_indices_for_section(
     if not hasattr(sparse_obj, "get_scores"):
         return None
 
-    sparse_idx = SparseIndex()
+    sparse_idx = SparseIndex(stemming=stemming)
     sparse_idx.bm25 = sparse_obj
     sparse_idx.bullet_ids = [b.id for b in bullets]
 
@@ -257,6 +259,7 @@ def _mmr_select(
     bullets_sorted: list[dict],
     max_highlights: int,
     diversity_lambda: float = 0.7,
+    stemming: bool = True,
 ) -> list[dict]:
     """Selecciona highlights balanceando relevancia y diversidad (MMR).
 
@@ -282,7 +285,10 @@ def _mmr_select(
 
     from .retrieval.sparse import tokenize_with_synonyms
 
-    token_sets = [set(tokenize_with_synonyms(b["text"])) for b in bullets_sorted]
+    token_sets = [
+        set(tokenize_with_synonyms(b["text"], stemming=stemming))
+        for b in bullets_sorted
+    ]
     scores = [b["score"] for b in bullets_sorted]
     max_score = max(scores) or 1.0
 
@@ -309,6 +315,7 @@ def _select_highlights_with_coverage(
     max_highlights: int,
     critical_keyword_variants: dict[str, set[str]] | None,
     diversity_lambda: float = 0.7,
+    stemming: bool = True,
 ) -> list[int]:
     """Elige qué bullets de una entrada entran al presupuesto de highlights.
 
@@ -328,7 +335,7 @@ def _select_highlights_with_coverage(
     reforzando una keyword que ya está cubierta en otra entrada. Es una
     limitación conocida y aceptable para esta primera versión.
     """
-    top = _mmr_select(bullets_sorted, max_highlights, diversity_lambda)
+    top = _mmr_select(bullets_sorted, max_highlights, diversity_lambda, stemming)
     # Identidad por la clave "id" del bullet (no por id() de Python: frágil
     # y difícil de razonar si alguna vez se copian los dicts).
     top_ids = {b["id"] for b in top}
@@ -370,6 +377,7 @@ def _group_bullets_into_entries(
     max_highlights_per_entry: int,
     critical_keyword_variants: dict[str, set[str]] | None = None,
     diversity_lambda: float = 0.7,
+    stemming: bool = True,
 ) -> tuple[list[dict], list[dict]]:
     """Agrupa bullets en entradas y separa incluidos vs excluidos por presupuesto.
 
@@ -409,7 +417,11 @@ def _group_bullets_into_entries(
             # Recortar highlights al presupuesto, con ajuste de cobertura
             # de keywords críticas (ver _select_highlights_with_coverage).
             entry_data["highlight_order"] = _select_highlights_with_coverage(
-                bullets_sorted, max_highlights_per_entry, critical_keyword_variants, diversity_lambda
+                bullets_sorted,
+                max_highlights_per_entry,
+                critical_keyword_variants,
+                diversity_lambda,
+                stemming,
             )
             included.append(entry_data)
         else:
@@ -432,11 +444,10 @@ class SelectionEngine:
         self.cache_dir = cache_dir or SELECTION_CACHE_DIR
         self._dense_model: SentenceTransformer | None = None
         self._reranker: CrossEncoderReranker | None = None
-        # El tokenizador BM25 vive en sparse.py (módulo hoja sin config);
-        # acá se sincroniza su flag de stemming con el config.
-        from .retrieval.sparse import set_stemming
-
-        set_stemming(self.config.get("use_stemming", True))
+        # El flag de stemming (use_stemming) viaja explícito en cada
+        # llamada de tokenización / en cada SparseIndex, no en un global
+        # de módulo: dos requests concurrentes con distinta config nunca
+        # compiten por estado compartido (10).
 
     def _get_dense_model(self) -> SentenceTransformer:
         if self._dense_model is None:
@@ -502,10 +513,11 @@ class SelectionEngine:
         # Fallback léxico: overlap de tokens (BM25-style, sin IDF) contra el JD.
         from .retrieval.sparse import tokenize_with_synonyms
 
-        jd_tokens = set(tokenize_with_synonyms(query_text))
+        stemming = bool(self.config.get("use_stemming", True))
+        jd_tokens = set(tokenize_with_synonyms(query_text, stemming=stemming))
         best_idx, best_score = 0, -1
         for i, s in enumerate(summaries):
-            overlap = len(jd_tokens & set(tokenize_with_synonyms(s)))
+            overlap = len(jd_tokens & set(tokenize_with_synonyms(s, stemming=stemming)))
             if overlap > best_score:
                 best_idx, best_score = i, overlap
         return best_idx, "positional_fallback"
@@ -625,6 +637,7 @@ class SelectionEngine:
         max_highlights: int,
         diversity_lambda: float,
         swap_variants: dict[str, set[str]],
+        stemming: bool,
     ) -> list[int]:
         """Highlight_order de la entrada que entra por un swap: recorte al
         presupuesto de max_highlights con la misma lógica local de
@@ -650,7 +663,7 @@ class SelectionEngine:
             return []
         bullets.sort(key=lambda b: b["score"], reverse=True)
         return _select_highlights_with_coverage(
-            bullets, max_highlights, swap_variants, diversity_lambda
+            bullets, max_highlights, swap_variants, diversity_lambda, stemming
         )
 
     def _ensure_global_keyword_coverage(
@@ -713,6 +726,7 @@ class SelectionEngine:
                 max_highlights,
                 diversity_lambda,
                 {kw: variants},
+                bool(self.config.get("use_stemming", True)),
             )
             selected.append(candidate_entry)
             selection.setdefault(f"excluded_{section}", []).append(removed)
@@ -832,13 +846,22 @@ class SelectionEngine:
                 continue
 
             indices = _load_indices_for_section(
-                section, dense_model, self._dense_model_name(), self.store
+                section,
+                dense_model,
+                self._dense_model_name(),
+                self.store,
+                bool(self.config.get("use_stemming", True)),
             )
             if indices is None or not self.store.is_fresh(
                 master_json, self._index_params()
             ):
                 indices = _build_indices_for_section(
-                    section, bullets, dense_model, self._dense_model_name(), self.store
+                    section,
+                    bullets,
+                    dense_model,
+                    self._dense_model_name(),
+                    self.store,
+                    bool(self.config.get("use_stemming", True)),
                 )
 
             sparse_idx, dense_idx = indices
@@ -970,6 +993,7 @@ class SelectionEngine:
                     max_highlights,
                     critical_keyword_variants,
                     self.config.get("diversity_lambda", 0.7),
+                    bool(self.config.get("use_stemming", True)),
                 )
                 key = f"selected_{section}"
                 selection[key] = grouped
@@ -1079,7 +1103,11 @@ class SelectionEngine:
             return empty
 
         indices = _load_indices_for_section(
-            section_name, dense_model, self._dense_model_name(), self.store
+            section_name,
+            dense_model,
+            self._dense_model_name(),
+            self.store,
+            bool(self.config.get("use_stemming", True)),
         )
         if indices is None or not self.store.is_fresh(
             master_json, self._index_params()
@@ -1090,6 +1118,7 @@ class SelectionEngine:
                 dense_model,
                 self._dense_model_name(),
                 self.store,
+                bool(self.config.get("use_stemming", True)),
             )
 
         sparse_idx, dense_idx = indices
@@ -1214,6 +1243,7 @@ class SelectionEngine:
                 max_highlights,
                 critical_keyword_variants,
                 self.config.get("diversity_lambda", 0.7),
+                bool(self.config.get("use_stemming", True)),
             )
             if section_name in ("experience", "projects") and grouped:
                 grouped = _reorder_entries_chronologically(

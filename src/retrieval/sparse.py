@@ -22,17 +22,11 @@ from .stopwords import is_stopword
 _STEMMER_ES = SnowballStemmer("spanish")
 _STEMMER_EN = SnowballStemmer("english")
 
-# Flag de stemming a nivel de módulo: sparse.py es un módulo hoja sin acceso
-# a config, y SelectionEngine lo sincroniza desde config["use_stemming"] al
-# construirse (ver selection.py). El hash del índice persistido incluye este
-# flag, así que apagarlo/encenderlo reconstruye el corpus BM25.
-_STEMMING_ENABLED = True
-
-
-def set_stemming(enabled: bool) -> None:
-    """Activa o desactiva el stemming del tokenizador BM25 (config use_stemming)."""
-    global _STEMMING_ENABLED
-    _STEMMING_ENABLED = bool(enabled)
+# El stemming NO es un flag global de módulo: viaja explícito por parámetro
+# en cada llamada (tokenize_with_synonyms) y se fija por instancia en
+# SparseIndex. Así dos requests con distinta config (use_stemming) que
+# corren concurrentemente en el threadpool de FastAPI nunca compiten por
+# estado mutable compartido — cada índice tokeniza siempre con SU flag.
 
 
 def _stem_token(token: str) -> str:
@@ -124,8 +118,11 @@ def keyword_in_text(keyword: str, text: str) -> bool:
     return False
 
 
-def tokenize_with_synonyms(text: str) -> list[str]:
+def tokenize_with_synonyms(text: str, stemming: bool = True) -> list[str]:
     """Tokeniza un texto en palabras y expande con sinónimos conocidos.
+
+    `stemming` decide si se aplica Snowball ES/EN (config use_stemming);
+    viaja explícito en la llamada porque es estado por-request, no global.
 
     Captura términos compuestos (bigramas) y términos con slash ("ci/cd").
     Para los términos con slash NO se reemplaza el separador antes de
@@ -165,7 +162,7 @@ def tokenize_with_synonyms(text: str) -> list[str]:
     # stopword puede quedar en una forma que ya no está en la lista
     # ("was" -> "wa") y colarse al índice de un corpus donde cada término
     # vacío cuenta. Solo aplica si use_stemming está activo.
-    if _STEMMING_ENABLED:
+    if stemming:
         return [_stem_token(t) for t in filtered]
     return filtered
 
@@ -176,21 +173,27 @@ class SparseIndex:
     Cada bullet es un documento. La query es el JD (tokenizado con sinónimos).
     """
 
-    def __init__(self):
+    def __init__(self, stemming: bool = True):
         self.bm25: BM25Okapi | None = None
         self.bullet_ids: list[str] = []
+        # Flag de stemming propio de la instancia: el índice tokeniza siempre
+        # con esta config, sin depender de estado global compartido (10).
+        self.stemming = stemming
 
     def build(self, bullet_docs: list[dict]) -> None:
         """Construye el índice BM25 a partir de una lista de BulletDoc dicts."""
         self.bullet_ids = [b["id"] for b in bullet_docs]
-        tokenized = [tokenize_with_synonyms(b["text"]) for b in bullet_docs]
+        tokenized = [
+            tokenize_with_synonyms(b["text"], stemming=self.stemming)
+            for b in bullet_docs
+        ]
         self.bm25 = BM25Okapi(tokenized)
 
     def query(self, query_text: str, top_k: int = 50) -> list[str]:
         """Devuelve los top_k bullet_ids ordenados por score BM25 descendente."""
         if self.bm25 is None or not self.bullet_ids:
             return []
-        tokens = tokenize_with_synonyms(query_text)
+        tokens = tokenize_with_synonyms(query_text, stemming=self.stemming)
         scores = self.bm25.get_scores(tokens)
         n = len(scores)
         k = min(top_k, n)

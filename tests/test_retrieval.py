@@ -5,9 +5,9 @@ import pytest
 from src.retrieval.jd_processor import extract_negated_terms, extract_requirements_section
 from src.retrieval.keywords import build_keyword_ranking, build_keyword_report, extract_keywords
 from src.retrieval.sparse import (
+    SparseIndex,
     get_synonym_variants,
     keyword_in_text,
-    set_stemming,
     tokenize_with_synonyms,
 )
 
@@ -52,12 +52,35 @@ def test_tokenize_stemming_no_rompe_terminos_tecnicos():
 
 
 def test_tokenize_stemming_apagado_usa_forma_original():
-    set_stemming(False)
-    try:
-        tokens = tokenize_with_synonyms("trabajé desarrollando")
-        assert "trabajé" in tokens and "desarrollando" in tokens
-    finally:
-        set_stemming(True)
+    tokens = tokenize_with_synonyms("trabajé desarrollando", stemming=False)
+    assert "trabajé" in tokens and "desarrollando" in tokens
+
+
+def test_tokenize_stemming_es_por_llamada_no_global():
+    # Regresión de la carrera del flag global (10): cada llamada decide su
+    # propio stemming y las intercaladas no se pisan entre sí. Con el flag
+    # de módulo, la llamada True "contaminaba" la siguiente False.
+    a = tokenize_with_synonyms("trabajé desarrollando", stemming=False)
+    b = tokenize_with_synonyms("trabajé desarrollando", stemming=True)
+    c = tokenize_with_synonyms("trabajé desarrollando", stemming=False)
+    assert "trabajé" in a and "trabaj" in b
+    assert a == c
+
+
+def test_sparse_index_tokeniza_con_su_propio_flag():
+    # El índice guarda su stemming en la instancia: consultas intercaladas
+    # contra índices con distinta config son independientes (10).
+    docs = [{"id": "0", "text": "trabajé desarrollando apis"}]
+    idx_stem = SparseIndex(stemming=True)
+    idx_stem.build(docs)
+    idx_nostem = SparseIndex(stemming=False)
+    idx_nostem.build(docs)
+
+    r1 = idx_stem.query("trabajé desarrollando")
+    r2 = idx_nostem.query("trabajé desarrollando")
+    r3 = idx_stem.query("trabajé desarrollando")
+    assert r1 == r3 == ["0"]
+    assert r2 == ["0"]
 
 
 def test_tokenize_stopwords_se_filtran_antes_del_stemming():

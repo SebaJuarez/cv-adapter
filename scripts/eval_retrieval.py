@@ -57,7 +57,6 @@ from src.retrieval import (
     reciprocal_rank_fusion,
 )
 from src.retrieval.dense import DenseIndex, prefixed_texts
-from src.retrieval.sparse import set_stemming
 from src.selection import _extract_bullets_from_section
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -157,15 +156,12 @@ def main() -> None:
         )
 
     # Índices compartidos por todos los casos (el corpus no cambia).
-    # El flag de stemming es global en sparse.py: se construye cada índice
-    # con el flag en el estado correcto y se restaura después.
-    set_stemming(True)
-    sparse_stem = SparseIndex()
+    # Cada índice lleva su propio flag de stemming (sin estado global
+    # mutable compartido): se construyen ambos y conviven.
+    sparse_stem = SparseIndex(stemming=True)
     sparse_stem.build(corpus)
-    set_stemming(False)
-    sparse_nostem = SparseIndex()
+    sparse_nostem = SparseIndex(stemming=False)
     sparse_nostem.build(corpus)
-    set_stemming(True)
 
     dense_idx = DenseIndex(dense_model, model_name)
     dense_idx.build(corpus)
@@ -218,11 +214,8 @@ def main() -> None:
             show_progress_bar=False,
         )
 
-        set_stemming(True)
         sparse_stem_ranking = sparse_stem.query(query_text, top_k=50)
-        set_stemming(False)
         sparse_nostem_ranking = sparse_nostem.query(query_text, top_k=50)
-        set_stemming(True)
 
         dense_ranking, _ = dense_idx.query(chunk_embs, top_k=50)
         kw_ranking = build_keyword_ranking(
