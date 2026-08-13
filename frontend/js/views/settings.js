@@ -54,7 +54,7 @@ const SETTINGS_FIELDS = [
     key: "openai_api_key",
     label: "API key del proveedor remoto",
     type: "password",
-    hint: "Se guarda en config.json (gitignored, texto plano). Solo necesaria con proveedor remoto.",
+    hint: "Se guarda en config.json (gitignored, texto plano). También podés inyectarla con la variable de entorno OPENAI_API_KEY (tiene prioridad sobre el archivo). Solo necesaria con proveedor remoto.",
     visibleWhen: (c) => c.llm_provider !== "ollama",
   },
   {

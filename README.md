@@ -328,6 +328,11 @@ para migrar CVs viejos).
 > (OpenAI, OpenRouter, o cualquier endpoint compatible) y pegá tu API key.
 > Si el proveedor falla o no configuraste ninguno, la app sigue funcionando
 > con la selección de IR pura (sin `match_reason` redactado por LLM).
+>
+> - Alternativa sin key en disco: seteá la variable de entorno
+>   `OPENAI_API_KEY`. Si está definida, tiene **prioridad** sobre el valor
+>   de `config.json` y no se persiste en ningún archivo (útil en CI,
+>   contenedores o despliegues).
 
 ### Probarlo con datos de ejemplo (sin cargar tu CV real)
 

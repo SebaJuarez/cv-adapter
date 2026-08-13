@@ -8,6 +8,7 @@ los mismos valores que ya veníamos usando.
 import hashlib
 import json
 import math
+import os
 from pathlib import Path
 from typing import Any, Dict
 
@@ -239,18 +240,33 @@ def selection_config_fingerprint(config: Dict[str, Any]) -> str:
     return hashlib.sha256(hashable.encode("utf-8")).hexdigest()
 
 
+def _apply_env_overrides(config: Dict[str, Any]) -> Dict[str, Any]:
+    """Overrides de variables de entorno sobre la config del archivo.
+
+    Prioridad: entorno > config.json. OPENAI_API_KEY inyecta la API key
+    remota sin dejarla en texto plano en disco (CI, contenedores,
+    despliegues). save_config NO la persiste: el override se aplica solo
+    al cargar, así el archivo nunca se contamina con la key del entorno.
+    """
+    env_key = os.environ.get("OPENAI_API_KEY", "").strip()
+    if env_key:
+        config["openai_api_key"] = env_key
+    return config
+
+
 def load_config() -> Dict[str, Any]:
     """Lee config.json y lo completa con los defaults para cualquier clave
-    faltante (así una versión vieja del archivo no rompe nada nuevo)."""
+    faltante (así una versión vieja del archivo no rompe nada nuevo). Las
+    variables de entorno (OPENAI_API_KEY) tienen prioridad sobre el archivo."""
     if CONFIG_PATH.exists():
         try:
             with open(CONFIG_PATH, "r", encoding="utf-8") as f:
                 saved = json.load(f)
             if isinstance(saved, dict):
-                return {**DEFAULTS, **saved}
+                return _apply_env_overrides({**DEFAULTS, **saved})
         except (json.JSONDecodeError, OSError):
             pass
-    return dict(DEFAULTS)
+    return _apply_env_overrides(dict(DEFAULTS))
 
 
 def save_config(config: Dict[str, Any]) -> Dict[str, Any]:

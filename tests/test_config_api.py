@@ -1,5 +1,6 @@
 """Tests de API de configuración: validación de tipos/rangos en POST
-/api/config (08)."""
+/api/config (08) y override de la API key remota por variable de entorno
+(09)."""
 import pytest
 from fastapi.testclient import TestClient
 
@@ -116,3 +117,40 @@ def test_config_mergea_con_defaults_y_no_pierde_claves(client):
     saved = r.json()
     for key, default in DEFAULTS.items():
         assert key in saved
+
+
+# ---------------------------------------------------------------------------
+# 09: override de la API key remota por variable de entorno (entorno > archivo).
+# ---------------------------------------------------------------------------
+def test_env_var_gana_a_la_key_del_archivo(tmp_path, monkeypatch):
+    config_path = tmp_path / "config.json"
+    config_path.write_text('{"openai_api_key": "key-del-archivo"}', encoding="utf-8")
+    monkeypatch.setattr("src.config.CONFIG_PATH", config_path)
+    monkeypatch.setenv("OPENAI_API_KEY", "key-del-entorno")
+    assert load_config()["openai_api_key"] == "key-del-entorno"
+
+
+def test_sin_env_var_usa_la_key_del_archivo(tmp_path, monkeypatch):
+    config_path = tmp_path / "config.json"
+    config_path.write_text('{"openai_api_key": "key-del-archivo"}', encoding="utf-8")
+    monkeypatch.setattr("src.config.CONFIG_PATH", config_path)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    assert load_config()["openai_api_key"] == "key-del-archivo"
+
+
+def test_env_var_vacia_se_ignora(tmp_path, monkeypatch):
+    config_path = tmp_path / "config.json"
+    config_path.write_text('{"openai_api_key": "key-del-archivo"}', encoding="utf-8")
+    monkeypatch.setattr("src.config.CONFIG_PATH", config_path)
+    monkeypatch.setenv("OPENAI_API_KEY", "   ")
+    assert load_config()["openai_api_key"] == "key-del-archivo"
+
+
+def test_post_config_no_persiste_la_key_del_entorno(client, monkeypatch):
+    # Con env var seteada, el POST guarda lo que mandó el payload (la env
+    # var gana recién al cargar): el archivo no se contamina con el entorno.
+    monkeypatch.setenv("OPENAI_API_KEY", "key-del-entorno")
+    r = client.post("/api/config", json={"openai_api_key": "key-del-payload"})
+    assert r.status_code == 200
+    assert r.json()["openai_api_key"] == "key-del-payload"
+    assert client.get("/api/config").json()["openai_api_key"] == "key-del-entorno"
