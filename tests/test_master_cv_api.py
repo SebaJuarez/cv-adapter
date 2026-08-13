@@ -12,6 +12,9 @@ def client(tmp_path, monkeypatch):
     runs_path = tmp_path / "run_history.json"
     monkeypatch.setattr("api.deps.MASTER_CV_PATH", master_path)
     monkeypatch.setattr("api.routers.master_cv.MASTER_CV_PATH", master_path)
+    # generate.py bindea MASTER_CV_PATH al importar (`from ..deps import ...`):
+    # hay que parchear la copia del módulo, no solo la de deps.
+    monkeypatch.setattr("api.routers.generate.MASTER_CV_PATH", master_path)
     monkeypatch.setattr("api.routers.master_cv.RUNS_PATH", runs_path)
     monkeypatch.setattr("api.routers.history.RUNS_PATH", runs_path)
     monkeypatch.setattr("api.deps.RUNS_PATH", runs_path)
