@@ -495,7 +495,7 @@ mark.jd-mark:hover { background: #f5b942; }
   align-items: center;
   gap: 0.35rem;
   font-size: 0.85rem;
-  color: var(--text-muted);
+  color: var(--ink-soft);
   white-space: nowrap;
 }
 
@@ -517,7 +517,7 @@ mark.jd-mark:hover { background: #f5b942; }
   font-size: 0.88rem;
 }
 
-.history-compare-bar span { color: var(--text-muted); flex: 1; }
+.history-compare-bar span { color: var(--ink-soft); flex: 1; }
 
 .history-compare-cell { width: 2.2rem; text-align: center; }
 
@@ -540,7 +540,7 @@ mark.jd-mark:hover { background: #f5b942; }
 
 .compare-meta {
   font-size: 0.8rem;
-  color: var(--text-muted);
+  color: var(--ink-soft);
   margin-top: 0.15rem;
 }
 
@@ -557,7 +557,7 @@ mark.jd-mark:hover { background: #f5b942; }
 
 .compare-hint {
   font-size: 0.82rem;
-  color: var(--text-muted);
+  color: var(--ink-soft);
   margin: 0.15rem 0 0;
 }
 
@@ -716,7 +716,7 @@ mark.jd-mark:hover { background: #f5b942; }
   padding: 0.7rem 1rem;
   margin-bottom: 1.25rem;
   font-size: 0.92rem;
-  color: var(--text-muted);
+  color: var(--ink-soft);
 }
 
 .page-estimate-banner.overflow {
@@ -736,7 +736,7 @@ mark.jd-mark:hover { background: #f5b942; }
 
 .preview-hint {
   font-size: 0.85rem;
-  color: var(--text-muted);
+  color: var(--ink-soft);
   margin-right: 0.2rem;
 }
 
@@ -746,7 +746,7 @@ mark.jd-mark:hover { background: #f5b942; }
   border-radius: 999px;
   border: 1px solid var(--rule);
   background: var(--paper-raised);
-  color: var(--text);
+  color: var(--ink);
 }
 
 .preview-chip.in-master {
@@ -1542,7 +1542,7 @@ mark.jd-mark:hover { background: #f5b942; }
 }
 
 .ach-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.5rem; margin-bottom: 0.6rem; }
-.ach-title { font-size: 0.8rem; font-weight: 600; color: var(--ink-strong); }
+.ach-title { font-size: 0.8rem; font-weight: 600; color: var(--ink); }
 
 .ach-columns { display: grid; grid-template-columns: 1fr 1.1fr; gap: 1rem; }
 @media (max-width: 860px) { .ach-columns { grid-template-columns: 1fr; } }
@@ -1720,17 +1720,17 @@ mark.jd-mark:hover { background: #f5b942; }
 .ach-preview-label {
   font-size: 0.8rem;
   font-weight: 600;
-  color: var(--ink-strong);
+  color: var(--ink);
   margin-bottom: 0.3rem;
 }
 
 .ach-preview-box {
-  border: 1px solid var(--border);
+  border: 1px solid var(--rule);
   border-radius: 0.4rem;
   padding: 0.6rem 0.8rem;
   font-size: 0.9rem;
   line-height: 1.45;
-  background: var(--bg-soft);
+  background: var(--paper-raised);
 }
 
 .ach-preview-meta {
