@@ -92,7 +92,7 @@ def clear_retrieval_index() -> Dict[str, Any]:
     try:
         store = IndexStore()
         store.clear()
-        # El cache de selección (P0.1) también deriva del master/config:
+        # El cache de selección también deriva del master/config:
         # si el usuario limpia los índices, espera resetear todo el estado
         # derivado, no solo el corpus BM25/embeddings.
         clear_selection_cache()

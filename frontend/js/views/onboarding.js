@@ -1,5 +1,5 @@
 //módulo: onboarding — primera pantalla conversacional cuando el CV maestro
-//está vacío (F4, doc §4.1/§6.2): chat de una pregunta a la vez con "no sé /
+//está vacío: chat de una pregunta a la vez con "no sé /
 //paso", candidato editable con el editor de logros existente y confirmación
 //explícita antes de persistir. Nada entra al master sin que el usuario lo
 //haya visto y aceptado.
@@ -120,7 +120,7 @@ export function mountOnboarding(container, onExit) {
       ach.variants[0].text = res.variant_text;
       ach.variants[0].source = "generated";
       candidateEntry = blankEntryFor("experience", "entries");
-      delete candidateEntry.highlights; // D1: una entrada usa un solo formato
+      delete candidateEntry.highlights; // una entrada usa un solo formato
       candidateEntry.achievements = [ach];
       drawCandidate();
     } catch (e) {

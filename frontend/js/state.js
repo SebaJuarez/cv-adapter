@@ -93,7 +93,7 @@ document.addEventListener("input", (e) => {
 }, true);
 
 // ---------------------------------------------------------------- undo
-// P2.1: historial por vista (master/apply), hasta MAX_UNDO_STACK niveles.
+// Historial por vista (master/apply), hasta MAX_UNDO_STACK niveles.
 // El botón deshace la última acción de la vista ACTIVA (muestra el conteo).
 
 const MAX_UNDO_STACK = 10;

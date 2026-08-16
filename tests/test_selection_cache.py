@@ -1,4 +1,4 @@
-"""Regresión del cache de selección por hash de JD (P0.1).
+"""Regresión del cache de selección por hash de JD.
 
 El cache evita recalcular embeddings + cross-encoder cuando se regenera la
 misma oferta. Acá se prueba que: (a) el hit devuelve el mismo resultado sin

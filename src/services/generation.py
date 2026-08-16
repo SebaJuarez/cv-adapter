@@ -28,9 +28,9 @@ def generate_cv(
     Encadena: selección (IR + LLM estratégico) -> merge determinístico ->
     keyword report ATS. Devuelve (target_cv, selection, keyword_report,
     variant_usage) — `variant_usage` mapea `id` de variante a cantidad de
-    veces que merge la emitió en el target (F2, para used_count).
+    veces que merge la emitió en el target (para used_count).
 
-    Con `force=True` se saltea el cache de selección (P0.1) y se
+    Con `force=True` se saltea el cache de selección y se
     recalcula la fase IR completa.
     """
     config = config or load_config()

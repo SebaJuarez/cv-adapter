@@ -216,7 +216,7 @@ def test_validate_master_cv_structure_master_valido_no_reporta(master_cv):
 
 
 # ---------------------------------------------------------------------------
-# P1.4: estimación de una página (heurística NO bloqueante).
+# Estimación de una página (heurística NO bloqueante).
 # ---------------------------------------------------------------------------
 def _cv_con_entrada(titulo, highlights):
     return {

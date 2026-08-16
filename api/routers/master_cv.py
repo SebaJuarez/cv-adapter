@@ -49,7 +49,7 @@ def save_master_cv_route(payload: CVDocumentIn) -> Dict[str, Any]:
     if errors:
         raise HTTPException(status_code=400, detail=errors)
 
-    # F2 (used_count): los usos de variantes registrados en las corridas
+    # Los usos de variantes registrados en las corridas
     # pendientes se aplican al máster que recién se guarda (match por id;
     # nunca crea variantes). Idempotente: un run solo se aplica una vez.
     runs = load_runs(RUNS_PATH)
@@ -76,7 +76,7 @@ def save_master_cv_route(payload: CVDocumentIn) -> Dict[str, Any]:
 @router.post("/api/master/extract-facts")
 def extract_facts(payload: ExtractFactsIn) -> Dict[str, Any]:
     """Estructura un bullet legacy en `facts` (botón "enriquecer este
-    bullet", F2). El LLM propone y verifica contra el texto fuente; si el
+    bullet"). El LLM propone y verifica contra el texto fuente; si el
     proveedor falla devuelve facts vacíos (degradación con gracia) y el
     usuario completa los campos a mano.
     """

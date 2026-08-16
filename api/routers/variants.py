@@ -1,4 +1,4 @@
-"""Router de generación asistida de variantes (F6, doc §6.6)."""
+"""Router de generación asistida de variantes."""
 
 from typing import Any, Dict
 
@@ -16,7 +16,7 @@ router = APIRouter(tags=["variants"])
 @router.post("/api/variants/generate")
 def generate_variant(payload: GenerateVariantIn) -> Dict[str, Any]:
     """Redacta una variante nueva orientada a `angle` (botón "Generar
-    versión para [ángulo]", F6).
+    versión para [ángulo]").
 
     El LLM reescribe SOLO con los hechos que manda el frontend (el master
     del disco puede diferir de la edición en memoria sin guardar) y

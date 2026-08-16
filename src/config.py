@@ -46,29 +46,29 @@ DEFAULTS: Dict[str, Any] = {
     "keyword_boost_weight": 0.5,
     "show_keywords_line": True,
     "diversity_lambda": 0.7,
-    # Líneas estimadas que caben en una página A4 (P1.4): presupuesto de la
+    # Líneas estimadas que caben en una página A4: presupuesto de la
     # heurística estimate_page_overflow en merge.py — un AVISO no bloqueante,
     # el render real lo hace Typst y varía por tema.
     "lines_per_page": 45,
-    # Cache de selección (P0.1): evita recalculcar embeddings + reranker
+    # Cache de selección: evita recalculcar embeddings + reranker
     # cuando se regenera la misma oferta. TTL en horas; la clave se deriva
     # de selection_config_fingerprint (ver abajo).
     "selection_cache_ttl_hours": 24,
-    # Penalización de términos negados (P0.2): multiplicador de score para
+    # Penalización de términos negados: multiplicador de score para
     # bullets que matchean algo que el JD excluye explícitamente ("no se
     # requiere X"). < 1 baja el rank; 1.0 desactiva la penalización.
     "negation_penalty": 0.3,
-    # Swaps de cobertura global (P0.3): cantidad máxima de intercambios
+    # Swaps de cobertura global: cantidad máxima de intercambios
     # entre entradas que puede hacer _ensure_global_keyword_coverage para
     # que las keywords críticas del JD (frecuencia >= 2) queden cubiertas
     # por alguna entrada seleccionada. 0 desactiva la pasada.
     "max_global_coverage_swaps": 3,
-    # Keywords ATS manuales (P1.3): el usuario fija términos que SIEMPRE
+    # Keywords ATS manuales: el usuario fija términos que SIEMPRE
     # entran al CV aunque la oferta no los mencione. Se agregan a las
     # detectadas del JD (afectan keywords_detected, el ranking por
     # keywords y el reporte ATS).
     "custom_keywords": [],
-    # HyDE (P3.1): con True, el LLM redacta un "CV hipotético" del candidato
+    # HyDE: con True, el LLM redacta un "CV hipotético" del candidato
     # ideal para la oferta y ese texto se antepone a los chunks del JD en el
     # canal denso (mejora el recall cuando el JD usa jerga que no aparece
     # literal en el master). Opt-in ESTRICTO y experimental: solo se mergea
@@ -77,7 +77,7 @@ DEFAULTS: Dict[str, Any] = {
 }
 
 # Claves de config que cambian el resultado de SelectionEngine.select() /
-# select_section(). TODO parámetro que afecte la selección DEBE estar acá:
+# select_section(). Todo parámetro que afecte la selección DEBE estar acá:
 # es la única fuente de verdad para la clave del cache de selección y para
 # el hash del singleton del motor (get_selection_engine en selection.py).
 # Al agregar una clave de config que influya en el ranking/selección

@@ -49,7 +49,7 @@ def generate(payload: JobDescriptionIn) -> Dict[str, Any]:
         raise HTTPException(status_code=502, detail=str(e))
 
     # Registro automático de la corrida en el historial (sin PDF todavía).
-    # F7: la traza de variante por bullet se persiste con la corrida.
+    # La traza de variante por bullet se persiste con la corrida.
     run = add_run(
         payload.job_description,
         keyword_report,
@@ -72,7 +72,7 @@ def generate(payload: JobDescriptionIn) -> Dict[str, Any]:
 
 @router.post("/api/preview-keywords")
 def preview_keywords(payload: JobDescriptionIn) -> Dict[str, Any]:
-    """Preview en vivo (P1.2): detecta keywords del JD sin instanciar el
+    """Preview en vivo: detecta keywords del JD sin instanciar el
     pipeline completo — solo extract_keywords (diccionario + abiertas + 
     manuales), sin modelos, sin LLM, sin cache ni historial."""
     master_cv = _require_master()

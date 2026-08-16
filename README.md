@@ -12,13 +12,6 @@
   <img src="https://img.shields.io/badge/license-MIT-yellow" alt="MIT License">
 </p>
 
-<!--
-  TODO antes de publicar:
-  · si conectaste GitHub Actions, agregá acá el badge real:
-    ![CI](https://github.com/<tu-usuario>/cv-adapter/actions/workflows/tests.yml/badge.svg)
-  · si tu licencia no es MIT, actualizá el badge de arriba + el archivo LICENSE
--->
-
 <p align="center">
   <img src="docs/media/demo-hero.gif" alt="Demo: pegar una oferta laboral y generar un CV adaptado en segundos" width="820">
   <br>
@@ -50,7 +43,6 @@ código. Ver [Garantías](#-garantías-anti-alucinación) más abajo.
 - [Instalación rápida](#-instalación-rápida)
 - [Estructura del proyecto](#-estructura-del-proyecto)
 - [Configuración avanzada](#-configuración-avanzada)
-- [Estado del proyecto / roadmap](#-estado-del-proyecto--roadmap)
 - [Limitaciones conocidas](#-limitaciones-conocidas)
 - [Tests](#-tests)
 - [Licencia](#-licencia)
@@ -173,8 +165,8 @@ a tareas de bajo riesgo, y un merge 100% determinístico al final.
 │   ├──────────────────────────────────────────────────────────────────────────────────────────┤ │
 │   │   · extract_requirements_section — recorta heurísticamente la sección de requisitos      │ │
 │   │   · chunk_text — ventana deslizante de 200 tokens (overlap 50) para no truncar el JD     │ │
-│   │   · extract_negated_terms — detecta "no se requiere X" en el JD (P0.2)                   │ │
-│   │   · HyDE (opcional) — CV hipotético del LLM antepuesto a los chunks del JD (P3.1)        │ │
+│   │   · extract_negated_terms — detecta "no se requiere X" en el JD                       │ │
+│   │   · HyDE (opcional) — CV hipotético del LLM antepuesto a los chunks del JD            │ │
 │   └──────────────────────────────────────────────────────────────────────────────────────────┘ │
 │                                                                                                │
 │   ▼                                                                                            │
@@ -285,7 +277,7 @@ La razón por la que el LLM (cuando se usa) nunca toca el documento final:
 | Índices inválidos se ignoran | Nunca se inventa contenido de reemplazo — un índice fuera de rango simplemente no se usa |
 | Keywords ATS verificadas en ambos lados | Una keyword solo sobrevive si existe (o una variante sinónima) en el CV maestro **y** en la oferta |
 | `match_reason` verificado | Si el LLM menciona una tecnología que no está ni en el bullet ni en el JD, se descarta y queda el motivo determinístico de IR |
-| Términos técnicos de variantes generadas verificados | Al generar una redacción nueva (F6), cada término técnico se chequea contra los *hechos* del logro; lo no verificable se resalta, nunca se oculta |
+| Términos técnicos de variantes generadas verificados | Al generar una redacción nueva, cada término técnico se chequea contra los *hechos* del logro; lo no verificable se resalta, nunca se oculta |
 | Presupuesto de una página forzado por código | `config.json` define los límites; se aplican siempre, sin importar cuánto contenido devuelva el modelo |
 
 ## 🧰 Stack
@@ -365,7 +357,6 @@ cv-adapter/
 ├── scripts/
 │   └── eval_retrieval.py     # eval harness (recall@10 / MRR@10) para tunear retrieval
 ├── docs/
-│   ├── funcional_logros_variantes.md   # doc funcional del modelo de logros (F1-F7)
 │   └── media/                          # GIFs/capturas de este README
 ├── tests/                    # pytest — ver sección Tests
 └── data/                     # CV maestro, historial (gitignored salvo *_example.*)
@@ -386,25 +377,6 @@ python scripts/eval_retrieval.py --master data/master_cv_example.yaml
 El harness compara canales aislados (sparse/dense/keywords) y distintas
 configuraciones de fusión contra un set de evaluación, reportando
 `recall@10` y `MRR@10` por config.
-
-## 🗺 Estado del proyecto / roadmap
-
-El cambio de modelo de datos más grande del proyecto —de "bullet-string
-fijo" a "logro con hechos + variantes de redacción por ángulo"— se hizo
-en fases incrementales, cada una usable de forma independiente:
-
-- ✅ **F1** — Esquema + compatibilidad total con CVs legacy (`highlights`)
-- ✅ **F2** — Editor de logros (hechos, variantes, ángulo sugerido por IA)
-- ✅ **F3** — Selector manual de variante en el CV generado
-- ✅ **F4** — Onboarding conversacional para arrancar sin CVs previos
-- ✅ **F5** — Importación masiva + bandeja de revisión por clustering
-- ✅ **F6** — Generación asistida de variantes con aprobación humana inline
-- 🚧 **F7** — Loop de feedback: qué variante se usó en cada corrida y cuáles
-  correlacionan con llegar a entrevista (parcialmente hecho: el uso ya se
-  registra internamente, falta exponerlo en la UI de Historial)
-
-Detalle completo de cada fase en
-[`docs/funcional_logros_variantes.md`](docs/funcional_logros_variantes.md).
 
 ## ⚠️ Limitaciones conocidas
 

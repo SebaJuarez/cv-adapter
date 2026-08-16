@@ -613,7 +613,7 @@ function recalcKeywordReport() {
 }
 
 
-// --------------------------------------------------- estimación de página (P1.4)
+// --------------------------------------------------- estimación de página
 
 // Aviso NO bloqueante: la estimación del backend (merge.estimate_page_overflow)
 // es una heurística a ojo; el layout real lo decide Typst según el tema.

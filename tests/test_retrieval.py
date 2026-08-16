@@ -452,7 +452,7 @@ def test_requirements_section_deseable_al_inicio_captura_esa_seccion():
 
 
 # ---------------------------------------------------------------------------
-# P1.3: keywords manuales del usuario (custom_keywords) entran SIEMPRE a la
+# Keywords manuales del usuario (custom_keywords) entran SIEMPRE a la
 # detección aunque no estén en el JD, sin duplicar el diccionario, y con
 # frecuencia mínima 1 para que pesen en el ranking por keywords.
 # ---------------------------------------------------------------------------
@@ -516,7 +516,7 @@ def test_build_keyword_report_incluye_custom():
 
 
 # ---------------------------------------------------------------------------
-# P1.1: keywords abiertas — términos técnicos fuera del diccionario que
+# Keywords abiertas — términos técnicos fuera del diccionario que
 # viven en JD y master. Sin master_corpus (firma original) no se detectan:
 # regresión de firma, el parámetro es opcional y no cambia el default.
 # ---------------------------------------------------------------------------
@@ -564,7 +564,7 @@ def test_extract_open_keywords_no_duplica_diccionario():
 
 
 # ---------------------------------------------------------------------------
-# P0.2: extract_negated_terms detecta exclusiones explícitas del JD
+# extract_negated_terms detecta exclusiones explícitas del JD
 # ("no se requiere X"). Solo sobreviven términos presentes en el master
 # (mismo doble chequeo que las open keywords) y se filtran palabras
 # genéricas de ofertas ("experiencia", "conocimientos").

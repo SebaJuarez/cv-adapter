@@ -1,7 +1,6 @@
 """Motor de selección de contenido basado en Information Retrieval híbrido.
 
-Reemplaza la función `generate_selection()` de `llm_node.py` para la fase de
-retrieval (selección de bullets/experiencias/skills). El LLM se relega a una
+Selecciona bullets/experiencias/skills con IR híbrido. El LLM se relega a una
 fase estratégica posterior (summary, keywords implícitas, match_reasons).
 
 Nuevas features:
@@ -274,7 +273,7 @@ def _mmr_select(
     léxico y no basado en embeddings, así corre siempre (aunque
     `use_reranker=False`) sin costo de inferencia extra. Se puede migrar
     a similitud por embeddings más adelante reusando el DenseIndex ya
-    calculado; queda anotado como mejora futura, no bloquea esta fase.
+    calculado; queda anotado como mejora futura, no bloquea la selección.
 
     diversity_lambda=1.0 desactiva la diversidad por completo (equivale al
     comportamiento anterior: puro top-N por score). Es el default
@@ -438,7 +437,7 @@ class SelectionEngine:
     ):
         self.config = config or load_config()
         self.store = IndexStore()
-        # Cache de selección (P0.1): solo si hay un hit para el mismo
+        # Cache de selección: solo si hay un hit para el mismo
         # (JD, master, config) se evita recalcular embeddings + reranker.
         # Inyectable para que los tests usen un tmp_path.
         self.cache_dir = cache_dir or SELECTION_CACHE_DIR
@@ -568,7 +567,7 @@ class SelectionEngine:
         return score
 
     # -----------------------------------------------------------------
-    # P0.3: cobertura global de keywords críticas entre entradas
+    # Cobertura global de keywords críticas entre entradas
     # -----------------------------------------------------------------
     def _selected_entries_cover(
         self,
@@ -684,7 +683,7 @@ class SelectionEngine:
 
         Límites, a propósito (no desarmar la selección por score):
         - Budget `max_global_coverage_swaps` (default 3) en TOTAL.
-        - Un swap por keyword; keywords negadas en el JD (P0.2) se saltan
+        - Un swap por keyword; keywords negadas en el JD se saltan
           (no se fuerza cobertura de lo que la oferta excluye).
         - La entrada que entra respeta max_highlights_per_entry y el swap
           nunca agrega contenido que no exista en el master.
@@ -746,7 +745,7 @@ class SelectionEngine:
         job_description: str,
         use_cache: bool = True,
     ) -> dict[str, Any]:
-        # Cache (P0.1): la selección IR es determinística para el mismo
+        # Cache: la selección IR es determinística para el mismo
         # (JD, master, config) — los embeddings + cross-encoder son el paso
         # más caro del pipeline y no tiene sentido recalcularlos al
         # regenerar la misma oferta. On hit se devuelve la selección tal
@@ -760,7 +759,7 @@ class SelectionEngine:
         query_text = extract_requirements_section(job_description)
         query_chunks = chunk_text(query_text, max_tokens=200, overlap=50)
 
-        # P3.1: HyDE — si está activo, el CV hipotético del candidato ideal
+        # HyDE — si está activo, el CV hipotético del candidato ideal
         # (redactado por el LLM) se antepone a los chunks del JD en el canal
         # denso. Defensivo: si el LLM falla o tarda, se sigue con el JD real.
         # (Import lazy: llm_node importa selection.py, sería circular.)
@@ -771,7 +770,7 @@ class SelectionEngine:
             if hyde_query:
                 query_chunks = [hyde_query] + query_chunks
 
-        # P0.2: términos que el JD excluye explícitamente. Se escanea el JD
+        # Términos que el JD excluye explícitamente. Se escanea el JD
         # COMPLETO (no la sección de requisitos): la cláusula de exclusión
         # ("No se requiere experiencia en X") suele estar fuera de esa
         # sección. El corpus del master acota los candidatos abiertos.
@@ -804,7 +803,7 @@ class SelectionEngine:
             if _jd_freqs.get(kw, 0) >= 2
         }
 
-        # Keywords ATS candidatas: las manuales del usuario (P1.3) van
+        # Keywords ATS candidatas: las manuales del usuario van
         # PRIMERO (son mandatorias) y después las del JD por frecuencia.
         # merge.py las filtra contra el master (solo sobreviven las que
         # existen en ambos lados) — acá no se descarta nada, la verificación
@@ -812,7 +811,7 @@ class SelectionEngine:
         max_keywords = self.config.get("max_keywords", 10)
         custom_normalized = _normalize_custom_keywords(custom_keywords)
         keywords_detected = list(dict.fromkeys(custom_normalized + _jd_kws))[:max_keywords]
-        # P0.2: una keyword que el JD excluye explícitamente ("no se
+        # Una keyword que el JD excluye explícitamente ("no se
         # requiere X") no puede figurar como candidata ATS — merge.py la
         # verificaría contra el master y la dejaría sobrevivir en la línea
         # de keywords, mostrando como ventaja lo que la oferta descarta.
@@ -837,7 +836,7 @@ class SelectionEngine:
             "jd_snippets": {},         # NUEVO: bullet_id -> snippet del JD
             "section_scores": {},      # NUEVO: section -> {entry_idx: score}
             "score_mode": score_mode,  # NUEVO: "cross_encoder" | "positional_fallback"
-            "negated_terms": sorted(negated_terms),  # P0.2
+            "negated_terms": sorted(negated_terms),
         }
 
         for section in _RETRIEVAL_SECTIONS:
@@ -1004,7 +1003,7 @@ class SelectionEngine:
                         master_cv, section, selection[key]
                     )
 
-        # P0.3: cobertura global de keywords críticas entre entradas — el
+        # Cobertura global de keywords críticas entre entradas — el
         # ajuste local no rescata keywords que viven en entradas excluidas
         # por presupuesto. Corre después de la sección completa para que
         # bullet_scores (que incluye los bullets de entradas excluidas)
@@ -1027,7 +1026,7 @@ class SelectionEngine:
         section_name: str,
         use_cache: bool = True,
     ) -> dict[str, Any]:
-        """Selección acotada a una sección, con cache de selección (P0.1).
+        """Selección acotada a una sección, con cache de selección.
 
         El wrapper chequea/guarda el cache; el cuerpo real vive en
         `_select_section_uncached` (que tiene múltiples return paths según
@@ -1062,7 +1061,7 @@ class SelectionEngine:
         query_text = extract_requirements_section(job_description)
         query_chunks = chunk_text(query_text, max_tokens=200, overlap=50)
 
-        # P3.1: HyDE — ver comentario en select().
+        # HyDE — ver comentario en select().
         if self.config.get("use_hyde", False):
             from .llm_node import _generate_hyde_query
 
@@ -1274,7 +1273,7 @@ def get_selection_engine(config: dict[str, Any] | None = None) -> SelectionEngin
 
     El set de claves "relevantes" vive en
     `selection_config_fingerprint` (src/config.py): es la misma fuente de
-    verdad que usa la clave del cache de selección (P0.1), así que cualquier
+    verdad que usa la clave del cache de selección, así que cualquier
     knob nuevo de retrieval se propaga a ambos lados.
     """
     global _engine_singleton, _engine_singleton_hash

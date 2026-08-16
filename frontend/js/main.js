@@ -21,8 +21,8 @@ import { dirty, hasUnsavedChanges, state, updateUndoButton } from "./state.js";
    - Delta de fit al agregar bullets
    - Pullback ordenado por relevancia
    - Resumen del resultado + keyword report unificado (incluye manuales)
-   - Contenido no incluido agrupado, toasts, progreso, dirty state,
-     filtro/colapso en master, undo multi-nivel por vista (P2.1)
+- Contenido no incluido agrupado, toasts, progreso, dirty state,
+      filtro/colapso en master, undo multi-nivel por vista
    ===================================================================== */
 
 // --------------------------------------------------- altura de la topbar

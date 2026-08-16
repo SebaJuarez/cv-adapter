@@ -61,8 +61,8 @@ STOPWORDS: frozenset[str] = (STOPWORDS_EN | STOPWORDS_ES) - TECH_ALLOWLIST
 # Palabras genéricas de ofertas laborales que NO son términos técnicos
 # aunque aparezcan en contextos de extracción ("No se requiere EXPERIENCIA
 # en...", "Buscamos un PERFIL backend"). Sin este filtro, "experiencia" o
-# "conocimientos" se colarían como keywords abiertas (P1.1) o términos
-# negados (P0.2). Compartido entre jd_processor y keywords (un módulo hoja
+# "conocimientos" se colarían como keywords abiertas o términos
+# negados. Compartido entre jd_processor y keywords (un módulo hoja
 # no puede importar al otro sin circularidad).
 GENERIC_JD_WORDS: frozenset[str] = frozenset({
     # Español

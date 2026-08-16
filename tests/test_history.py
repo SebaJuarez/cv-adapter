@@ -1,6 +1,6 @@
 """Tests del historial de corridas y seguimiento de aplicaciones.
 
-Cubren las invariantes de la feature (AGENTS.md): el historial es metadata
+Cubren las invariantes de la feature: el historial es metadata
 determinística (sin LLM, sin tocar el YAML del CV), tolerante a archivos
 ausentes/corruptos, y la agregación de keywords faltantes del master es
 estable y ordenada.
@@ -140,7 +140,7 @@ class TestAddRun:
         assert saved["runs"][0]["offer_title"] == "Backend Engineer (Terraform)"
 
     def test_persiste_traza_de_variantes_por_bullet(self, history_path, jd, keyword_report):
-        # F7: la traza solo se persiste si hay usos reales (runs legacy sin clave).
+        # La traza solo se persiste si hay usos reales (runs legacy sin clave).
         bullet_variants = [
             {
                 "section": "experience",

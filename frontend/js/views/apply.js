@@ -11,7 +11,7 @@ import { refreshKeywordWidgets, renderPageEstimate, keywordPresentIn } from "../
 
 // ---------------------------------------------------------- vista: apply
 
-// La oferta es un contenteditable (P2.3, habilita <mark>): el texto se lee
+// La oferta es un contenteditable (habilita <mark>): el texto se lee
 // como innerText, no .value.
 function jdText() {
   const jd = $("#job-description");
@@ -32,7 +32,7 @@ $("#generate-btn").addEventListener("click", async () => {
   }
 
   const manualKeywords = ($("#ats-keywords").value || "").split(",").map((s) => s.trim()).filter(Boolean);
-  // "Forzar regeneración" (P0.1): saltea el cache de selección en el backend.
+  // "Forzar regeneración": saltea el cache de selección en el backend.
   const force = $("#force-regenerate").checked;
 
   const btn = $("#generate-btn");
@@ -90,7 +90,7 @@ $("#ats-keywords").addEventListener("input", () => {
   if (state.targetDoc && state.keywordReport) refreshKeywordWidgets();
 });
 
-// ------------------------------------------- preview en vivo de keywords (P1.2)
+// ------------------------------------------- preview en vivo de keywords
 
 // Solo extract_keywords en el backend (sin modelos ni LLM): debounce de 400ms
 // y abort de la petición anterior si el texto siguió cambiando.
@@ -157,7 +157,7 @@ $("#job-description").addEventListener("input", () => {
   previewTimer = setTimeout(fetchKeywordPreview, PREVIEW_DEBOUNCE_MS);
 });
 
-// ------------------------------------- resaltado bidireccional JD ↔ bullet (P2.3)
+// ------------------------------------- resaltado bidireccional JD ↔ bullet
 
 // Pegado como texto plano: el contenteditable no debe traer HTML.
 $("#job-description").addEventListener("paste", (e) => {

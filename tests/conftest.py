@@ -1,6 +1,6 @@
 """Fixtures compartidos de la suite de tests.
 
-Los tests cubren las invariantes del pipeline (AGENTS.md): el LLM nunca
+Los tests cubren las invariantes del pipeline: el LLM nunca
 redacta el YAML final, las keywords ATS se verifican contra master+oferta,
 los límites de página se aplican con código, y las claves internas se
 strippean antes de guardar.

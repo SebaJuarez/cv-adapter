@@ -3,7 +3,7 @@
 Incluye:
 - Extracción heurística de la sección de requisitos técnicos.
 - Chunking con ventana deslizante para evitar truncamiento por límite de tokens.
-- Detección de términos negados / excluidos de la oferta (P0.2): cuando el
+- Detección de términos negados / excluidos de la oferta: cuando el
   JD dice "no se requiere X", X no debe rankear como requisito positivo.
 """
 
@@ -68,7 +68,7 @@ def chunk_text(text: str, max_tokens: int = 200, overlap: int = 50) -> list[str]
 
 
 # ---------------------------------------------------------------------------
-# P0.2: negación / exclusiones del JD
+# Negación / exclusiones del JD
 # ---------------------------------------------------------------------------
 
 # Marcadores de negación ES/EN. La regla es: si una ORACIÓN (segmento entre

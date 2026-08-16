@@ -1,6 +1,6 @@
 """Llamada al LLM (Ollama local o API remota compatible con OpenAI) con salida estructurada.
 
-Ahora el pipeline tiene DOS fases:
+El pipeline tiene DOS fases:
 1. Fase IR (Information Retrieval): SelectionEngine selecciona bullets/experiencias
    usando BM25 + embeddings + cross-encoder. Es rápido, determinístico, y corre local.
    También resuelve el summary_index y las keywords ATS candidatas.
@@ -159,7 +159,7 @@ def _call_llm(system_prompt: str, user_prompt: str, schema: Dict[str, Any], conf
     return _call_ollama(system_prompt, user_prompt, schema, config)
 
 
-# Schema mínimo para HyDE (P3.1): un solo campo de texto libre.
+# Schema mínimo para HyDE: un solo campo de texto libre.
 _HYDE_SCHEMA: Dict[str, Any] = {
     "type": "object",
     "properties": {"hypothetical_document": {"type": "string"}},
@@ -168,7 +168,7 @@ _HYDE_SCHEMA: Dict[str, Any] = {
 
 
 def _generate_hyde_query(job_description: str, config: Dict[str, Any], timeout: float = 15.0) -> Optional[str]:
-    """Redacta el CV hipotético del candidato ideal (HyDE, P3.1).
+    """Redacta el CV hipotético del candidato ideal (HyDE).
 
     El LLM escribe cómo sería el CV del candidato perfecto para la oferta:
     un texto con el vocabulario del JD que el canal denso puede comparar
@@ -209,7 +209,7 @@ def _generate_hyde_query(job_description: str, config: Dict[str, Any], timeout: 
             pool.shutdown(wait=False, cancel_futures=True)
 
 
-# Schema de extracción de hechos (botón "enriquecer este bullet", F2):
+# Schema de extracción de hechos (botón "enriquecer este bullet"):
 # facts estructurados a partir de un bullet legacy, con verificación
 # contra el texto fuente (ver _verify_facts).
 _FACTS_SCHEMA: Dict[str, Any] = {
@@ -234,7 +234,7 @@ _EMPTY_FACTS: Dict[str, Any] = {"action": "", "tools": [], "scope": "", "outcome
 
 
 def _verify_facts(facts: Dict[str, Any], bullet_text: str) -> Dict[str, Any]:
-    """Guardarail anti-alucinación de la extracción de facts (doc funcional §1):
+    """Guardarail anti-alucinación de la extracción de facts:
 
     cada tecnología propuesta debe aparecer en el texto fuente del bullet
     (o una variante sinónima), y cada outcome debe tener su métrica o su
@@ -295,7 +295,7 @@ def extract_achievement_facts(
     bullet_text: str, config: Dict[str, Any], timeout: float = 10.0
 ) -> Dict[str, Any]:
     """Estructura un bullet legacy en `facts` (acción, herramientas, alcance,
-    resultados medibles) para el botón "enriquecer este bullet" (F2).
+    resultados medibles) para el botón "enriquecer este bullet".
 
     Defensivo por diseño: cualquier fallo (proveedor caído, timeout, JSON
     inválido) devuelve facts vacíos y el usuario completa los campos a mano
@@ -336,7 +336,7 @@ def extract_achievement_facts(
             pool.shutdown(wait=False, cancel_futures=True)
 
 
-# F6 (doc §6.6): la generación de variantes devuelve `text` + `tech_terms`
+# La generación de variantes devuelve `text` + `tech_terms`
 # (los términos que el modelo usó en su redacción, para verificar contra el
 # logro). Schema estricto: si el modelo no lista términos, no se rompe nada;
 # si inventa término sin respaldo, se marca, jamás se descarta en silencio.
@@ -406,7 +406,7 @@ def generate_variant_text(
     config: Optional[Dict[str, Any]] = None,
     timeout: float = 90.0,
 ) -> Dict[str, Any]:
-    """Genera una redacción nueva orientada a `angle` para un logro (F6).
+    """Genera una redacción nueva orientada a `angle` para un logro.
 
     El LLM reescribe SOLO a partir de los hechos del logro (facts + variantes
     existentes + texto actual); el snippet del JD es contexto de énfasis,
@@ -507,7 +507,7 @@ def _build_strategic_prompt(
 ) -> str:
     """Construye el user prompt para la fase estratégica del LLM.
 
-    El LLM ya no recibe TODO el CV. Solo recibe:
+    El LLM no recibe TODO el CV. Solo recibe:
     - El JD completo.
     - Los bullets ya seleccionados por IR (resumen).
     """
@@ -517,7 +517,7 @@ def _build_strategic_prompt(
     def _format_entry_slots(entry: Dict[str, Any]) -> str:
         """Slots unificados con su índice (mismo orden que indexa IR y que
         resuelve merge). Los logros se marcan con su id para que el LLM
-        pueda referir ángulos precisos (F2, preferred_angles)."""
+        pueda referir ángulos precisos (preferred_angles)."""
         lines = []
         for slot_index, slot in enumerate(entry_bullet_slots(entry)):
             if not slot["text"]:
@@ -535,7 +535,7 @@ def _build_strategic_prompt(
         if idx is not None and 0 <= idx < len(sections.get("experience", [])):
             entry = sections["experience"][idx]
             # Bullets unificados: highlights legacy o variante representativa
-            # de cada achievement (mismo texto que indexa IR — D4).
+            # de cada achievement (mismo texto que indexa IR).
             selected_experience.append(
                 f"  [{idx}] {entry.get('company', '')} - {entry.get('position', '')}\n"
                 + _format_entry_slots(entry)
@@ -584,16 +584,16 @@ def generate_selection(
     2. LLM estratégico mejora los match_reasons (verificado anti-alucinación).
     3. Merge de ambas salidas: los índices de IR son inmutables.
 
-    Con `force=True` se saltea el cache de selección (P0.1); la fase LLM
+    Con `force=True` se saltea el cache de selección; la fase LLM
     estratégica corre igual en ambos casos (el cache guarda solo la fase IR).
     """
     config = config or load_config()
 
-    # --- Fase 1: IR (rápido, determinístico) ---
+    # --- Paso 1: IR (rápido, determinístico) ---
     engine = get_selection_engine(config)
     ir_selection = engine.select(master_cv, job_description, use_cache=not force)
 
-    # --- Fase 2: LLM Estratégico (liviano) ---
+    # --- Paso 2: LLM Estratégico (liviano) ---
     system_prompt = build_system_prompt(config)
     schema = build_selection_schema(config)
     user_prompt = _build_strategic_prompt(master_cv, job_description, ir_selection, config)
@@ -634,7 +634,7 @@ def generate_selection(
                 item["match_reason"] = llm_reason
             # si no pasa el guardarail, se deja el match_reason de IR intacto
 
-            # Ángulos preferidos por logro (F2): merge determinístico, el
+            # Ángulos preferidos por logro: merge determinístico, el
             # LLM no puede elegir qué texto ver — solo el ángulo. Ángulos
             # inválidos o slots que no sean logros se descartan en silencio
             # (merge total: si nada sobrevive, no se setea la clave).
@@ -671,7 +671,7 @@ def generate_section_selection(
 
     Usado por el botón 'Regenerar esta sección' de la UI.
     Ahora usa SelectionEngine.select_section() en vez del LLM para retrieval.
-    Con `force=True` se saltea el cache de selección (P0.1).
+    Con `force=True` se saltea el cache de selección.
     """
     config = config or load_config()
 

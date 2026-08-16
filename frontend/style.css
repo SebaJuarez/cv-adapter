@@ -229,7 +229,7 @@ textarea { resize: vertical; min-height: 2.4em; }
 
 textarea.highlight-text { min-height: 1.6em; resize: none; overflow: hidden; }
 
-/* P2.3: la oferta laboral es un contenteditable (permite <mark> bidireccional) */
+/* La oferta laboral es un contenteditable (permite <mark> bidireccional) */
 .jd-editable {
   width: 100%;
   background: var(--paper);
@@ -262,7 +262,7 @@ mark.jd-mark {
 
 mark.jd-mark:hover { background: #f5b942; }
 
-/* Flash del bullet que matchea una keyword del JD (P2.3) */
+/* Flash del bullet que matchea una keyword del JD */
 .highlight-row.bullet-flash { animation: bullet-flash 1.4s ease-out; }
 
 @keyframes bullet-flash {
@@ -489,7 +489,7 @@ mark.jd-mark:hover { background: #f5b942; }
 
 .filter-bar input { flex: 1; }
 
-/* Rango de score ATS (P2.4) */
+/* Rango de score ATS */
 .score-filter {
   display: flex;
   align-items: center;
@@ -504,7 +504,7 @@ mark.jd-mark:hover { background: #f5b942; }
   flex: 0 0 auto;
 }
 
-/* Comparar corridas (P2.2) */
+/* Comparar corridas */
 .history-compare-bar {
   display: flex;
   align-items: center;
@@ -707,7 +707,7 @@ mark.jd-mark:hover { background: #f5b942; }
   margin-top: 1.75rem;
 }
 
-/* Aviso NO bloqueante de página estimada (P1.4) */
+/* Aviso NO bloqueante de página estimada */
 .page-estimate-banner {
   background: var(--paper-raised);
   border: 1px solid var(--rule);
@@ -725,7 +725,7 @@ mark.jd-mark:hover { background: #f5b942; }
   background: color-mix(in srgb, var(--danger, #d64545) 6%, var(--paper-raised));
 }
 
-/* Preview en vivo de keywords (P1.2) */
+/* Preview en vivo de keywords */
 .preview-keywords {
   display: flex;
   flex-wrap: wrap;
@@ -1301,7 +1301,7 @@ mark.jd-mark:hover { background: #f5b942; }
 
 .history-copy-btn { flex-shrink: 0; }
 
-/* -------------------------------------------------- variantes usadas (F7) */
+/* -------------------------------------------------- variantes usadas */
 
 .history-variant-text {
   margin: 0 0 0.35rem;
@@ -1530,7 +1530,7 @@ mark.jd-mark:hover { background: #f5b942; }
   .pdf-preview { height: 320px; }
   #modal-box.modal-wide { width: 100%; }
 }
-/* ------------------------------------------------- logros (F2) */
+/* ------------------------------------------------- logros */
 
 .achievements { display: flex; flex-direction: column; gap: 0.6rem; margin-top: 0.4rem; }
 
@@ -1582,7 +1582,7 @@ mark.jd-mark:hover { background: #f5b942; }
 
 .ach-note { font-size: 0.78rem; color: var(--ink-faint); font-style: italic; margin: 0; }
 
-/* Fase 3 � selector de variante en "Nueva aplicaci�n" (doc �6.5) */
+/* Selector de variante en "Nueva aplicación" */
 .ach-switch-popover {
   position: absolute;
   right: 0;
@@ -1651,7 +1651,7 @@ mark.jd-mark:hover { background: #f5b942; }
 
 .ach-switch-text { font-size: 0.85rem; color: var(--ink); line-height: 1.35; }
 
-/* Editor de logros usable: colapso, preview y estado (fix F2) */
+/* Editor de logros usable: colapso, preview y estado */
 .ach-head-info {
   flex: 1;
   min-width: 0;
@@ -1742,7 +1742,7 @@ mark.jd-mark:hover { background: #f5b942; }
   color: var(--ink-soft);
 }
 
-/* Onboarding conversacional (F4): primera pantalla con master vac�o */
+/* Onboarding conversacional: primera pantalla con master vacío */
 .onboarding {
   max-width: 44rem;
   padding: 1rem 0 2rem;
@@ -1776,7 +1776,7 @@ mark.jd-mark:hover { background: #f5b942; }
 .onb-ctas { display: flex; gap: 0.75rem; align-items: center; margin-top: 1.5rem; }
 
 
-/* Bandeja de importacion (F5): carga de CVs, clusters y confirmacion */
+/* Bandeja de importacion: carga de CVs, clusters y confirmacion */
 .imports-upload { display: flex; flex-direction: column; gap: 0.8rem; max-width: 40rem; }
 
 .imports-hint { font-size: 0.85rem; color: var(--ink-soft); margin: 0; line-height: 1.5; }
@@ -1870,7 +1870,7 @@ mark.jd-mark:hover { background: #f5b942; }
   padding: 0.8rem;
 }
 
-/* -------------------------------------------------- F6: comparación de variante generada */
+/* -------------------------------------------------- comparación de variante generada */
 
 .variant-compare {
   display: grid;

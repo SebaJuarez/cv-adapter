@@ -126,7 +126,7 @@ def _count_keyword_occurrences(text: str, keyword: str) -> int:
 
 
 def _normalize_custom_keywords(custom_keywords: Optional[List[str]]) -> List[str]:
-    """Normaliza las keywords manuales del usuario (P1.3): minúsculas, sin
+    """Normaliza las keywords manuales del usuario: minúsculas, sin
     espacios de bordes y sin duplicados. Acepta listas o un string separado
     por comas (defensivo: la config puede llegar como JSON crudo desde la
     UI)."""
@@ -151,7 +151,7 @@ def _extract_open_keywords(
 ) -> List[str]:
     """Términos técnicos FUERA del diccionario curado que viven en el JD.
 
-    P1.1: el diccionario curado nunca está completo (herramientas nicho,
+    El diccionario curado nunca está completo (herramientas nicho,
     plataformas internas, términos nuevos). Estos candidatos abiertos son
     n-gramas de 1-2 palabras del JD, filtrados con stopwords y palabras
     genéricas de ofertas, que deben existir LITERALMENTE en el master
@@ -218,13 +218,13 @@ def extract_keywords(
 ) -> Tuple[List[str], Dict[str, int]]:
     """Extrae keywords técnicas del JD usando el diccionario curado + bigramas dinámicos.
 
-    P1.3: `custom_keywords` son keywords manuales del usuario (settings)
+    `custom_keywords` son keywords manuales del usuario (settings)
     que entran SIEMPRE aunque no estén en la oferta — su frecuencia queda
     en max(ocurrencias en el JD, 1) para que pesen en el ranking por
     keywords como cualquier término detectado, sin necesidad de que el JD
     las mencione.
 
-    P1.1: con `master_corpus` no vacío también detecta keywords ABIERTAS
+    Con `master_corpus` no vacío también detecta keywords ABIERTAS
     (fuera del diccionario) presentes en ambos lados (ver
     `_extract_open_keywords`). Sin el parámetro, el comportamiento es
     idéntico al original.
@@ -271,7 +271,7 @@ def extract_keywords(
             found.add(kw)
             frequencies[kw] = _count_keyword_occurrences(job_description, kw)
 
-    # Keywords manuales del usuario (P1.3): se agregan siempre, con
+    # Keywords manuales del usuario: se agregan siempre, con
     # frecuencia mínima 1 para que el ranking por keywords las tome en
     # serio aunque la oferta no las mencione. Si ya estaban detectadas,
     # se respeta la frecuencia real del JD.
@@ -281,7 +281,7 @@ def extract_keywords(
         found.add(kw)
         frequencies[kw] = max(_count_keyword_occurrences(job_description, kw), 1)
 
-    # Keywords abiertas (P1.1): fuera del diccionario, presentes en JD y
+    # Keywords abiertas: fuera del diccionario, presentes en JD y
     # master. Requieren master_corpus explícito (passthrough de los
     # callers); sin él, el comportamiento queda idéntico al original.
     for kw in _extract_open_keywords(job_description, master_corpus, found):
@@ -314,9 +314,9 @@ def build_keyword_ranking(
     Args:
         bullets: lista de dicts con al menos "id" y "text".
         job_description: texto completo de la oferta.
-        custom_keywords: keywords manuales del usuario (P1.3); se pasan a
+        custom_keywords: keywords manuales del usuario; se pasan a
             extract_keywords para que pesen como cualquier otra.
-        master_corpus: texto del master en minúsculas (P1.1); habilita las
+        master_corpus: texto del master en minúsculas; habilita las
             keywords abiertas dentro de extract_keywords.
 
     Returns:

@@ -73,7 +73,7 @@ function renderSectionBlock(name, entries, ctx) {
   if (ctx.isTarget && regeneratable.includes(name)) {
     regenBtn = h("button", { class: "btn-icon regen", title: "Regenerar esta sección con la IA", "aria-label": "Regenerar esta sección con la IA" }, "↻");
     regenBtn.addEventListener("click", async () => {
-      // La oferta es un contenteditable (P2.3): se lee como innerText.
+      // La oferta es un contenteditable: se lee como innerText.
       const jd = $("#job-description").innerText;
       if (!jd.trim()) {
         await showMessageModal("Falta la oferta laboral", "Primero pegá la oferta laboral para poder regenerar esta sección.");
@@ -360,7 +360,7 @@ function renderHighlights(entry, ctx, sectionName, entryIndex) {
       scoreEl = renderBulletScore(bulletId);
     }
 
-    // F6 (doc §6.6): info de generación asistida si el ángulo preferido del
+    // Info de generación asistida si el ángulo preferido del
     // slot no tiene ninguna variante aprobada (o el logro no tiene ninguna).
     const genInfo = ctx.isTarget ? variantGenInfo(entry, i, ctx) : null;
 
@@ -519,9 +519,9 @@ function renderPullback(entry, ctx) {
   return details;
 }
 
-// ------------------------------------------------- logros (F2)
+// ------------------------------------------------- logros
 
-// Una entrada usa UN solo formato (D1, doc §2.3): highlights (legacy) o
+// Una entrada usa UN solo formato: highlights (legacy) o
 // achievements (hechos + variantes). El backend es la fuente de verdad de
 // la validación; acá solo se decide qué renderizar.
 const ANGLE_OPTIONS = ["", "liderazgo", "ownership", "escala", "reduccion_costo", "velocidad_entrega", "impacto_tecnico", "calidad_testing", "cross_funcional", "vision_producto"];
@@ -572,7 +572,7 @@ function variantStatus(v) {
   return v && typeof v.status === "string" && STATUS_OPTIONS.includes(v.status) ? v.status : "approved";
 }
 
-// Fase 3 — selector de variante en "Nueva aplicación" (doc §6.5): un ícono
+// Selector de variante en "Nueva aplicación": un ícono
 // discreto junto al bullet del target abre un popover con las redacciones
 // approved del logro. Override manual en memoria — el match automático
 // por ángulo (preferred_angles) sigue siendo el camino principal.
@@ -617,7 +617,7 @@ function variantAngleText(v) {
   return angles.length ? angles.map((a) => ANGLE_LABELS[a] || a).join(" · ") : "genérica";
 }
 
-// F6 (doc §6.6) — generación asistida de variante nueva. El botón ✏ aparece
+// Generación asistida de variante nueva. El botón ✏ aparece
 // SIEMPRE en los bullets del target con logro: si la selección tiene ángulo
 // preferido para el slot se genera orientado a ese ángulo (el mejor match del
 // bullet con la oferta); si no, se genera una versión "genérica" (sin ángulo).
@@ -679,7 +679,7 @@ async function generateVariantForBullet(entry, genInfo, i, ctx) {
     openVariantCompareModal();
   } catch (err) {
     // Proveedor caído o modelo inválido: el detail ya es legible; se ofrece
-    // navegar a Configuración para cambiar de proveedor (§6.6).
+    // navegar a Configuración para cambiar de proveedor.
     toast(
       err.message || "No se pudo generar la redacción.",
       "err",
@@ -694,7 +694,7 @@ async function generateVariantForBullet(entry, genInfo, i, ctx) {
   }
 }
 
-// F6 (§6.6): comparación lado a lado de la redacción generada. La propuesta
+// Comparación lado a lado de la redacción generada. La propuesta
 // reemplaza el bullet SOLO con aprobación explícita: "Usar y guardar como
 // variante nueva" la agrega al master (approved, source=generated) y el POST
 // /api/master-cv existente la persiste con el guardado global; "Usar solo
@@ -919,7 +919,7 @@ async function previewAchievement(entry, i, ctx) {
   if (confirmed && rec) commitAchDraft(entry, i, ctx);
 }
 
-// Texto que el merge emitiría por defecto (D4): la variante approved con
+// Texto que el merge emitiría por defecto: la variante approved con
 // mayor used_count; empate -> created_at más reciente; sin approved, la
 // primera variante con texto (para no perder nada en "volver a bullets").
 function representativeText(ach) {
@@ -995,7 +995,7 @@ function toggleVariantPopover(row, entry, i, ctx) {
     ]);
     pop.appendChild(option);
   });
-  // F6 (§6.6): generar una redacción nueva para cualquier ángulo aunque el
+  // Generar una redacción nueva para cualquier ángulo aunque el
   // logro ya tenga variantes aprobadas.
   pop.appendChild(h("div", { class: "ach-switch-sep", role: "separator" }));
   pop.appendChild(h("button", {
@@ -1303,7 +1303,7 @@ function renderAchievementCard(entry, realAch, i, ctx) {
 }
 
 // Enriquecer un bullet legacy: convierte TODA la entrada al formato
-// achievements (D1: una entrada usa un solo formato) y, si el backend
+// achievements (una entrada usa un solo formato) y, si el backend
 // extrae hechos del bullet elegido, los carga en su achievement. Cada
 // bullet existente pasa a ser una variante aprobada sin perder texto.
 async function enrichBullet(entry, i, ctx) {

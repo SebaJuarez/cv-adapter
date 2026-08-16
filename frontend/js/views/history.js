@@ -262,7 +262,7 @@ function buildRow(run) {
   ]);
 }
 
-// ------------------------------------------------------- comparar corridas (P2.2)
+// ------------------------------------------------------- comparar corridas
 
 // Máximo de corridas seleccionadas para comparar.
 const MAX_COMPARE = 2;
@@ -337,7 +337,7 @@ function openCompareModal() {
 
   const col = (run, onlyKws, sideLabel) => {
     const kws = run.keywords_detected || [];
-    // Corridas anteriores a P0.1 no guardan keyword report: aviso por columna.
+    // Corridas legacy no guardan keyword report: aviso por columna.
     const stale = !run.ats_score && !kws.length;
     return h("div", { class: "compare-col" }, [
       h("div", { class: "compare-col-head" }, [
@@ -721,7 +721,7 @@ function renderKeywordStats(keywords) {
   el.appendChild(list);
 }
 
-// --------------------------------------- stats: variantes más usadas (F7, §6.7)
+// --------------------------------------- stats: variantes más usadas
 
 function variantAngleLabel(angle) {
   if (!angle) return "";
@@ -770,7 +770,7 @@ $("#history-search").addEventListener("input", (e) => {
   }, 250);
 });
 
-// P2.4: rango de score ATS (debounce como el buscador; vacío = sin filtro).
+// Rango de score ATS (debounce como el buscador; vacío = sin filtro).
 let scoreTimer = null;
 function scheduleScoreFilter(input) {
   clearTimeout(scoreTimer);

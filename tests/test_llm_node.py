@@ -122,7 +122,7 @@ def test_generate_selection_llm_no_puede_tocar_summary_ni_keywords(
 
 
 # ---------------------------------------------------------------------------
-# P3.1: HyDE — _generate_hyde_query es defensiva por diseño (degrade a None).
+# HyDE — _generate_hyde_query es defensiva por diseño (degrade a None).
 # ---------------------------------------------------------------------------
 def test_hyde_query_devuelve_texto_si_llm_ok(monkeypatch):
     from src.llm_node import _generate_hyde_query
@@ -180,7 +180,7 @@ def test_use_hyde_invalida_fingerprint_de_seleccion():
 
 
 # ---------------------------------------------------------------------------
-# P3.1: threading — use_hyde antepone el CV hipotético en el canal denso.
+# use_hyde antepone el CV hipotético en el canal denso.
 # ---------------------------------------------------------------------------
 def _master_mini():
     return {
@@ -269,7 +269,7 @@ def test_select_sin_use_hyde_no_llama_al_llm(monkeypatch, config, tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# F2: extracción de facts (botón "enriquecer este bullet").
+# Extracción de facts (botón "enriquecer este bullet").
 # ---------------------------------------------------------------------------
 def test_verify_facts_descarta_tools_inventadas():
     from src.llm_node import _verify_facts
@@ -406,7 +406,7 @@ def test_extract_achievement_facts_texto_vacio_no_llama_al_llm(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# F2: ángulo preferido por logro (el LLM lo sugiere, merge lo usa).
+# Ángulo preferido por logro (el LLM lo sugiere, merge lo usa).
 # ---------------------------------------------------------------------------
 def _master_mini_achievements():
     return {

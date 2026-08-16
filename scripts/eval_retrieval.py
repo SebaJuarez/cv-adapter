@@ -119,9 +119,9 @@ def main() -> None:
     parser.add_argument(
         "--hyde",
         action="store_true",
-        help="Antepone el CV hipotético del LLM (HyDE, P3.1) a los chunks "
-        "densos de cada caso. El gate del plan: correr con y sin el flag y "
-        "NO mergear use_hyde=True si recall@10/MRR@10 no mejora.",
+        help="Antepone el CV hipotético del LLM (HyDE) a los chunks "
+        "densos de cada caso. Correr con y sin el flag y "
+        "NO activar use_hyde=True si recall@10/MRR@10 no mejora.",
     )
     args = parser.parse_args()
 
@@ -199,7 +199,7 @@ def main() -> None:
         relevant = set(case["relevant_bullets"])
         query_text = extract_requirements_section(jd)
         query_chunks = chunk_text(query_text, max_tokens=200, overlap=50)
-        # P3.1: HyDE on/off — con --hyde el CV hipotético del candidato ideal
+        # HyDE on/off — con --hyde el CV hipotético del candidato ideal
         # va primero en los chunks densos (defensivo: None si el LLM falla).
         if args.hyde:
             from src.llm_node import _generate_hyde_query
@@ -292,8 +292,8 @@ def main() -> None:
           f"({fusion_ranked[0][1]:.3f})")
 
     if args.hyde:
-        print("\n[gate P3.1] Comparar contra la corrida sin --hyde: si "
-              "recall@10/MRR@10 no mejora, NO activar use_hyde en config.")
+print("\nComparar contra la corrida sin --hyde: si "
+          "recall@10/MRR@10 no mejora, NO activar use_hyde en config.")
 
 
 if __name__ == "__main__":

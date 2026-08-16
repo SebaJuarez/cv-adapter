@@ -7,7 +7,7 @@ string legacy es un "slot" de tipo legacy y cada achievement un "slot" de
 tipo achievement (en ese orden), y el resto del pipeline IR trabaja sobre
 esa lista unificada de slots sin saber cuál era el formato original.
 
-Invariantes (doc funcional §5):
+Invariantes:
 - Ninguna variante `pending` aparece en un target generado: un logro sin
   variantes `approved` se ignora en silencio en merge (jamás se inventa
   contenido), igual que un índice inválido.
@@ -17,7 +17,7 @@ Invariantes (doc funcional §5):
 from typing import Any, Dict, List, Optional
 
 # Ángulos de énfasis: set chico y fijo para que la elección siga siendo
-# clara y comparable contra el JD (doc funcional §2.2).
+# clara y comparable contra el JD.
 VALID_ANGLES = [
     "liderazgo",
     "ownership",
@@ -38,7 +38,7 @@ MAX_ANGLES_PER_VARIANT = 2
 
 # Un logro escrito a mano es revisado por el usuario por definición: el
 # status ausente se trata como aprobado (las importadas sin revisar traen
-# status 'pending' explícito — ver doc funcional §5).
+# status 'pending' explícito).
 DEFAULT_STATUS = "approved"
 
 
@@ -59,7 +59,7 @@ def normalize_angles(variant: Dict[str, Any]) -> List[str]:
 
 
 def representative_variant(achievement: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    """Variante representativa para indexación/selección (D4):
+    """Variante representativa para indexación/selección:
 
     la `approved` con mayor `used_count`; empate → la más reciente
     (`created_at`, ISO comparables lexicográficamente); si no hay
@@ -95,7 +95,7 @@ def index_text(achievement: Dict[str, Any]) -> str:
 
 
 def approved_variant_texts(achievement: Dict[str, Any]) -> List[str]:
-    """Textos de todas las variantes `approved` (corpus ATS, D6)."""
+    """Textos de todas las variantes `approved` (corpus ATS)."""
     texts: List[str] = []
     for v in achievement.get("variants", []):
         if variant_status(v) != "approved":
@@ -114,7 +114,7 @@ def resolve_variant(
     representativa si no hay match de ángulo. None si no hay variantes
     `approved` → el slot se ignora en silencio (regla de `pending`).
     Devuelve la variante completa para poder registrar su `id` en
-    `used_count` (F2); `resolve_variant_text` es su proyección a texto.
+    `used_count`; `resolve_variant_text` es su proyección a texto.
     """
     approved = [
         v for v in achievement.get("variants", []) if variant_status(v) == "approved"
@@ -183,7 +183,7 @@ def resolve_slot_with_variant(
 ) -> tuple:
     """(texto emitido, variante usada o None). Igual regla que
     `resolve_slot_text`, pero devuelve además la variante `approved` que
-    merge emitió — la necesita para incrementar `used_count` (F2). Para
+    merge emitió — la necesita para incrementar `used_count`. Para
     slots legacy la variante es siempre None.
     """
     if slot.get("kind") == "achievement":
@@ -234,7 +234,7 @@ def apply_variant_usage(
 
 
 def facts_corpus_parts(achievement: Dict[str, Any]) -> List[str]:
-    """Partes de `facts` que suman al corpus ATS (D6): `action` + `tools`.
+    """Partes de `facts` que suman al corpus ATS: `action` + `tools`.
     El resto del respaldo lo dan los textos de las variantes aprobadas.
     """
     parts: List[str] = []
@@ -255,10 +255,9 @@ def validate_achievements_structure(master_cv: Dict[str, Any]) -> List[str]:
     el mismo estilo que `validate_master_cv_structure` (merge.py).
 
     Reglas:
-    - Una entrada usa `highlights` O `achievements`, nunca ambos a la vez
-      (D1): la conversión legacy → achievement es mecánica y sin pérdida
-      (doc funcional §2.3), así que mezclar formatos en una entrada es
-      siempre un error del usuario.
+    - Una entrada usa `highlights` O `achievements`, nunca ambos a la vez:
+      la conversión legacy → achievement es mecánica y sin pérdida, así que
+      mezclar formatos en una entrada es siempre un error del usuario.
     - Todo achievement tiene `id` y al menos una variante; toda variante
       tiene `id` y `text` no vacío; status/source/angle pertenecen a las
       taxonomías fijas; `used_count` es un entero >= 0.
@@ -281,7 +280,7 @@ def validate_achievements_structure(master_cv: Dict[str, Any]) -> List[str]:
             if entry.get("highlights"):
                 errors.append(
                     f"{prefix} tiene `highlights` y `achievements` a la vez: "
-                    "usá un solo formato por entrada (D1)."
+                    "usá un solo formato por entrada."
                 )
             achievements = entry["achievements"]
             if not isinstance(achievements, list):

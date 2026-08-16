@@ -1,7 +1,7 @@
-"""Tests del onboarding conversacional (F4): structurize_achievement y
+"""Tests del onboarding conversacional: structurize_achievement y
 POST /api/onboarding/structurize.
 
-Invariante de la fase: el endpoint solo devuelve el candidato; nada entra
+Invariante: el endpoint solo devuelve el candidato; nada entra
 al master sin confirmación del usuario (eso lo hace POST /api/master-cv,
 ya cubierto en test_master_cv_api.py).
 """

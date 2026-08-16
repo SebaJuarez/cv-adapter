@@ -1,4 +1,4 @@
-"""Router del onboarding conversacional (F4): estructura las respuestas
+"""Router del onboarding conversacional: estructura las respuestas
 libres del chat en un achievement candidato.
 
 El candidato NUNCA se guarda acá: el endpoint solo devuelve

@@ -1,4 +1,4 @@
-"""Regresión de la generación asistida de variantes (F6, doc §6.6):
+"""Regresión de la generación asistida de variantes:
 
 el LLM redacta SOLO con los hechos del logro, los términos declarados se
 verifican contra el corpus (con sinónimos), los no respaldados se listan

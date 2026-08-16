@@ -1,4 +1,4 @@
-"""Router de importación de CVs viejos (F5, doc §4.2/§6.3).
+"""Router de importación de CVs viejos.
 
 El pipeline: el frontend sube uno o más CVs (texto pegado, YAML/JSON
 RenderCV o PDF) → este router los parsea a bullets, los clusteriza con

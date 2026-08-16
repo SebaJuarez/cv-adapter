@@ -11,7 +11,7 @@ class JobDescriptionIn(BaseModel):
     job_description: str
     manual_keywords: list[str] = []
     # Fuerza el recálculo completo de la fase IR, salteando el cache de
-    # selección (P0.1). Botón "Forzar regeneración" del frontend.
+    # selección. Botón "Forzar regeneración" del frontend.
     force: bool = False
 
 
@@ -46,7 +46,7 @@ class ExtractFactsIn(BaseModel):
 
 
 class GenerateVariantIn(BaseModel):
-    # F6 (doc §6.6): redacción asistida de variante. El frontend manda los
+    # Redacción asistida de variante. El frontend manda los
     # hechos y redacciones actuales del logro (mismo patrón que
     # ExtractFactsIn: el master del disco puede diferir de la edición en
     # memoria sin guardar); el servidor nunca replica el master.
@@ -58,7 +58,7 @@ class GenerateVariantIn(BaseModel):
 
 
 class OnboardingAnswersIn(BaseModel):
-    # Respuestas libres del onboarding conversacional (F4): qué hiciste,
+    # Respuestas libres del onboarding conversacional: qué hiciste,
     # herramientas, resultados. Cada una puede venir vacía ("no sé / paso
     # esta pregunta" es válido) salvo work, que el router exige no vacío.
     work: str = ""
@@ -67,7 +67,7 @@ class OnboardingAnswersIn(BaseModel):
 
 
 class ImportFileIn(BaseModel):
-    # Un CV a importar (F5): kind es "text" | "yaml" | "json" | "pdf".
+    # Un CV a importar: kind es "text" | "yaml" | "json" | "pdf".
     # Para pdf, `content` es el archivo en base64.
     name: str
     kind: str

@@ -1,4 +1,4 @@
-"""Cache en disco de la selección IR (P0.1).
+"""Cache en disco de la selección IR.
 
 El paso más caro del pipeline son los embeddings densos + el cross-encoder.
 Cuando se regenera la misma oferta (o se pincha "Regenerar sección"

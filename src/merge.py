@@ -125,7 +125,7 @@ def _record_variant_usage(
     variant: Optional[Dict[str, Any]],
     variant_usage: Optional[Dict[str, int]],
 ) -> None:
-    """Suma un uso a la variante emitida (F2, used_count). Solo cuenta lo
+    """Suma un uso a la variante emitida (used_count). Solo cuenta lo
     que REALMENTE entró al target: este helper se llama tras un append
     exitoso (los duplicados descartados no suman)."""
     if variant is None or variant_usage is None:
@@ -175,7 +175,7 @@ def _apply_entry_selection(
         entry = deepcopy(original)
         slots = entry_bullet_slots(original)
         order = item.get("highlight_order") or list(range(len(slots)))
-        # Ángulos preferidos por logro (F2): dict {slot_index(str): ángulo}.
+        # Ángulos preferidos por logro: dict {slot_index(str): ángulo}.
         # Solo matchean variantes con ese ángulo; si ninguna, el slot cae a
         # la variante representativa (misma regla de resolve_variant).
         preferred_angles = item.get("preferred_angles") or {}
@@ -200,8 +200,8 @@ def _apply_entry_selection(
                     variant_meta[str(s_idx)] = {
                         "ach_id": ach_id,
                         "variant_id": variant_id,
-                        # F7 (historial): ángulo y texto emitido se persisten
-                        # por corrida para trazabilidad (ver extract_bullet_variants).
+                        # Ángulo y texto emitido se persisten por corrida
+                        # para trazabilidad (ver extract_bullet_variants).
                         "angle": (variant or {}).get("angle") or "",
                         "text": text,
                     }
@@ -233,7 +233,7 @@ def _apply_entry_selection(
         if source_section is not None:
             entry["_src_section"] = source_section
             entry["_src_index"] = idx
-            # Metadata por bullet (Fase 3, selector de variante): el orden
+            # Metadata por bullet (selector de variante): el orden
             # efectivo de slots y la variante emitida por cada logro, para
             # que el frontend pueda ofrecer el cambio de redacción. Solo en
             # memoria: strip_internal_keys las limpia al guardar.
@@ -246,7 +246,7 @@ def _apply_entry_selection(
 
 
 def extract_bullet_variants(target_cv: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Traza de qué variante emitió cada bullet del target (F7, historial).
+    """Traza de qué variante emitió cada bullet del target (historial).
 
     Recorre experience/projects y, para cada entrada con metadata interna
     (`_src_slot_map`/`_src_variant_map`), reconstruye por bullet el logro
@@ -301,7 +301,7 @@ def _master_cv_corpus(master_cv: Dict[str, Any]) -> str:
                 parts.extend(
                     str(h) for h in entry.get("highlights", []) if isinstance(h, str)
                 )
-                # D6: el corpus ATS suma los hechos (action/tools) y TODAS
+                # El corpus ATS suma los hechos (action/tools) y TODAS
                 # las variantes aprobadas de los achievements — si una
                 # keyword está aprobada en el banco de redacciones, "existe
                 # en el master" aunque la variante emitida en esta corrida
@@ -365,7 +365,7 @@ def build_section_entries(
     sección' (re-seleccionar solo una parte sin tocar el resto del CV).
 
     `variant_usage` (opcional) es un dict compartido donde se acumulan los
-    `id` de las variantes emitidas (F2, para incrementar used_count)."""
+    `id` de las variantes emitidas (para incrementar used_count)."""
     config = config or load_config()
     master_sections = master_cv.get("cv", {}).get("sections", {})
 
@@ -416,7 +416,7 @@ def build_target_cv(
     compatibilidad con el resto del sistema.
 
     `variant_usage` (opcional): dict compartido donde se acumulan los
-    `id` de las variantes emitidas (F2, para incrementar used_count)."""
+    `id` de las variantes emitidas (para incrementar used_count)."""
     config = config or load_config()
     master_sections = master_cv.get("cv", {}).get("sections", {})
     new_sections: Dict[str, Any] = {}
@@ -526,8 +526,8 @@ def build_target_cv(
 
 
 # ~Caracteres de texto corrido por línea a 10-11pt en A4 con márgenes estándar.
-# Es una cota gruesa para la heurística de P1.4: sirve para avisar, jamás
-# para bloquear (el render real es Typst y varía por tema).
+# Es una cota gruesa para la heurística de estimación de página: sirve para
+# avisar, jamás para bloquear (el render real es Typst y varía por tema).
 _CHARS_PER_LINE = 90
 
 
@@ -539,7 +539,7 @@ def _text_lines(text: str) -> int:
 
 
 def estimate_page_overflow(target_cv: Dict[str, Any], config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    """Estima si el target_cv cabe en una página (heurística NO bloqueante, P1.4).
+    """Estima si el target_cv cabe en una página (heurística NO bloqueante).
 
     Cuenta líneas aproximadas del documento final: encabezado + una línea por
     entrada + texto corrido partido cada ~90 caracteres. El presupuesto por

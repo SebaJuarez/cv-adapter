@@ -25,7 +25,7 @@ OUTPUT_DIR = BASE_DIR / "output"
 VALID_STATUSES = ("pendiente", "aplicado", "entrevista", "oferta", "rechazado")
 DEFAULT_STATUS = "pendiente"
 
-# Estados que cuentan como "éxito" para las estadísticas de variantes (F7):
+# Estados que cuentan como "éxito" para las estadísticas de variantes:
 # la corrida llegó a entrevista o mejor.
 SUCCESS_STATUSES = ("entrevista", "oferta")
 
@@ -224,11 +224,11 @@ def add_run(
     """Crea y persiste un registro de corrida. Devuelve el run creado.
 
     `keyword_report` es el resultado de `build_keyword_report` (lo computa
-    `src/services/generation.py`). `variant_usage` (F2) mapea `id` de
+    `src/services/generation.py`). `variant_usage` mapea `id` de
     variante a usos en este run; se aplica al guardar el máster
     (`POST /api/master-cv`) y el run se marca `variant_usage_applied`.
 
-    `bullet_variants` (F7) es la traza por bullet de qué variante emitió el
+    `bullet_variants` es la traza por bullet de qué variante emitió el
     merge (`extract_bullet_variants`): se persiste para que el historial
     muestre qué redacción se usó en cada bullet y siga siendo legible aunque
     la variante después se marque deprecated o se borre del master.
@@ -429,7 +429,7 @@ def aggregate_missing_keywords(runs: List[Dict[str, Any]]) -> List[Dict[str, Any
 
 
 def aggregate_variant_stats(runs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Agrega qué variantes se usaron a través de las corridas (F7, §6.7).
+    """Agrega qué variantes se usaron a través de las corridas.
 
     Por variante (clave `ach_id` + `variant_id` de la traza `bullet_variants`
     persistida por `add_run`): cuántas corridas distintas la usaron, cuántas

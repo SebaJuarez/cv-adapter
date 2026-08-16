@@ -1,4 +1,4 @@
-"""Tests de API del CV maestro: guardado con achievements (F2) y
+"""Tests de API del CV maestro: guardado con achievements y
 POST /api/master/extract-facts (enriquecer bullet)."""
 import pytest
 from fastapi.testclient import TestClient

@@ -11,7 +11,7 @@ import { mountOnboarding } from "./onboarding.js";
 
 // --------------------------------------------------------- vista: master
 
-// F4: el master está vacío cuando no hay nombre y ninguna sección tiene
+// El master está vacío cuando no hay nombre y ninguna sección tiene
 // entradas — es la señal de "usuario nuevo sin CV" que dispara el
 // onboarding conversacional.
 function isMasterEmpty(doc) {

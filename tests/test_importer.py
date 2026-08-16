@@ -1,7 +1,7 @@
-"""Tests de la importación de CVs (F5): parseo de fuentes, clustering,
+"""Tests de la importación de CVs: parseo de fuentes, clustering,
 consolidación y la sesión de revisión con su API.
 
-Invariante de la fase: el router nunca escribe el master — solo arma
+Invariante: el router nunca escribe el master — solo arma
 candidatos y sesiones; la confirmación en el master es POST
 /api/master-cv (ya cubierto en test_master_cv_api.py).
 """
@@ -163,7 +163,7 @@ def test_clustering_max_sim_mutuо_evita_embudo():
 
     # Un bullet "embudo" (3) es similar a todos pero no es el máximo de
     # NINGUNA fila: no puede unir grupos de logs distintos en un cluster.
-    # Sim del QA real con e5-small: duplicados ~0.95+, no-duplicados 0.88-0.91.
+    # Sim del scoring real con e5-small: duplicados ~0.95+, no-duplicados 0.88-0.91.
     m = np.array([
         [1.0, 0.88, 0.89, 0.90, 0.98, 0.89],
         [0.88, 1.0, 0.87, 0.91, 0.89, 0.95],

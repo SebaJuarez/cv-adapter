@@ -1,4 +1,4 @@
-"""Onboarding conversacional (F4): estructura respuestas libres en un
+"""Onboarding conversacional: estructura respuestas libres en un
 achievement candidato (facts + primera variante).
 
 El LLM propone y el usuario CONFIRMA antes de que nada entre al master:

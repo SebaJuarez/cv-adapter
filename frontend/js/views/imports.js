@@ -1,5 +1,5 @@
-//módulo: imports — bandeja de revisión de clusters de CVs importados (F5,
-//doc §4.2/§6.3): subida de PDFs/texto/YAML, agrupación automática y
+//módulo: imports — bandeja de revisión de clusters de CVs importados:
+//subida de PDFs/texto/YAML, agrupación automática y
 //confirmación explícita cluster por cluster. Nada entra al master sin que
 //el usuario lo revise; la sesión queda guardada para retomar después.
 
@@ -119,7 +119,7 @@ function diffMarkup(texts) {
 function buildEntries(candidates) {
   return (candidates || []).map((c) => {
     const entry = blankEntryFor("experience", "entries");
-    delete entry.highlights; // D1: una entrada usa un solo formato
+    delete entry.highlights; // una entrada usa un solo formato
     entry.achievements = [c];
     return entry;
   });

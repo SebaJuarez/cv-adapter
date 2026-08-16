@@ -138,7 +138,7 @@ def keyword_stats() -> Dict[str, Any]:
 
 @router.get("/api/history/stats/variants")
 def variant_stats() -> Dict[str, Any]:
-    """Variantes más usadas (F7, §6.7): agrega la traza `bullet_variants` de
+    """Variantes más usadas: agrega la traza `bullet_variants` de
     cada corrida — cuántas corridas usaron cada variante y cuántas de esas
     llegaron a entrevista u oferta (el estado lo carga el usuario)."""
     runs = history_mod.load_runs(RUNS_PATH)

@@ -1,11 +1,11 @@
-"""Importación de CVs viejos (F5): extracción de bullets desde texto libre,
+"""Importación de CVs viejos: extracción de bullets desde texto libre,
 YAML/JSON RenderCV o PDF, clustering automático por embeddings densos y
 consolidación de clusters en achievements candidatos.
 
-Invariante de la fase (doc §4.2.6): nada entra al master sin pasar por la
-bandeja de revisión — este módulo solo produce CANDIDATOS y sesiones de
-revisión guardables; la escritura al master la hace el frontend con el
-POST /api/master-cv existente después de la confirmación humana.
+Invariante: nada entra al master sin pasar por la bandeja de revisión —
+este módulo solo produce CANDIDATOS y sesiones de revisión guardables; la
+escritura al master la hace el frontend con el POST /api/master-cv existente
+después de la confirmación humana.
 """
 
 import base64
@@ -114,7 +114,7 @@ def parse_document(kind: str, content: str) -> List[str]:
 
 
 # ---------------------------------------------------------------------------
-# 2. Clustering automático por embeddings densos (doc §4.2.3)
+# 2. Clustering automático por embeddings densos
 
 def _dense_similarity_matrix(texts: List[str], model, model_name: str) -> np.ndarray:
     prefixed = prefixed_texts(texts, "passage", model_name)
@@ -191,7 +191,7 @@ def _default_similarity(texts: List[str]) -> np.ndarray:
 
 
 # ---------------------------------------------------------------------------
-# 3. Consolidación del cluster en un achievement candidato (doc §4.2.4)
+# 3. Consolidación del cluster en un achievement candidato
 
 def consolidate_cluster_facts(texts: List[str], config: Dict[str, Any]) -> Dict[str, Any]:
     """Propone el `facts` de un cluster confirmado como "es el mismo logro":
@@ -250,7 +250,7 @@ def build_achievement_candidate(texts: List[str], facts: Optional[Dict[str, Any]
 
 
 # ---------------------------------------------------------------------------
-# 4. Sesión de revisión guardable (doc §6.3: "guardar a medias y volver")
+# 4. Sesión de revisión guardable ("guardar a medias y volver")
 
 _RESOLUTION_STATUSES = ("pending", "awaiting", "done")
 

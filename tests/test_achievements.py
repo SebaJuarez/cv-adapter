@@ -1,10 +1,10 @@
-"""Fase 1 — modelo de logros con variantes: compatibilidad y esquema.
+"""Modelo de logros con variantes: compatibilidad y esquema.
 
 Cubre `src/achievements.py` (slots, variante representativa, validación)
 y su integración en merge/selection: el máster legacy sigue generando el
 mismo target, los achievements se resuelven a su variante representativa,
 el bloque `achievements` jamás llega al target, las variantes `pending`
-nunca emiten texto, y el corpus ATS (D6) incluye hechos + variantes
+nunca emiten texto, y el corpus ATS incluye hechos + variantes
 aprobadas.
 """
 import pytest
@@ -58,8 +58,8 @@ def _achievement(aid, variants, facts=None):
 @pytest.fixture
 def master_achievements():
     """Máster con una entrada en formato achievements + una legacy, para
-    probar la convivencia de formatos en el MISMO archivo (D1 aplica por
-    entrada, no por archivo)."""
+    probar la convivencia de formatos en el MISMO archivo (la regla de un
+    solo formato aplica por entrada, no por archivo)."""
     return {
         "cv": {
             "name": "Test User",
@@ -266,7 +266,7 @@ def test_facts_corpus_parts_solo_action_y_tools():
         facts={
             "action": "Diseñé un sistema",
             "tools": ["Java", "", 42, "PostgreSQL"],
-            "scope": "equipo de 4",  # D6: fuera del corpus
+            "scope": "equipo de 4",  # fuera del corpus
         },
     )
     assert facts_corpus_parts(ach) == ["Diseñé un sistema", "Java", "PostgreSQL"]
@@ -474,7 +474,7 @@ def test_build_target_cv_entrada_legacy_no_cambia(master_achievements, config):
 
 
 # ---------------------------------------------------------------------------
-# F7 — traza de variante por bullet (historial)
+# Traza de variante por bullet (historial)
 # ---------------------------------------------------------------------------
 def test_extract_bullet_variants_traza_en_orden_efectivo(master_achievements, config):
     target = build_target_cv(master_achievements, _selection([2, 0, 1]), config, job_description="")
@@ -619,7 +619,7 @@ def test_save_yaml_persiste_achievements_sin_strippear(master_achievements, tmp_
 
 
 # ---------------------------------------------------------------------------
-# Invariante ATS (D6): el corpus del master incluye hechos + variantes aprobadas
+# Invariante ATS: el corpus del master incluye hechos + variantes aprobadas
 # ---------------------------------------------------------------------------
 def test_keywords_se_verifican_contra_variante_no_representativa(master_achievements, config):
     # "equipo" solo está en var_1b (aprobada, no representativa) y en la oferta.
@@ -630,7 +630,7 @@ def test_keywords_se_verifican_contra_variante_no_representativa(master_achievem
 
 
 def test_keywords_se_verifican_contra_facts_tools(master_achievements, config):
-    # "postgres" matchea "PostgreSQL" de facts.tools vía sinónimos (D6).
+    # "postgres" matchea "PostgreSQL" de facts.tools vía sinónimos.
     verificadas = _build_verified_keywords(
         master_achievements, "Buscamos expertos en postgres.", ["postgres"], 10
     )
@@ -719,7 +719,7 @@ def test_extract_bullets_legacy_sin_achievements_no_cambia(master_cv):
 
 
 # ---------------------------------------------------------------------------
-# used_count: la variante que merge emite se registra (F2)
+# used_count: la variante que merge emite se registra
 # ---------------------------------------------------------------------------
 def test_resolve_variant_es_la_misma_eleccion_que_resolve_variant_text():
     ach = _achievement(
@@ -802,7 +802,7 @@ def test_build_target_cv_usa_preferred_angle_del_item(master_achievements, confi
 
 
 def test_build_target_cv_angulo_sin_match_cae_a_representativa(master_achievements, config):
-    # Sin variante con ese ángulo -> fallback a la representativa (D4).
+    # Sin variante con ese ángulo -> fallback a la representativa.
     usage: dict = {}
     selection = _selection([0, 1, 2])
     selection["selected_experience"][0]["preferred_angles"] = {"0": "vision_producto"}

@@ -1,4 +1,4 @@
-"""Tests del router de generación asistida de variantes (F6, §6.6):
+"""Tests del router de generación asistida de variantes:
 
 el endpoint recibe los hechos desde el frontend (no replica el master),
 valida datos mínimos (422: ángulo desconocido no vacío, sin contenido),

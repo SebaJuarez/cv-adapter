@@ -1,6 +1,6 @@
 """System prompt y JSON Schema para la fase ESTRATÉGICA del LLM.
 
-Fase 5: El LLM ya NO elige summary_index (eso lo hace IR) ni detecta keywords
+El LLM NO elige summary_index (eso lo hace IR) ni detecta keywords
 (ya las extrae el motor de IR). Su única tarea es redactar match_reasons en
 lenguaje natural fluido sobre bullets YA seleccionados por IR.
 """
@@ -40,7 +40,7 @@ paso en el prompt. No agregues ni saques índices."""
 
 def build_selection_schema(config: Dict[str, Any]) -> Dict[str, Any]:
     """Schema para la fase estratégica: match_reasons + ángulos opcionales
-    por logro (F2, preferred_angles)."""
+    por logro (preferred_angles)."""
     entry_item = {
         "type": "object",
         "properties": {

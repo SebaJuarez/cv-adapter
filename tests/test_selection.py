@@ -85,7 +85,7 @@ def test_singleton_reutiliza_si_cambia_clave_irrelevante(config):
 
 
 # ---------------------------------------------------------------------------
-# P0.2: penalización de términos negados del JD ("no se requiere X").
+# Penalización de términos negados del JD ("no se requiere X").
 # Mismo JD y motor salvo negation_penalty (0.3 vs 1.0 = desactivado): la
 # base de retrieval es idéntica, así que la comparación es exacta. El canal
 # denso se excluye (dense_weight=0.0) y el reranker se apaga para no
@@ -178,7 +178,7 @@ def test_select_penaliza_bullet_de_termino_negado(config, tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# P0.3: cobertura GLOBAL de keywords críticas (frecuencia >= 2 en el JD).
+# Cobertura GLOBAL de keywords críticas (frecuencia >= 2 en el JD).
 # El ajuste local solo reacomoda bullets dentro de una entrada: si la
 # keyword crítica vive en una entrada excluida completa, solo un swap entre
 # entradas la rescata. Escenario con canal de keywords puro (sparse/dense
@@ -225,8 +225,9 @@ COVERAGE_MASTER = {
 
 @pytest.fixture
 def coverage_engine(config, tmp_path):
-    """Motor determinístico para P0.3: sin reranker, canal de keywords puro
-    y presupuesto de 2 entradas / 1 highlight para forzar la exclusión."""
+    """Motor determinístico para la cobertura global: sin reranker, canal de
+    keywords puro y presupuesto de 2 entradas / 1 highlight para forzar la
+    exclusión."""
 
     def build(max_swaps, tag):
         import numpy as np
@@ -282,7 +283,7 @@ def test_global_coverage_sin_budget_no_rompe(coverage_engine):
 
 
 def test_global_coverage_no_fuerza_keyword_negada(coverage_engine):
-    # P0.2 manda: kubernetes es crítica (freq 2) pero el JD la excluye
+    # La negación manda: kubernetes es crítica (freq 2) pero el JD la excluye
     # explícitamente — forzar cobertura contradeciría la negación.
     sel = coverage_engine(3, "negado").select(COVERAGE_MASTER, COVERAGE_JD_NEGADO)
     assert "kubernetes" in sel["negated_terms"]
@@ -291,7 +292,7 @@ def test_global_coverage_no_fuerza_keyword_negada(coverage_engine):
 
 
 # ---------------------------------------------------------------------------
-# P1.3: las keywords manuales del usuario (config custom_keywords) son
+# Las keywords manuales del usuario (config custom_keywords) son
 # mandatorias: van PRIMERO en keywords_detected aunque la oferta no las
 # mencione.
 # ---------------------------------------------------------------------------
@@ -322,7 +323,7 @@ def test_select_custom_keywords_van_primero(config, master_cv, job_description, 
 
 
 # ---------------------------------------------------------------------------
-# P1.1: keywords abiertas — un término fuera del diccionario, presente en
+# Keywords abiertas — un término fuera del diccionario, presente en
 # el master y en el JD (frecuencia 2), entra a keywords_detected.
 # ---------------------------------------------------------------------------
 def test_select_detecta_open_keyword_del_master(config, tmp_path):

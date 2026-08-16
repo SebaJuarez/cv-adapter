@@ -65,7 +65,7 @@ class TestHistoryRuns:
         assert res.json() == {"keywords": []}
 
     def test_stats_variantes(self, client, tmp_path):
-        # F7: el endpoint agrega la traza bullet_variants de las corridas.
+        # El endpoint agrega la traza bullet_variants de las corridas.
         path = tmp_path / "run_history.json"
         report = {
             "all_keywords": [],
@@ -178,7 +178,7 @@ class TestListRunsFilters:
         assert body["runs"][0]["offer_title"] == "Backend Engineer (Python)"
 
     def test_filtro_por_rango_de_score(self, client, tmp_path):
-        # P2.4: min_score/max_score filtran por ats_score (0-100).
+        # min_score/max_score filtran por ats_score (0-100).
         path = tmp_path / "run_history.json"
         self._add_run_con_score("Backend Engineer", 85, path=path)
         self._add_run_con_score("Data Analyst", 60, path=path)
@@ -342,7 +342,7 @@ class TestGenerateHook:
         assert body["run_id"]
         assert client.get("/api/history/runs").json()["runs"][0]["run_id"] == body["run_id"]
 
-        # P1.4: la respuesta incluye la estimación de página (aviso no bloqueante).
+        # La respuesta incluye la estimación de página (aviso no bloqueante).
         assert isinstance(body["page_estimate"], dict)
         assert "estimated_lines" in body["page_estimate"]
         assert "page_budget_lines" in body["page_estimate"]
@@ -355,7 +355,7 @@ class TestGenerateHook:
 
 class TestPreviewKeywords:
     def test_preview_solo_extract_keywords_sin_pipeline(self, client, master_cv, monkeypatch):
-        # P1.2: el preview es barato por diseño — nunca debe instanciar
+        # El preview es barato por diseño — nunca debe instanciar
         # SelectionEngine (eso cargaría los modelos de embeddings).
         from src.selection import SelectionEngine
 
