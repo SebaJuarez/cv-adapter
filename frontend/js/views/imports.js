@@ -9,6 +9,7 @@ import { h, $ } from "../dom.js";
 import { blankEntryFor } from "../labels.js";
 import { toast } from "../notify.js";
 import { markDirty, snapshotView, state } from "../state.js";
+import { drawMasterView } from "./master.js";
 
 const SESSION_KEY = "cvImportSessionId";
 
@@ -134,6 +135,7 @@ async function confirmEntries(source, entries) {
   try {
     await api("/api/master-cv", { method: "POST", body: JSON.stringify(state.masterDoc) });
     snapshotView("master");
+    drawMasterView(); // el master ya cambió: re-renderizar para no verlo viejo
     if (source !== "orphans") {
       await api(`/api/imports/session/${session.id}/confirm`, {
         method: "POST",

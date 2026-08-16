@@ -73,6 +73,39 @@ function drawMasterView() {
   applyMasterFilter();
 }
 
+// Re-render del maestro que preserva foco y scroll: tras la primera edición
+// de un logro (markAchDirtyFromEvent) hay que reconstruir la vista para que
+// aparezcan las acciones del draft (Previsualizar/Guardar/Descartar) y el
+// contador de pendientes, sin cortar la escritura (el render reconstruye el
+// DOM: se reubica el foco en el campo editado, identificado por el valor que
+// cambió dentro del mismo ach-card).
+window.__achDirtyRerender = () => {
+  const masterActive = $("#view-master")?.classList.contains("is-active");
+  if (!masterActive) return;
+  const active = document.activeElement;
+  const card = active && active.closest ? active.closest(".ach-card") : null;
+  const achId = card ? card.dataset.achId : null;
+  const tag = active ? active.tagName : null;
+  const oldVal = active && "value" in active ? active.value : null;
+  const oldSel = active && "selectedIndex" in active ? active.selectedIndex : -1;
+  const scrollY = window.scrollY;
+  drawMasterView();
+  window.scrollTo(0, scrollY);
+  if (tag && achId) {
+    const el = [...document.querySelectorAll(`.ach-card[data-ach-id="${achId}"] *`)].find((n) => {
+      if (n.tagName !== tag) return false;
+      if (n.tagName === "SELECT") return n.selectedIndex !== oldSel;
+      return "value" in n && n.value !== oldVal;
+    });
+    if (el) {
+      el.focus();
+      if (el.tagName === "TEXTAREA" || el.tagName === "INPUT") {
+        el.setSelectionRange(el.value.length, el.value.length);
+      }
+    }
+  }
+};
+
 function applyMasterFilter() {
   const sections = $("#master-sections");
   const count = $("#master-filter-count");

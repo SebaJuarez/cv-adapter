@@ -946,6 +946,7 @@ function representativeText(ach) {
 function markAchDirtyFromEvent(ev) {
   const card = ev.target.closest && ev.target.closest(".ach-card");
   if (!card || !card.dataset.achId) return;
+  const firstDirty = !dirtyAch.has(card.dataset.achId);
   dirtyAch.add(card.dataset.achId);
   let badge = card.querySelector(".ach-dirty-badge");
   if (!badge) {
@@ -954,6 +955,13 @@ function markAchDirtyFromEvent(ev) {
     if (head) head.appendChild(badge);
   }
   badge.classList.add("show");
+  // Primera edición: re-render que preserva foco/scroll (registrado por la
+  // vista maestro) para que aparezcan las acciones del draft
+  // (Previsualizar/Guardar/Descartar) y el contador de pendientes. Los
+  // keystrokes siguientes no re-renderizan para no cortar la escritura.
+  if (firstDirty && typeof window.__achDirtyRerender === "function") {
+    window.__achDirtyRerender();
+  }
 }
 
 document.addEventListener("input", markAchDirtyFromEvent, true);
