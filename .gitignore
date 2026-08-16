@@ -33,6 +33,13 @@ __pycache__
 # Sesiones de importacion de CVs (F5) - datos personales del usuario
 /data/import_sessions
 
+# Respaldos de datos reales del usuario (CV, historial, config con API key)
+/data/.bak/
+
+# Logs del server local
+/uvicorn.err
+/uvicorn.log
+
 # Tooling de grabacion de GIFs demo (tools/demo-recorder)
 /tools/gifsicle
 /tools/demo-recorder/node_modules

@@ -16,14 +16,13 @@
   TODO antes de publicar:
   · si conectaste GitHub Actions, agregá acá el badge real:
     ![CI](https://github.com/<tu-usuario>/cv-adapter/actions/workflows/tests.yml/badge.svg)
-  · reemplazá los placeholders de GIF (docs/media/*.gif) por capturas reales
   · si tu licencia no es MIT, actualizá el badge de arriba + el archivo LICENSE
 -->
 
 <p align="center">
   <img src="docs/media/demo-hero.gif" alt="Demo: pegar una oferta laboral y generar un CV adaptado en segundos" width="820">
   <br>
-  <sub>🚧 <em>GIF pendiente — grabar el flujo completo: pegar oferta → revisar selección → descargar PDF</em></sub>
+  <sub><em>Flujo completo: pegar oferta → revisar selección → descargar PDF</em></sub>
 </p>
 
 **cv-adapter** pega una oferta laboral y elige — de tu CV maestro completo —
@@ -86,7 +85,7 @@ en un panel de "contenido excluido", con un botón para traerlo manualmente.
 <p align="center">
   <img src="docs/media/demo-apply.gif" alt="Demo: generar CV, keyword report y panel de match reasons" width="760">
   <br>
-  <sub>🚧 <em>GIF pendiente — vista "Nueva aplicación": keyword report, scores por bullet, tooltip de JD</em></sub>
+  <sub><em>Vista "Nueva aplicación": keyword report, scores por bullet, tooltip con el fragmento de la oferta</em></sub>
 </p>
 
 ### 📝 Logros con variantes de redacción
@@ -100,7 +99,7 @@ matchea mejor con cada oferta.
 <p align="center">
   <img src="docs/media/demo-achievements.gif" alt="Demo: editor de logros con hechos y variantes por ángulo" width="760">
   <br>
-  <sub>🚧 <em>GIF pendiente — editor de logros: hechos, variantes, ángulos, "usada en N CVs"</em></sub>
+  <sub><em>Editor de logros: hechos, variantes por ángulo, "usada en N CVs", enriquecer un bullet legacy</em></sub>
 </p>
 
 ### 🤖 Generación asistida de una redacción nueva, bajo aprobación humana
@@ -114,7 +113,7 @@ resaltados — nada se aplica sin que el usuario elija explícitamente
 <p align="center">
   <img src="docs/media/demo-variant-gen.gif" alt="Demo: generación asistida de variante con comparación lado a lado" width="760">
   <br>
-  <sub>🚧 <em>GIF pendiente — botón ✏ → comparación lado a lado → "usar y guardar"</em></sub>
+  <sub><em>Botón ✏ en un bullet con logro → comparación lado a lado → "usar y guardar"</em></sub>
 </p>
 
 ### 📥 Importación masiva de CVs viejos
@@ -127,7 +126,7 @@ separar o descartar cluster por cluster.
 <p align="center">
   <img src="docs/media/demo-imports.gif" alt="Demo: bandeja de revisión de clusters de CVs importados" width="760">
   <br>
-  <sub>🚧 <em>GIF pendiente — subir CVs → bandeja de clusters con diff resaltado → confirmar</em></sub>
+  <sub><em>Subir CVs → bandeja de clusters con diff resaltado → confirmar logros importados</em></sub>
 </p>
 
 ### 🕓 Historial, ATS score y seguimiento de postulaciones
@@ -140,7 +139,7 @@ corridas, para detectar patrones ("terraform" aparece en 8 de tus últimas
 <p align="center">
   <img src="docs/media/demo-history.gif" alt="Demo: historial de corridas, ATS score y keywords faltantes agregadas" width="760">
   <br>
-  <sub>🚧 <em>GIF pendiente — historial: filtros, comparar dos corridas, keywords que se repiten</em></sub>
+  <sub><em>Historial: filtros, estado de aplicación, comparar dos corridas, variantes más usadas</em></sub>
 </p>
 
 ### 💬 Arrancar de cero sin miedo a la hoja en blanco
