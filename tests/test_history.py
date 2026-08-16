@@ -241,6 +241,22 @@ class TestDeleteRun:
         )
         assert pdf.exists()
 
+    @pytest.mark.parametrize("sibling", ["output-old", "output_backup"])
+    def test_delete_files_no_toca_pdf_en_directorio_hermano(
+        self, history_path, jd, keyword_report, tmp_path, sibling
+    ):
+        output_dir = tmp_path / "output"
+        pdf = tmp_path / sibling / "CV.pdf"
+        pdf.parent.mkdir()
+        pdf.write_text("x", encoding="utf-8")
+        run = add_run(jd, keyword_report, pdf_path=str(pdf), path=history_path)
+
+        delete_run(
+            run["run_id"], path=history_path, delete_files=True,
+            cvs_dir=tmp_path / "cvs", output_dir=output_dir,
+        )
+        assert pdf.exists()
+
     def test_sin_delete_files_conserva_archivos(self, history_path, jd, keyword_report, tmp_path):
         run = add_run(jd, keyword_report, pdf_path=str(tmp_path / "CV.pdf"), path=history_path)
         cvs_dir = tmp_path / "cvs"

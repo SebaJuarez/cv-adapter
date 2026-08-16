@@ -347,9 +347,9 @@ def _delete_run_files(
     try:
         target = Path(pdf_path).resolve()
         out = (output_dir or OUTPUT_DIR).resolve()
-        if str(target).startswith(str(out)) and target.is_file():
+        if target.is_relative_to(out) and target.is_file():
             target.unlink()
-    except OSError:
+    except (OSError, ValueError):
         pass
 
 

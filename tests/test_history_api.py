@@ -463,6 +463,14 @@ class TestDownloadPdf:
         res = client.get("/api/download-pdf", params={"path": str(pdf)})
         assert res.status_code == 400
 
+    @pytest.mark.parametrize("sibling", ["output-old", "output_backup"])
+    def test_path_en_directorio_hermano_400(self, client, output_dir, tmp_path, sibling):
+        pdf = tmp_path / sibling / "CV.pdf"
+        pdf.parent.mkdir()
+        pdf.write_text("x", encoding="utf-8")
+        res = client.get("/api/download-pdf", params={"path": str(pdf)})
+        assert res.status_code == 400
+
     def test_pdf_inexistente_404(self, client, output_dir):
         pdf = output_dir / "no_existe.pdf"
         res = client.get("/api/download-pdf", params={"path": str(pdf)})

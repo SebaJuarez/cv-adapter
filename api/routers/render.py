@@ -55,7 +55,11 @@ def download_pdf(path: Optional[str] = None, inline: bool = False) -> FileRespon
     disposition = "inline" if inline else "attachment"
     if path:
         target = (OUTPUT_DIR / path).resolve()
-        if not str(target).startswith(str(OUTPUT_DIR.resolve())):
+        try:
+            inside = target.is_relative_to(OUTPUT_DIR.resolve())
+        except ValueError:
+            inside = False
+        if not inside:
             raise HTTPException(status_code=400, detail="Ruta inválida.")
         if not target.is_file():
             raise HTTPException(status_code=404, detail="PDF no encontrado.")
