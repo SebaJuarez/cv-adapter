@@ -298,7 +298,7 @@ La razón por la que el LLM (cuando se usa) nunca toca el documento final:
 
 ```bash
 # 1. Ollama (modelo local) — o saltealo y usá una API remota, ver más abajo
-ollama pull llama3.1:8b
+ollama pull llama3:8b
 ollama serve
 
 # 2. Entorno Python
@@ -405,7 +405,3 @@ importación con clustering, y la API completa (FastAPI `TestClient`).
 ## 📄 Licencia
 
 [MIT](LICENSE) — usalo, forkealo, adaptalo.
-
----
-
-<p align="center"><sub>Hecho por <strong>[tu nombre]</strong> · <a href="https://github.com/tu-usuario">GitHub</a> · <a href="https://www.linkedin.com/in/tu-usuario">LinkedIn</a></sub></p>
