@@ -48,7 +48,7 @@ def generate_cv(
         master_cv,
         target_cv,
         job_description,
-        custom_keywords=config.get("custom_keywords"),
+        custom_keywords=list(config.get("custom_keywords") or []) + list(manual_keywords or []),
         master_corpus=_corpus_text(master_cv),
     )
     return target_cv, selection, keyword_report, variant_usage

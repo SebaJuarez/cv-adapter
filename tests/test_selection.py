@@ -291,6 +291,113 @@ def test_global_coverage_no_fuerza_keyword_negada(coverage_engine):
     assert [e["index"] for e in sel["excluded_experience"]] == [2]
 
 
+COVERAGE_MASTER_ACHIEVEMENTS = {
+    "cv": {
+        "name": "Test User",
+        "sections": {
+            "experience": [
+                {
+                    "company": "Empresa A",
+                    "position": "Backend Developer",
+                    "highlights": ["Desarrollé APIs REST con python y docker."],
+                },
+                {
+                    "company": "Empresa B",
+                    "position": "DevOps Engineer",
+                    "highlights": ["Automaticé pipelines con python y docker."],
+                },
+                {
+                    "company": "Empresa C",
+                    "position": "SRE",
+                    "achievements": [
+                        {
+                            "id": "ach_k8s",
+                            "variants": [
+                                {
+                                    "id": "v_k8s",
+                                    "status": "approved",
+                                    "text": "Operé clústeres de kubernetes.",
+                                }
+                            ],
+                        },
+                        {
+                            "id": "ach_py",
+                            "variants": [
+                                {
+                                    "id": "v_py",
+                                    "status": "approved",
+                                    "text": "Diseñé dashboards con python.",
+                                }
+                            ],
+                        },
+                    ],
+                },
+            ],
+            "skills": [],
+            "projects": [],
+            "education": [],
+        },
+    },
+    "design": {"theme": "engineeringresumes"},
+}
+
+
+def test_global_coverage_swapa_entrada_achievements(coverage_engine):
+    # La keyword crítica vive en una entrada en formato achievements (sin
+    # `highlights`): la cobertura global debe resolver los slots como merge
+    # y swapear la entrada igual que con highlights legacy.
+    sel = coverage_engine(3, "ach_swap").select(
+        COVERAGE_MASTER_ACHIEVEMENTS, COVERAGE_JD
+    )
+    indices = [e["index"] for e in sel["selected_experience"]]
+    assert indices == [0, 2]
+    entered = sel["selected_experience"][1]
+    assert entered["highlight_order"] == [0]
+    # Cobertura efectiva: el bullet de kubernetes quedó seleccionado.
+    achievements = COVERAGE_MASTER_ACHIEVEMENTS["cv"]["sections"]["experience"][2][
+        "achievements"
+    ]
+    sel_texts = [achievements[bi]["variants"][0]["text"] for bi in entered["highlight_order"]]
+    assert any("kubernetes" in t for t in sel_texts)
+
+
+def test_global_coverage_no_swapea_por_variante_pending(coverage_engine):
+    # La keyword solo existe en una variante pending: merge jamás la emitiría,
+    # así que la cobertura global no debe forzar el swap por ella.
+    master = {
+        "cv": {
+            "sections": {
+                "experience": [
+                    COVERAGE_MASTER_ACHIEVEMENTS["cv"]["sections"]["experience"][0],
+                    COVERAGE_MASTER_ACHIEVEMENTS["cv"]["sections"]["experience"][1],
+                    {
+                        "company": "Empresa C",
+                        "position": "SRE",
+                        "achievements": [
+                            {
+                                "id": "ach_k8s",
+                                "variants": [
+                                    {
+                                        "id": "v_k8s",
+                                        "status": "pending",
+                                        "text": "Operé clústeres de kubernetes.",
+                                    }
+                                ],
+                            }
+                        ],
+                    },
+                ],
+                "skills": [],
+                "projects": [],
+                "education": [],
+            }
+        }
+    }
+    sel = coverage_engine(3, "ach_pending").select(master, COVERAGE_JD)
+    assert [e["index"] for e in sel["selected_experience"]] == [0, 1]
+    assert [e["index"] for e in sel["excluded_experience"]] == [2]
+
+
 # ---------------------------------------------------------------------------
 # Las keywords manuales del usuario (config custom_keywords) son
 # mandatorias: van PRIMERO en keywords_detected aunque la oferta no las
