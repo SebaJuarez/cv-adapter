@@ -205,6 +205,34 @@ class TestUpdateRun:
         updated = update_run(run["run_id"], {"pdf_path": "output/CV.pdf"}, path=history_path)
         assert updated["pdf_path"] == "output/CV.pdf"
 
+    def test_rechaza_pdf_path_fuera_de_output(self, history_path, jd, keyword_report, tmp_path):
+        run = add_run(jd, keyword_report, path=history_path)
+        with pytest.raises(ValueError):
+            update_run(
+                run["run_id"],
+                {"pdf_path": str(tmp_path / "afuera" / "CV.pdf")},
+                path=history_path,
+                output_dir=tmp_path / "output",
+            )
+
+    def test_rechaza_pdf_path_en_directorio_hermano(
+        self, history_path, jd, keyword_report, tmp_path
+    ):
+        run = add_run(jd, keyword_report, path=history_path)
+        for sibling in ("output-old", "output_backup"):
+            with pytest.raises(ValueError):
+                update_run(
+                    run["run_id"],
+                    {"pdf_path": str(tmp_path / sibling / "CV.pdf")},
+                    path=history_path,
+                    output_dir=tmp_path / "output",
+                )
+
+    def test_acepta_pdf_path_relativo_dentro_de_output(self, history_path, jd, keyword_report):
+        run = add_run(jd, keyword_report, path=history_path)
+        updated = update_run(run["run_id"], {"pdf_path": "output/sub/CV.pdf"}, path=history_path)
+        assert updated["pdf_path"] == "output/sub/CV.pdf"
+
 
 class TestDeleteRun:
     def test_borra_y_devuelve_true(self, history_path, jd, keyword_report):

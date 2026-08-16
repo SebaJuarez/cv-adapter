@@ -34,7 +34,8 @@ FALLBACK_OFFER_TITLE = "Oferta sin título"
 
 # Claves editables del run (las demás son datos de la corrida, inmutables).
 # `pdf_path` lo actualiza el sistema al renderizar, pero también es editable
-# manualmente por si el usuario movió el PDF.
+# manualmente por si el usuario movió el PDF — siempre validado para que
+# quede dentro del directorio de output (ver update_run).
 _EDITABLE_RUN_FIELDS = ("offer_title", "offer_link", "pdf_path")
 _EDITABLE_APPLICATION_FIELDS = ("status", "applied_at", "notes")
 
@@ -274,15 +275,34 @@ def add_run(
     return run
 
 
+def _pdf_path_is_safe(pdf_path: Any, output_dir: Optional[Path]) -> bool:
+    """True si el pdf_path dado cae dentro del directorio de output.
+
+    None está permitido (run sin PDF asociado). Resuelve symlinks y
+    normaliza `..` para que un directorio hermano (`output-old/`) no pase.
+    """
+    if pdf_path is None:
+        return True
+    try:
+        target = Path(pdf_path).resolve()
+        out = (output_dir or OUTPUT_DIR).resolve()
+        return target.is_relative_to(out)
+    except (OSError, ValueError, TypeError):
+        return False
+
+
 def update_run(
     run_id: str,
     fields: Dict[str, Any],
     path: Optional[Path] = None,
+    output_dir: Optional[Path] = None,
 ) -> Optional[Dict[str, Any]]:
-    """Edita los campos editables de un run (título, link, aplicación).
+    """Edita los campos editables de un run (título, link, aplicación, PDF).
 
-    Valida `application.status` contra `VALID_STATUSES`. Devuelve el run
-    actualizado o None si no existe. No permite tocar datos de la corrida.
+    Valida `application.status` contra `VALID_STATUSES` y que `pdf_path`
+    caiga dentro del directorio de output (el historial nunca apunta a
+    archivos arbitrarios del filesystem). Devuelve el run actualizado o
+    None si no existe. No permite tocar datos de la corrida.
     """
     runs = load_runs(path)
     for run in runs:
@@ -290,6 +310,8 @@ def update_run(
             continue
         for key in _EDITABLE_RUN_FIELDS:
             if key in fields:
+                if key == "pdf_path" and not _pdf_path_is_safe(fields[key], output_dir):
+                    raise ValueError("pdf_path debe estar dentro del directorio de output.")
                 run[key] = fields[key]
         application = fields.get("application")
         if application is not None:

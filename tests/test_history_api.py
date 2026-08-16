@@ -149,6 +149,26 @@ class TestHistoryRuns:
         assert body["runs"] == []
         assert body["total"] == 0
 
+    def test_patch_ignora_pdf_path_por_schema(self, client, tmp_path):
+        jd = "Backend Engineer"
+        report = {
+            "all_keywords": [],
+            "frequencies": {},
+            "missing_in_target": [],
+            "not_in_master": [],
+            "ats_impact_score": 100,
+            "critical_missing": [],
+        }
+        run = history_mod.add_run(jd, report, path=tmp_path / "run_history.json")
+
+        res = client.patch(
+            f"/api/history/runs/{run['run_id']}",
+            json={"pdf_path": str(tmp_path / "afuera" / "CV.pdf")},
+        )
+        assert res.status_code == 200
+        reloaded = history_mod.load_runs(tmp_path / "run_history.json")[0]
+        assert reloaded["pdf_path"] is None
+
 
 class TestListRunsFilters:
     def _add_run(self, title_line, path, status="pendiente"):
