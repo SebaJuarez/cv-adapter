@@ -651,6 +651,33 @@ mark.jd-mark:hover { background: #f5b942; }
   flex-shrink: 0;
 }
 
+.settings-advanced {
+  grid-column: 1 / -1;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  padding: 0 1rem;
+}
+
+.settings-advanced summary {
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+  padding: 0.7rem 0;
+  user-select: none;
+}
+
+.settings-advanced summary::-webkit-details-marker { display: none; }
+.settings-advanced summary::before { content: "▸ "; }
+.settings-advanced[open] summary::before { content: "▾ "; }
+
+.settings-advanced-body {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.1rem 1.5rem;
+  padding-bottom: 1.1rem;
+}
+
 /* ---------------------------------------------------------------- modal */
 
 .modal-overlay {
@@ -691,6 +718,7 @@ mark.jd-mark:hover { background: #f5b942; }
   .tabs { gap: 1.2rem; }
   .btn-undo { margin-left: 0; }
   .settings-form { grid-template-columns: 1fr; }
+  .settings-advanced-body { grid-template-columns: 1fr; }
 }
 
 @media (prefers-reduced-motion: no-preference) {
