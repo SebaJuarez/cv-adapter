@@ -174,13 +174,13 @@ Abrí `http://127.0.0.1:8000`. Cuatro pestañas: **CV maestro**, **Nueva
 aplicación**, **Historial** y **Configuración** (más **Importar** para
 migrar CVs viejos).
 
-¿Sin ganas de instalar nada local? En Configuración podés elegir un
+En Configuración se puede elegir un
 proveedor remoto compatible con OpenAI (OpenAI, OpenRouter, Groq...) y
-pegar tu API key, o setear `OPENAI_API_KEY` como variable de entorno. Sin
+pegar su API key, o setear `OPENAI_API_KEY` como variable de entorno. Sin
 ningún proveedor configurado, la app funciona igual con selección de IR
 pura, sin las frases de justificación redactadas por LLM.
 
-**Probarlo sin cargar tu CV real:**
+**Probarlo con un CV de ejemplo:**
 
 ```bash
 cp data/master_cv_example.yaml data/master_cv.yaml
@@ -210,7 +210,7 @@ cv-adapter/
 
 Los knobs finos del ranking (pesos por canal, umbral de diversidad,
 penalización por negación, activar/desactivar re-ranker o stemming) hoy se
-tocan editando `config.json` — todavía no tienen campo en la UI.
+tocan editando `config.json` o mediante la pestaña **Configuración** de la UI.
 
 ```bash
 python scripts/eval_retrieval.py --master data/master_cv_example.yaml
