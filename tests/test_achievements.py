@@ -11,6 +11,7 @@ import pytest
 import yaml
 
 from src.achievements import (
+    _entry_highlights_text,
     apply_variant_usage,
     approved_variant_texts,
     entry_bullet_slots,
@@ -596,7 +597,8 @@ def test_apply_entry_selection_stripea_achievements_de_entradas_excluidas_por_ma
     master_achievements, config
 ):
     result = _apply_entry_selection(
-        master_achievements["cv"]["sections"]["experience"],
+        master_achievements,
+        "experience",
         [
             {"index": 0, "highlight_order": [0], "match_reason": "x"},
             {"index": 1, "highlight_order": [0], "match_reason": "x"},
@@ -604,10 +606,50 @@ def test_apply_entry_selection_stripea_achievements_de_entradas_excluidas_por_ma
         ],
         max_entries=2,
         max_highlights=4,
-        source_section="experience",
     )
     assert len(result) == 2
     assert all("achievements" not in e for e in result)
+
+
+# ---------------------------------------------------------------------------
+# Helper único _entry_highlights_text: textos emisibles de una entrada
+# ---------------------------------------------------------------------------
+def test_entry_highlights_text_resuelve_legacy_y_achievements():
+    master = {
+        "cv": {
+            "sections": {
+                "experience": [
+                    {
+                        "company": "X",
+                        "achievements": [
+                            _achievement(
+                                "a1",
+                                [_variant("v1", "logro aprobado")],
+                            ),
+                            _achievement(
+                                "a2",
+                                [_variant("v2", "pendiente", status="pending")],
+                            ),
+                        ],
+                        "highlights": ["legacy uno", "legacy dos"],
+                    }
+                ]
+            }
+        }
+    }
+    assert _entry_highlights_text(master, "experience", 0) == [
+        "logro aprobado",
+        None,  # sin variantes approved -> no emisible
+        "legacy uno",
+        "legacy dos",
+    ]
+
+
+def test_entry_highlights_text_fuera_de_rango_devuelve_lista_vacia():
+    master = {"cv": {"sections": {"experience": [{"company": "X", "highlights": ["h"]}]}}}
+    assert _entry_highlights_text(master, "experience", 5) == []
+    assert _entry_highlights_text(master, "experience", -1) == []
+    assert _entry_highlights_text(master, "projects", 0) == []
 
 
 def test_save_yaml_persiste_achievements_sin_strippear(master_achievements, tmp_path):

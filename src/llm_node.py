@@ -19,7 +19,11 @@ import json
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List, Optional
 
-from .achievements import VALID_ANGLES, entry_bullet_slots
+from .achievements import (
+    VALID_ANGLES,
+    _entry_highlights_text,
+    entry_bullet_slots,
+)
 from .config import load_config
 from .prompts import build_selection_schema, build_system_prompt
 from .retrieval.keywords import _count_keyword_occurrences, extract_keywords
@@ -628,8 +632,12 @@ def generate_selection(
             if not llm_item:
                 continue
             llm_reason = llm_item.get("match_reason", "")
-            highlights = entries[idx].get("highlights", []) if 0 <= idx < len(entries) else []
-            bullet_text = " ".join(h for h in highlights if isinstance(h, str))
+            # Texto emitible de la entrada (legacy + achievements): el
+            # guardarail debe verificar contra lo que merge realmente
+            # puede emitir, no solo contra highlights legacy.
+            bullet_text = " ".join(
+                t for t in _entry_highlights_text(master_cv, entries_key, idx) if t
+            )
             if llm_reason and _verify_match_reason(llm_reason, bullet_text, job_description):
                 item["match_reason"] = llm_reason
             # si no pasa el guardarail, se deja el match_reason de IR intacto

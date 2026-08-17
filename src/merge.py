@@ -14,6 +14,7 @@ from copy import deepcopy
 from typing import Any, Dict, List, Optional
 
 from .achievements import (
+    _entry_highlights_text,
     apply_variant_usage,
     approved_variant_texts,
     entry_bullet_slots,
@@ -136,11 +137,11 @@ def _record_variant_usage(
 
 
 def _apply_entry_selection(
-    master_list: List[Dict[str, Any]],
+    master_cv: Dict[str, Any],
+    section_name: str,
     selection_items: List[Dict[str, Any]],
     max_entries: int,
     max_highlights: int,
-    source_section: Optional[str] = None,
     variant_usage: Optional[Dict[str, int]] = None,
 ) -> List[Dict[str, Any]]:
     """Lógica compartida por 'experience' y 'projects': para cada entrada
@@ -155,10 +156,19 @@ def _apply_entry_selection(
     `achievements` nunca llega al target (RenderCV no lo conoce): solo
     queda su texto resuelto en `highlights`.
 
-    Si `source_section` viene seteado, cada entrada devuelta lleva además
-    '_src_section'/'_src_index' (metadata interna, ver strip_internal_keys)
-    para que el frontend pueda ofrecer "traer un bullet más del master".
+    Qué slots son emisibles y en qué orden (fallback cuando `highlight_order`
+    viene vacío/inválido) lo decide `_entry_highlights_text`, la misma
+    fuente que usan la cobertura global (selection.py) y el guardrail del
+    LLM (llm_node.py) — un solo camino para "los textos de los bullets de
+    una entrada". Acá se vuelve a resolver la variante con
+    `resolve_slot_with_variant` solo porque el merge necesita su `id` para
+    incrementar `used_count` y armar `_src_variant_map`.
+
+    Cada entrada devuelta lleva además '_src_section'/'_src_index' (metadata
+    interna, ver strip_internal_keys) para que el frontend pueda ofrecer
+    "traer un bullet más del master".
     """
+    master_list = master_cv.get("cv", {}).get("sections", {}).get(section_name, [])
     result: List[Dict[str, Any]] = []
 
     for item in selection_items[
@@ -174,7 +184,12 @@ def _apply_entry_selection(
 
         entry = deepcopy(original)
         slots = entry_bullet_slots(original)
-        order = item.get("highlight_order") or list(range(len(slots)))
+        # Textos emisibles de la entrada (None = slot no emisible): fuente
+        # única compartida con selection.py / llm_node.py.
+        texts = _entry_highlights_text(master_cv, section_name, idx)
+        order = item.get("highlight_order") or [
+            i for i, t in enumerate(texts) if t is not None
+        ]
         # Ángulos preferidos por logro: dict {slot_index(str): ángulo}.
         # Solo matchean variantes con ese ángulo; si ninguna, el slot cae a
         # la variante representativa (misma regla de resolve_variant).
@@ -184,6 +199,8 @@ def _apply_entry_selection(
         emitted_slots: List[int] = []
         variant_meta: Dict[str, Dict[str, str]] = {}
         for s_idx in order:
+            if not (0 <= s_idx < len(texts)) or texts[s_idx] is None:
+                continue
             slot = _safe_get(slots, s_idx)
             if slot is None:
                 continue
@@ -210,7 +227,12 @@ def _apply_entry_selection(
 
         if not filtered_highlights:
             # order inválido/vacío -> caen los primeros slots resolubles del master
-            for s_idx, slot in enumerate(slots):
+            for s_idx in [i for i, t in enumerate(texts) if t is not None]:
+                if len(filtered_highlights) >= max_highlights:
+                    break
+                slot = _safe_get(slots, s_idx)
+                if slot is None:
+                    continue
                 text, variant = resolve_slot_with_variant(slot)
                 if text is not None and text not in filtered_highlights:
                     filtered_highlights.append(text)
@@ -225,21 +247,18 @@ def _apply_entry_selection(
                             "angle": (variant or {}).get("angle") or "",
                             "text": text,
                         }
-                if len(filtered_highlights) >= max_highlights:
-                    break
 
         entry["highlights"] = filtered_highlights
         entry.pop("achievements", None)
-        if source_section is not None:
-            entry["_src_section"] = source_section
-            entry["_src_index"] = idx
-            # Metadata por bullet (selector de variante): el orden
-            # efectivo de slots y la variante emitida por cada logro, para
-            # que el frontend pueda ofrecer el cambio de redacción. Solo en
-            # memoria: strip_internal_keys las limpia al guardar.
-            if variant_meta:
-                entry["_src_slot_map"] = emitted_slots
-                entry["_src_variant_map"] = variant_meta
+        entry["_src_section"] = section_name
+        entry["_src_index"] = idx
+        # Metadata por bullet (selector de variante): el orden
+        # efectivo de slots y la variante emitida por cada logro, para
+        # que el frontend pueda ofrecer el cambio de redacción. Solo en
+        # memoria: strip_internal_keys las limpia al guardar.
+        if variant_meta:
+            entry["_src_slot_map"] = emitted_slots
+            entry["_src_variant_map"] = variant_meta
         result.append(entry)
 
     return result
@@ -376,11 +395,11 @@ def build_section_entries(
             else config["max_project_entries"]
         )
         return _apply_entry_selection(
-            master_sections.get(section_name, []),
+            master_cv,
+            section_name,
             section_selection.get(f"selected_{section_name}", []),
             max_entries,
             config["max_highlights_per_entry"],
-            source_section=section_name,
             variant_usage=variant_usage,
         )
 

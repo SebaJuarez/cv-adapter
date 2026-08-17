@@ -18,7 +18,7 @@ from typing import Any
 import numpy as np
 from sentence_transformers import SentenceTransformer
 
-from .achievements import entry_bullet_slots, resolve_slot_text
+from .achievements import _entry_highlights_text, entry_bullet_slots
 from .config import load_config, selection_config_fingerprint
 from .retrieval import (
     BulletDoc,
@@ -54,21 +54,6 @@ _SECTION_LIMIT_KEYS = {
     "skills": "max_skill_categories",
     "education": "max_education_extra",
 }
-
-
-def _entry_slot_texts(
-    master_cv: dict[str, Any], section: str, entry_index: int
-) -> list[str | None]:
-    """Textos emitibles de cada slot de la entrada (None si el slot no se
-    puede emitir: achievement sin variantes approved). Misma resolución
-    que merge (_apply_entry_selection): entry_bullet_slots + resolve_slot_text."""
-    entries = master_cv.get("cv", {}).get("sections", {}).get(section, [])
-    if not (0 <= entry_index < len(entries)):
-        return []
-    entry = entries[entry_index]
-    if not isinstance(entry, dict):
-        return []
-    return [resolve_slot_text(slot) for slot in entry_bullet_slots(entry)]
 
 
 def _extract_bullets_from_section(
@@ -595,7 +580,7 @@ class SelectionEngine:
         local: texto crudo + variantes, ver _select_highlights_with_coverage)."""
         for section in ("experience", "projects"):
             for entry in selection.get(f"selected_{section}", []):
-                texts = _entry_slot_texts(master_cv, section, entry["index"])
+                texts = _entry_highlights_text(master_cv, section, entry["index"])
                 for bi in entry.get("highlight_order", []):
                     if (
                         0 <= bi < len(texts)
@@ -624,7 +609,7 @@ class SelectionEngine:
         best_score = -1.0
         for section in ("experience", "projects"):
             for entry in selection.get(f"excluded_{section}", []):
-                texts = _entry_slot_texts(master_cv, section, entry["index"])
+                texts = _entry_highlights_text(master_cv, section, entry["index"])
                 for bi in entry.get("highlight_order", []):
                     if not (0 <= bi < len(texts)) or texts[bi] is None:
                         continue
@@ -656,7 +641,7 @@ class SelectionEngine:
         cobertura, acotada a la keyword por la que se swapea — como la
         entrada fue elegida por cubrirla, la cobertura queda garantizada
         (y una keyword negada nunca se fuerza)."""
-        texts = _entry_slot_texts(master_cv, section, entry["index"])
+        texts = _entry_highlights_text(master_cv, section, entry["index"])
         bullets = []
         for bi, text in enumerate(texts):
             if text is None:

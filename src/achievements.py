@@ -178,6 +178,27 @@ def resolve_slot_text(
     return text
 
 
+def _entry_highlights_text(
+    master_cv: Dict[str, Any], section: str, entry_index: int
+) -> List[Optional[str]]:
+    """Textos emitibles de cada slot de una entrada del master.
+
+    Fuente única de "los bullets que puede emitir una entrada" (legacy y
+    achievements): resuelve con `entry_bullet_slots` + `resolve_slot_text`,
+    la misma base que usa merge._apply_entry_selection (que además
+    conserva la metadata de variantes/ángulos con resolve_slot_with_variant).
+    None = slot no emisible (logro sin variantes approved); entrada fuera
+    de rango o inválida → lista vacía.
+    """
+    entries = master_cv.get("cv", {}).get("sections", {}).get(section, [])
+    if not (0 <= entry_index < len(entries)):
+        return []
+    entry = entries[entry_index]
+    if not isinstance(entry, dict):
+        return []
+    return [resolve_slot_text(slot) for slot in entry_bullet_slots(entry)]
+
+
 def resolve_slot_with_variant(
     slot: Dict[str, Any], preferred_angle: Optional[str] = None
 ) -> tuple:
