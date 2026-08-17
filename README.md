@@ -364,11 +364,36 @@ cv-adapter/
 
 ## ⚙️ Configuración avanzada
 
-Los límites de página, el proveedor del LLM y los *knobs* del motor de
-retrieval (peso de cada canal en la fusión, `k` de RRF, umbral de
-diversidad, penalización por términos negados, stemming on/off, HyDE...)
-viven en `config.json` y son editables desde la pestaña **Configuración**
-sin tocar código. Para tunear el retrieval con datos propios:
+Toda la configuración vive en `config.json` (raíz del proyecto, gitignored).
+La pestaña **Configuración** de la web edita **todas** las claves salvo
+dos (las de los modelos de embeddings/reranker, ver abajo); los cambios se
+guardan en el archivo, así que editar por UI o a mano es equivalente. Lo
+que edita la UI:
+
+- **Proveedor del LLM:** Ollama (modelo local) o API remota compatible
+  (`llm_provider`, `ollama_model`, `openai_model`, `openai_base_url`, y la
+  `openai_api_key` — o la variable de entorno `OPENAI_API_KEY`, que tiene
+  prioridad y nunca se persiste).
+- **Límites de página:** `max_experience_entries`, `max_project_entries`,
+  `max_highlights_per_entry`, `max_skill_categories`,
+  `max_education_extra`, `max_keywords`, `lines_per_page`.
+- **Keywords ATS:** `custom_keywords` (fijas por el usuario) y
+  `show_keywords_line` (mostrar u ocultar la línea "Palabras clave").
+- **Knobs del motor de retrieval:** `rrf_k`, `sparse_weight`,
+  `dense_weight`, `keyword_boost_weight`, `diversity_lambda`,
+  `negation_penalty`, `use_reranker`, `use_stemming`, `use_hyde`,
+  `max_global_coverage_swaps`, `selection_cache_ttl_hours`.
+
+> **Solo editables en `config.json` a mano:** `dense_model` y
+> `cross_encoder_model` (los IDs de HuggingFace de los modelos de
+> embeddings y de re-ranking). La UI no los expone a propósito: cambiarlos
+> implica descargar un modelo nuevo la próxima corrida y los resultados
+> de selección cambian por completo. Al editarlos, el cache de selección
+> se invalida solo (la clave del cache deriva de estos valores), pero hay
+> que borrar `data/selection_cache/` (o esperar el TTL) si se quiere
+> descartar también los embeddings persistidos.
+
+Para tunear el retrieval con datos propios:
 
 ```bash
 python scripts/eval_retrieval.py --master data/master_cv_example.yaml
