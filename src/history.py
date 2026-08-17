@@ -11,6 +11,7 @@ import hashlib
 import json
 import re
 import time
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -236,8 +237,13 @@ def add_run(
     """
     runs = load_runs(path)
     jd_hash_value = jd_hash(job_description)
+    existing_ids = {r["run_id"] for r in runs}
+    while True:
+        run_id = f"{int(time.time() * 1000)}-{jd_hash_value}-{uuid.uuid4().hex[:8]}"
+        if run_id not in existing_ids:
+            break
     run = {
-        "run_id": f"{int(time.time() * 1000)}-{jd_hash_value}",
+        "run_id": run_id,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "offer_title": extract_offer_title(job_description),
         "offer_link": None,
