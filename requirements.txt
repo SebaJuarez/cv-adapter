@@ -30,16 +30,19 @@ rank-bm25>=0.2.2
 nltk>=3.9.0
 
 # Embeddings densos locales (CPU-only)
-sentence-transformers>=3.0.0
+# Probado hasta 5.x (5.6.1); el techo <6.0 evita cortes breaking futuros.
+sentence-transformers>=3.0.0,<6.0
 
 # Álgebra lineal para similitud coseno
-numpy>=1.26.0
+numpy>=1.26.0,<3.0
 
 # Framework de deep learning (carga de cross-encoders, backend CPU)
-torch>=2.0.0
+# Probado hasta 2.x (2.13.0); el techo <3.0 evita cortes breaking futuros.
+torch>=2.0.0,<3.0
 
-# Transformers (carga de tokenizers y modelos de re-ranking)
-transformers>=4.35.0
+# Transformers (dependencia transitiva de sentence-transformers; el código
+# no lo importa directo). Probado hasta 5.x (5.14.1); techo <6.0.
+transformers>=4.35.0,<6.0
 
 # --- Utilidades de consola (opcional, mejora los prints) ---
 rich>=13.9.4
