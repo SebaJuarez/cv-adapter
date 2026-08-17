@@ -41,6 +41,4 @@ __pycache__
 
 # Tooling de grabacion de GIFs demo (tools/demo-recorder)
 /tools/gifsicle
-/tools/demo-recorder/node_modules
-/tools/demo-recorder/videos
-/tools/demo-recorder/work
+/tools/demo-recorder/

@@ -1,1 +1,0 @@
-{"name":"demo-recorder","private":true,"type":"module","version":"1.0.0","description":"Grabacion de GIFs de demostracion para el README (Puppeteer + ghost-cursor + puppeteer-screen-recorder)","dependencies":{"ghost-cursor":"^1.4.2","puppeteer":"^24.43.1","puppeteer-screen-recorder":"^3.0.6"}}
