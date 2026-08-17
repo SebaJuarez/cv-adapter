@@ -61,8 +61,7 @@ al final, solo para pulir redacción, nunca para decidir contenido.
 
 ## Motor de recuperación
 
-Es la pieza que hace el trabajo real del proyecto, así que va con más
-detalle que el resto. Corre **por sección** (`experience`, `projects`,
+Es la pieza que hace el trabajo real del proyecto. Corre **por sección** (`experience`, `projects`,
 `skills`, `education` tienen cada una su propio índice) el retrieval
 nunca compite bullets de secciones distintas entre sí.
 
